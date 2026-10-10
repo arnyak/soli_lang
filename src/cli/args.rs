@@ -815,6 +815,24 @@ pub fn parse_args() -> Options {
                     process::exit(64);
                 }
                 let name = args[i].clone();
+                // `soli new --help` created an application named `--help`.
+                if matches!(name.as_str(), "--help" | "-h") {
+                    println!(
+                        "Usage: soli new <app_name> [--eui | --template <url>]\n\n\
+                         Create a Soli application in ./<app_name>.\n\n\
+                         Options:\n  \
+                           --eui             an EUI application (native window views)\n  \
+                           --template <url>  start from a template tarball instead"
+                    );
+                    process::exit(0);
+                }
+                if name.starts_with('-') {
+                    eprintln!(
+                        "new: the app name comes first, and cannot start with '-' (got {name})"
+                    );
+                    print_usage();
+                    process::exit(64);
+                }
                 i += 1;
                 let mut template = None;
                 let mut eui = false;

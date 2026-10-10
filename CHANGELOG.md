@@ -12,6 +12,10 @@
 
 * **examples:** **cf.solisoft.net gets a boarding-pass landing page.** The code of the datacenter that rendered the page on split-flap tiles, a stub with the request's real facts, and a departures board of what a Worker app reaches (D1, R2, Images, Hyperdrive, Queues).
 
+### Fixed
+
+* **cli:** **`soli new --help` shows help instead of creating an app named `--help`.** The first argument after `new` was taken as the app name whatever it was, so `soli new --help` generated a whole application (with `git init`) in a folder called `--help`. `--help` / `-h` now print the command's usage, and a name starting with `-` is refused.
+
 ## [2.21.1] - 2026-10-10
 
 The v2.21.0 tag failed CI on one test and published no binaries; 2.21.1 is the same release, with that test fixed. Installing 2.21.1 brings everything listed under 2.21.0.
