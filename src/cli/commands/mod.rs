@@ -879,14 +879,17 @@ fn sweep_stale_extractions(base: &Path) {
     }
 }
 
-pub fn run_new(name: &str, template: Option<&str>, eui: bool) {
+pub fn run_new(name: &str, template: Option<&str>, eui: bool, edge: bool) {
     use solilang::scaffold::app_generator::print_success_message;
 
-    match solilang::scaffold::create_app(name, template, eui) {
+    match solilang::scaffold::create_app(name, template, eui, edge) {
         Ok(()) => {
             print_success_message(name);
             if eui {
                 solilang::scaffold::app_generator::print_eui_message();
+            }
+            if edge {
+                solilang::scaffold::app_generator::print_edge_message();
             }
         }
         Err(e) => {

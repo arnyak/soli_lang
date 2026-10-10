@@ -814,12 +814,75 @@ pub fn print_eui_message() {
     println!();
 }
 
+/// `--edge`: the files that make the application a Cloudflare Worker app —
+/// its own `wrangler.toml` (D1, cookie sessions, the other bindings
+/// commented), a `.env` for SQLite and the cookie driver under `soli serve`,
+/// local secrets in `.dev.vars`, and a README and CLAUDE.md that say so.
+pub fn create_edge(app_path: &Path, name: &str) -> Result<(), String> {
+    let worker: String = name
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let worker = worker.trim_matches('-');
+    let worker = if worker.is_empty() {
+        "soli-app"
+    } else {
+        worker
+    };
+    let db_name = format!("{worker}-db");
+    // 64 hex characters, well past the cookie driver's 32.
+    let secret = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    write_file(
+        &app_path.join("wrangler.toml"),
+        &templates::edge::wrangler_toml(worker, &db_name, &today),
+    )?;
+    write_file(
+        &app_path.join(".env"),
+        &templates::edge::env_file(&db_name, &secret),
+    )?;
+    write_file(
+        &app_path.join(".dev.vars"),
+        &templates::edge::dev_vars(&secret),
+    )?;
+    write_file(
+        &app_path.join("README.md"),
+        &templates::edge::readme(name, &db_name),
+    )?;
+    for (file, extra) in [
+        (".gitignore", templates::edge::GITIGNORE_EXTRA),
+        ("CLAUDE.md", templates::edge::CLAUDE_MD_EXTRA),
+    ] {
+        let path = app_path.join(file);
+        let mut text = fs::read_to_string(&path).map_err(|e| format!("read {file}: {e}"))?;
+        text.push_str(extra);
+        write_file(&path, &text)?;
+    }
+    Ok(())
+}
+
+/// What `--edge` added, and how to run it.
+pub fn print_edge_message() {
+    println!();
+    println!("  \x1b[1mCloudflare Workers\x1b[0m");
+    println!("    \x1b[2mwrangler.toml\x1b[0m   \x1b[2mthe Worker: D1, cookie sessions, R2/Images/Queues/Hyperdrive ready to uncomment\x1b[0m");
+    println!("    \x1b[2m.dev.vars\x1b[0m       \x1b[2mlocal secrets for soli edge dev (not committed)\x1b[0m");
+    println!();
+    println!("    \x1b[36msoli edge dev\x1b[0m   \x1b[2m# on workerd, http://localhost:8787 — the README has the deploy steps\x1b[0m");
+}
+
 /// Create a new Soli MVC application.
 ///
 /// With `eui`, it also gets the reference widget catalogue and a first
 /// EUI component: a native window this application serves over a
-/// WebSocket, beside the HTML it serves over HTTP.
-pub fn create_app(name: &str, template: Option<&str>, eui: bool) -> Result<(), String> {
+/// WebSocket, beside the HTML it serves over HTTP. With `edge`, it is set up
+/// to deploy to Cloudflare Workers (see [`create_edge`]).
+pub fn create_app(name: &str, template: Option<&str>, eui: bool, edge: bool) -> Result<(), String> {
     let app_path = Path::new(name);
 
     if app_path.exists() {
@@ -879,6 +942,9 @@ pub fn create_app(name: &str, template: Option<&str>, eui: bool) -> Result<(), S
     create_css_file(app_path)?;
     create_client_js(app_path)?;
     create_readme(app_path, name)?;
+    if edge {
+        create_edge(app_path, name)?;
+    }
     ProgressDisplay::done();
 
     // Step 5: Build CSS with the standalone Tailwind binary (no npm)
@@ -1073,6 +1139,68 @@ mod tests {
         // strip it silently — predictable failure beats silent rewrite.
         let err = validate_template_entry_path(Path::new("./foo")).unwrap_err();
         assert!(err.contains("unsafe path"), "{}", err);
+    }
+
+    /// `--edge` writes the Worker config beside app/, local-only secrets git
+    /// ignores, and says where the app runs in README and CLAUDE.md.
+    #[test]
+    fn edge_apps_get_their_worker_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = tmp.path().join("My Shop");
+        fs::create_dir_all(&app).unwrap();
+        fs::write(app.join(".gitignore"), "node_modules/\n").unwrap();
+        fs::write(app.join("CLAUDE.md"), "# My Shop\n").unwrap();
+        create_edge(&app, "My Shop").unwrap();
+
+        let toml = fs::read_to_string(app.join("wrangler.toml")).unwrap();
+        assert!(toml.contains("name = \"my-shop\""), "{toml}");
+        assert!(toml.contains("database_name = \"my-shop-db\""), "{toml}");
+        assert!(toml.contains("SOLI_DB_ADAPTER = \"d1\""), "{toml}");
+        assert!(toml.contains("SOLI_SESSION_DRIVER = \"cookie\""), "{toml}");
+        // A top-level key after a table would belong to that table.
+        assert!(toml.find("compatibility_date").unwrap() < toml.find("[assets]").unwrap());
+
+        let env = fs::read_to_string(app.join(".env")).unwrap();
+        let dev_vars = fs::read_to_string(app.join(".dev.vars")).unwrap();
+        let secret = env
+            .lines()
+            .find_map(|l| l.strip_prefix("SOLI_SESSION_SECRET="))
+            .unwrap();
+        assert_eq!(secret.len(), 64);
+        assert!(
+            dev_vars.contains(secret),
+            "local Worker and soli serve share it"
+        );
+        assert!(env.contains("SOLI_DB_ADAPTER=sqlite"), "{env}");
+        assert!(
+            !toml.contains(secret),
+            "the secret never goes in wrangler.toml"
+        );
+
+        let gitignore = fs::read_to_string(app.join(".gitignore")).unwrap();
+        assert!(gitignore.starts_with("node_modules/\n"));
+        for entry in ["/dist/edge/", ".wrangler/", ".dev.vars"] {
+            assert!(
+                gitignore.lines().any(|l| l == entry),
+                "{entry}: {gitignore}"
+            );
+        }
+        assert!(fs::read_to_string(app.join("CLAUDE.md"))
+            .unwrap()
+            .contains("runs on Cloudflare Workers"));
+        assert!(fs::read_to_string(app.join("README.md"))
+            .unwrap()
+            .contains("soli edge dev"));
+    }
+
+    /// The generated .gitignore ignores the EUI publisher key: its entry was
+    /// written with literal `\n`s and matched nothing.
+    #[test]
+    fn the_gitignore_ignores_the_eui_publisher_key() {
+        assert!(app::GITIGNORE_TEMPLATE
+            .lines()
+            .any(|l| l == "config/eui_publisher.pkcs8"));
+        assert!(!app::GITIGNORE_TEMPLATE.contains("\\n"));
     }
 
     #[test]

@@ -8,6 +8,7 @@ pub mod bundled_docs;
 pub mod clients;
 pub mod controller;
 pub mod devices;
+pub mod edge;
 #[cfg(feature = "eui")]
 pub mod eui;
 pub mod migration;

@@ -4,6 +4,8 @@
 
 ### Added
 
+* **scaffold:** **`soli new <app> --edge`: an application that deploys to Cloudflare Workers.** On top of the usual app it writes a `wrangler.toml` beside `app/` (the Worker named after the app, `public/` as assets, `SOLI_DB_ADAPTER = "d1"` with a `DB` binding for `wrangler d1 create`, `SOLI_SESSION_DRIVER = "cookie"`, `SOLI_CSRF_TOKENS = "require"`, and commented R2, Images, Queues and Hyperdrive blocks), a `.env` for `soli serve` on SQLite with the cookie driver and a generated 64-character `SOLI_SESSION_SECRET`, the same secret in `.dev.vars` for `soli edge dev`, `.gitignore` entries for `dist/edge/`, `.wrangler/` and `.dev.vars`, and a README and `CLAUDE.md` section on running and deploying it. `--cloudflare` is an alias; it refuses `--eui` (a Worker has no WebSockets) and `--template`. Checked: a generated app answers on workerd through `soli edge dev` and under `soli serve`.
+
 * **edge:** **`soli edge dev`: a Worker app on workerd, rebuilt as you edit.** It packages the app into `dist/edge`, runs `wrangler dev --local --live-reload` on `--port` (8787), and repackages on every change under `app/`, `config/`, `lib/`, `public/` or to `wrangler.toml` / `.dev.vars`, so wrangler reloads the Worker and the page. Local D1, R2, KV and Queues live under `dist/edge/.wrangler/state`. `wrangler dev` presents the production host of `routes` as `Host`, so every local form failed the same-origin check; `.dev.vars` now carries a `SOLI_APP_HOSTS` with `localhost:<port>`, `127.0.0.1:<port>` and the hosts from the app's `.env` or soli-proxy (unless the app's `.dev.vars` sets it). It accepts the `--dev` soli-proxy appends, so a Worker app can be a proxy site: `start_script = "soli edge dev . --port $PORT"` — `cf.solisoft.test` serves `examples/cloudflare-worker` that way.
 
 * **edge:** **An app's own `wrangler.toml` is its deploy config.** When the app folder has a `wrangler.toml` next to `app/`, `soli edge build` copies it into the Worker folder on every build (over the copy there), instead of writing a template once and leaving it in a build directory nobody commits. The deploy config — name, account, routes, bindings — can now live in the app's repository. `examples/cloudflare-worker` does this: cf.solisoft.net's config, which lived only in a local build folder, is committed beside the app.
@@ -13,6 +15,8 @@
 * **examples:** **cf.solisoft.net gets a boarding-pass landing page.** The code of the datacenter that rendered the page on split-flap tiles, a stub with the request's real facts, and a departures board of what a Worker app reaches (D1, R2, Images, Hyperdrive, Queues).
 
 ### Fixed
+
+* **scaffold:** **A new app's `.gitignore` ignores the EUI publisher key again.** Its entry (with a comment) was written with literal `\n` escapes into the template, so the generated file had one line reading `\n\n# The EUI publisher key…\nconfig/eui_publisher.pkcs8\n`, which matched nothing: an app that created `config/eui_publisher.pkcs8` could commit the key that signs its EUI manifest. Check `git ls-files config/eui_publisher.pkcs8` in an EUI app created since.
 
 * **cli:** **`soli new --help` shows help instead of creating an app named `--help`.** The first argument after `new` was taken as the app name whatever it was, so `soli new --help` generated a whole application (with `git init`) in a folder called `--help`. `--help` / `-h` now print the command's usage, and a name starting with `-` is refused.
 

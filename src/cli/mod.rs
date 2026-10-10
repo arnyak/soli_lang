@@ -28,7 +28,8 @@ pub fn run() {
             name,
             template,
             eui,
-        } => commands::run_new(name, template.as_deref(), *eui),
+            edge,
+        } => commands::run_new(name, template.as_deref(), *eui, *edge),
         Command::Generate {
             scaffold_name,
             fields,

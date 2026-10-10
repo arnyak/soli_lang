@@ -63,6 +63,8 @@ pub enum Command {
         /// `--eui`: also write the widget catalogue and a first EUI
         /// component. Never set together with `template`.
         eui: bool,
+        /// `--edge`: set up to deploy to Cloudflare Workers.
+        edge: bool,
     },
     Generate {
         scaffold_name: String,
@@ -601,6 +603,7 @@ pub fn print_usage() {
     eprintln!("Commands:");
     eprintln!("  new <app_name>       Create a new Soli MVC application");
     eprintln!("  new <app_name> --template <url>  Create from custom template URL");
+    eprintln!("  new <app_name> --edge  Create an app that deploys to Cloudflare Workers");
     eprintln!("  init                 Create soli.toml in current directory");
     eprintln!("  add <name> --git <url>  Add a git dependency");
     eprintln!("  add <name> --path <path>  Add a local path dependency");
@@ -818,9 +821,10 @@ pub fn parse_args() -> Options {
                 // `soli new --help` created an application named `--help`.
                 if matches!(name.as_str(), "--help" | "-h") {
                     println!(
-                        "Usage: soli new <app_name> [--eui | --template <url>]\n\n\
+                        "Usage: soli new <app_name> [--edge | --eui | --template <url>]\n\n\
                          Create a Soli application in ./<app_name>.\n\n\
                          Options:\n  \
+                           --edge            deploys to Cloudflare Workers (wrangler.toml, D1)\n  \
                            --eui             an EUI application (native window views)\n  \
                            --template <url>  start from a template tarball instead"
                     );
@@ -836,9 +840,11 @@ pub fn parse_args() -> Options {
                 i += 1;
                 let mut template = None;
                 let mut eui = false;
+                let mut edge = false;
                 while i < args.len() {
                     match args[i].as_str() {
                         "--eui" => eui = true,
+                        "--edge" | "--cloudflare" => edge = true,
                         "--template" => {
                             i += 1;
                             if i >= args.len() {
@@ -861,6 +867,12 @@ pub fn parse_args() -> Options {
                     }
                     i += 1;
                 }
+                if edge && (eui || template.is_some()) {
+                    eprintln!(
+                        "new: --edge cannot be combined with --eui (a Worker has no WebSockets) or --template"
+                    );
+                    process::exit(64);
+                }
                 if eui && template.is_some() {
                     eprintln!(
                         "new: --eui and --template are exclusive; the template decides what the application holds"
@@ -877,6 +889,7 @@ pub fn parse_args() -> Options {
                     name,
                     template,
                     eui,
+                    edge,
                 };
                 return options;
             }

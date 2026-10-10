@@ -22,6 +22,19 @@ cd dist/edge &amp;&amp; npx wrangler dev             # on workerd, locally
 npx wrangler deploy                          # on Cloudflare</code></pre>
     </div>
 
+    <h2 id="new" class="text-3xl font-bold text-white mb-4 scroll-mt-24">Start an app for Workers: <code>soli new --edge</code></h2>
+    <div class="rounded-xl bg-[#0C0A09] ring-1 ring-white/10 overflow-hidden shadow-xl mb-6">
+        <pre data-filename="Terminal"><code class="language-bash text-sm">soli new my_app --edge
+cd my_app && soli edge dev       # on workerd, http://localhost:8787</code></pre>
+    </div>
+    <p class="text-gray-400 mb-4">The usual application, set up to deploy as a Worker:</p>
+    <ul class="list-disc pl-6 space-y-2 text-gray-400 mb-12">
+        <li><strong class="text-white"><code>wrangler.toml</code></strong> beside <code>app/</code> &mdash; the Worker's name, its static assets, models on D1 (<code>SOLI_DB_ADAPTER = "d1"</code>), sessions in the <code>cookie</code> driver, and the R2, Images, Queues and Hyperdrive blocks ready to uncomment. <code>soli edge build</code> copies it in on every build: commit it.</li>
+        <li><strong class="text-white"><code>.env</code></strong> for <code>soli serve</code> on your machine: the same models on SQLite (D1 is SQLite) and the same cookie sessions, with a generated <code>SOLI_SESSION_SECRET</code>.</li>
+        <li><strong class="text-white"><code>.dev.vars</code></strong> &mdash; the same secret for <code>soli edge dev</code> (wrangler's local-only variables); on Cloudflare it is set with <code>npx wrangler secret put</code>.</li>
+        <li><code>.gitignore</code> entries for <code>dist/edge/</code>, <code>.wrangler/</code> and <code>.dev.vars</code>, and a README and <code>CLAUDE.md</code> that say where the app runs and how to deploy it.</li>
+    </ul>
+
     <h2 id="how-it-works" class="text-3xl font-bold text-white mb-4 scroll-mt-24">How it works</h2>
     <ul class="list-disc pl-6 space-y-3 text-gray-400 mb-12">
         <li><strong class="text-white">The edge runtime</strong> is the Soli library built for <code class="text-amber-400">wasm32-unknown-unknown</code> without its server, CLI and native-only builtins: about 9&nbsp;MB of WebAssembly, 2.9&nbsp;MB compressed. <code class="text-amber-400">scripts/build-edge.sh</code> builds it from the <code class="text-amber-400">edge/</code> crate.</li>

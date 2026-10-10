@@ -16,6 +16,27 @@ cd dist/edge && npx wrangler dev             # on workerd, locally
 npx wrangler deploy                          # on Cloudflare
 ```
 
+## Start an app for Workers: `soli new --edge`
+
+```bash
+soli new my_app --edge
+cd my_app && soli edge dev       # on workerd, http://localhost:8787
+```
+
+The usual application, set up to deploy as a Worker:
+
+- **`wrangler.toml`** beside `app/` — the Worker's name, its static assets,
+  models on D1 (`SOLI_DB_ADAPTER = "d1"`), sessions in the `cookie` driver,
+  and the R2, Images, Queues and Hyperdrive blocks ready to uncomment.
+  `soli edge build` copies it in on every build: commit it.
+- **`.env`** for `soli serve` on your machine: the same models on SQLite (D1
+  is SQLite) and the same cookie sessions, with a generated
+  `SOLI_SESSION_SECRET`.
+- **`.dev.vars`** — the same secret for `soli edge dev` (wrangler's local-only
+  variables); on Cloudflare it is set with `npx wrangler secret put`.
+- `.gitignore` entries for `dist/edge/`, `.wrangler/` and `.dev.vars`, and a
+  README and `CLAUDE.md` that say where the app runs and how to deploy it.
+
 ## How it works
 
 - **The edge runtime** is the Soli library built for `wasm32-unknown-unknown`
