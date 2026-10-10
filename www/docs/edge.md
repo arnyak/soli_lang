@@ -93,6 +93,37 @@ What goes where:
 
 Add `dist/` to the app's `.gitignore`.
 
+## Develop on workerd: `soli edge dev`
+
+```bash
+soli edge dev [folder] [--port 8787] [--runtime DIR] [--sql postgres|none]
+```
+
+Packages the app into `dist/edge`, runs it with `wrangler dev --local` — the
+runtime Cloudflare runs, with local D1, R2, KV and Queues stored under
+`dist/edge/.wrangler/state` — and repackages on every change under `app/`,
+`config/`, `lib/`, `public/` or to `wrangler.toml`; wrangler reloads the
+Worker and the open page. The app's `.dev.vars` (wrangler's local-only
+variables) is copied in.
+
+`wrangler dev` hands the Worker the production host of `routes` as `Host`,
+so `soli edge dev` adds the addresses the page is really opened from to
+`SOLI_APP_HOSTS` — `localhost:<port>`, `127.0.0.1:<port>`, and the hosts
+listed in the app's `.env` or passed by soli-proxy — or forms would fail the
+same-origin check locally.
+
+Behind **soli-proxy** it is a site like the others (`sites/<name>` linking to
+the app, with an `app.infos`):
+
+```toml
+name = "cf.solisoft.test"
+domain = "cf.solisoft.test"
+start_script = "env SOLI_EDGE_RUNTIME=/path/to/edge-runtime soli edge dev . --port $PORT"
+health_check = "/"
+```
+
+`https://cf.solisoft.test` then shows the page the Worker renders.
+
 ## Configure
 
 Everything an app reads with `getenv()` — the SoliDB settings, your own keys —

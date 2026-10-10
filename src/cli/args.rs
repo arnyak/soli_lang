@@ -413,6 +413,13 @@ pub enum Command {
         runtime: Option<String>,
         sql: Option<String>,
     },
+    /// `soli edge dev [folder]` — the app on workerd, repackaged on every change.
+    EdgeDev {
+        folder: String,
+        port: u16,
+        runtime: Option<String>,
+        sql: Option<String>,
+    },
     /// `soli mobile build android|ios [folder]` — an installable, versioned
     /// APK or IPA from `clients/<platform>/`.
     MobileBuild {
@@ -629,6 +636,7 @@ pub fn print_usage() {
     eprintln!("                       --latest android|ios, --notes TEXT, --url URL");
     eprintln!("                       (token from SOLI_MOBILE_TOKEN; URL from config/mobile.toml)");
     eprintln!("  edge build [folder]  Package the app as a Cloudflare Worker in dist/edge");
+    eprintln!("  edge dev [folder]    Run it on workerd (wrangler dev), repackaged as you edit");
     eprintln!("                       --out DIR, --runtime DIR (or SOLI_EDGE_RUNTIME)");
     eprintln!("  generate offline     Outbox sync endpoints + public/js/soli_outbox.js helper");
     eprintln!("  build <folder>       Bundle app into a single .soli file");
@@ -2553,8 +2561,10 @@ pub fn parse_args() -> Options {
             "edge" => {
                 i += 1;
                 let usage = "Usage: soli edge build [folder] [--out DIR] [--runtime DIR] \
-                             [--sql postgres|none]";
-                if args.get(i).map(String::as_str) != Some("build") {
+                             [--sql postgres|none]\n       \
+                             soli edge dev [folder] [--port N] [--runtime DIR] [--sql postgres|none]";
+                let sub = args.get(i).cloned().unwrap_or_default();
+                if sub != "build" && sub != "dev" {
                     eprintln!("{usage}");
                     process::exit(64);
                 }
@@ -2563,8 +2573,22 @@ pub fn parse_args() -> Options {
                 let mut out = None;
                 let mut runtime = None;
                 let mut sql = None;
+                let mut port: u16 = 8787;
                 while i < args.len() {
                     match args[i].as_str() {
+                        // soli-proxy appends `--dev` to every `soli …` start
+                        // script; `edge dev` is a dev server already.
+                        "--dev" if sub == "dev" => {}
+                        "--port" | "-p" if sub == "dev" => {
+                            i += 1;
+                            port = match args.get(i).and_then(|p| p.parse().ok()) {
+                                Some(p) => p,
+                                None => {
+                                    eprintln!("--port requires a port number");
+                                    process::exit(64);
+                                }
+                            };
+                        }
                         flag @ ("--out" | "-o" | "--runtime" | "--sql") => {
                             i += 1;
                             let Some(value) = args.get(i).cloned() else {
@@ -2578,7 +2602,7 @@ pub fn parse_args() -> Options {
                             }
                         }
                         other if other.starts_with('-') => {
-                            eprintln!("Unknown option '{other}' for edge build\n{usage}");
+                            eprintln!("Unknown option '{other}' for edge {sub}\n{usage}");
                             process::exit(64);
                         }
                         other if folder.is_none() => folder = Some(other.to_string()),
@@ -2589,8 +2613,22 @@ pub fn parse_args() -> Options {
                     }
                     i += 1;
                 }
+                let folder = folder.unwrap_or_else(|| ".".to_string());
+                if sub == "dev" {
+                    if out.is_some() {
+                        eprintln!("soli edge dev always builds into <folder>/dist/edge\n{usage}");
+                        process::exit(64);
+                    }
+                    options.command = Command::EdgeDev {
+                        folder,
+                        port,
+                        runtime,
+                        sql,
+                    };
+                    return options;
+                }
                 options.command = Command::EdgeBuild {
-                    folder: folder.unwrap_or_else(|| ".".to_string()),
+                    folder,
                     out,
                     runtime,
                     sql,

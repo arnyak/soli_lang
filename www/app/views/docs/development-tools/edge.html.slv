@@ -76,6 +76,25 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
         <li>For an app on PostgreSQL, the driver: <code>src/sql-pg.js</code>, <code>pg</code> in <code>package.json</code>, and <code>npm install</code>.</li>
     </ul>
 
+    <h2 id="dev" class="text-3xl font-bold text-white mb-4 scroll-mt-24">Develop on workerd: <code>soli edge dev</code></h2>
+    <div class="rounded-xl bg-[#0C0A09] ring-1 ring-white/10 overflow-hidden shadow-xl mb-6">
+        <pre data-filename="Terminal"><code class="language-bash text-sm">soli edge dev [folder] [--port 8787] [--runtime DIR] [--sql postgres|none]</code></pre>
+    </div>
+    <p class="text-gray-400 mb-6">
+        Packages the app into <code>dist/edge</code>, runs it with <code>wrangler dev --local</code> &mdash; the runtime Cloudflare runs, with local D1, R2, KV and Queues stored under <code>dist/edge/.wrangler/state</code> &mdash; and repackages on every change under <code>app/</code>, <code>config/</code>, <code>lib/</code>, <code>public/</code> or to <code>wrangler.toml</code>; wrangler reloads the Worker and the open page. The app's <code>.dev.vars</code> (wrangler's local-only variables) is copied in.
+    </p>
+    <p class="text-gray-400 mb-6">
+        <code>wrangler dev</code> hands the Worker the production host of <code>routes</code> as <code>Host</code>, so <code>soli edge dev</code> adds the addresses the page is really opened from to <code class="text-amber-400">SOLI_APP_HOSTS</code> &mdash; <code>localhost:&lt;port&gt;</code>, <code>127.0.0.1:&lt;port&gt;</code>, and the hosts listed in the app's <code>.env</code> or passed by soli-proxy &mdash; or forms would fail the same-origin check locally.
+    </p>
+    <p class="text-gray-400 mb-4">Behind <strong class="text-white">soli-proxy</strong> it is a site like the others (<code>sites/&lt;name&gt;</code> linking to the app, with an <code>app.infos</code>):</p>
+    <div class="rounded-xl bg-[#0C0A09] ring-1 ring-white/10 overflow-hidden shadow-xl mb-6">
+        <pre data-filename="app.infos"><code class="language-toml text-sm">name = "cf.solisoft.test"
+domain = "cf.solisoft.test"
+start_script = "env SOLI_EDGE_RUNTIME=/path/to/edge-runtime soli edge dev . --port $PORT"
+health_check = "/"</code></pre>
+    </div>
+    <p class="text-gray-400 mb-12"><code>https://cf.solisoft.test</code> then shows the page the Worker renders.</p>
+
     <h2 id="configure" class="text-3xl font-bold text-white mb-4 scroll-mt-24">Configure</h2>
     <p class="text-gray-400 mb-6">
         Everything an app reads with <code class="text-amber-400">getenv()</code> comes from the Worker's bindings: plain values under <code class="text-amber-400">[vars]</code> in <code class="text-amber-400">wrangler.toml</code>, secrets with Wrangler.

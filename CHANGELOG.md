@@ -4,6 +4,8 @@
 
 ### Added
 
+* **edge:** **`soli edge dev`: a Worker app on workerd, rebuilt as you edit.** It packages the app into `dist/edge`, runs `wrangler dev --local --live-reload` on `--port` (8787), and repackages on every change under `app/`, `config/`, `lib/`, `public/` or to `wrangler.toml` / `.dev.vars`, so wrangler reloads the Worker and the page. Local D1, R2, KV and Queues live under `dist/edge/.wrangler/state`. `wrangler dev` presents the production host of `routes` as `Host`, so every local form failed the same-origin check; `.dev.vars` now carries a `SOLI_APP_HOSTS` with `localhost:<port>`, `127.0.0.1:<port>` and the hosts from the app's `.env` or soli-proxy (unless the app's `.dev.vars` sets it). It accepts the `--dev` soli-proxy appends, so a Worker app can be a proxy site: `start_script = "soli edge dev . --port $PORT"` — `cf.solisoft.test` serves `examples/cloudflare-worker` that way.
+
 * **edge:** **An app's own `wrangler.toml` is its deploy config.** When the app folder has a `wrangler.toml` next to `app/`, `soli edge build` copies it into the Worker folder on every build (over the copy there), instead of writing a template once and leaving it in a build directory nobody commits. The deploy config — name, account, routes, bindings — can now live in the app's repository. `examples/cloudflare-worker` does this: cf.solisoft.net's config, which lived only in a local build folder, is committed beside the app.
 
 ### Changed

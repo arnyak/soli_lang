@@ -2,3 +2,4 @@ dist/
 db/
 .wrangler/
 node_modules/
+app.infos
