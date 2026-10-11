@@ -40,6 +40,9 @@ struct BackgroundJob {
     /// `None` for legacy fire-and-forget hand-offs, which have no row to
     /// update and therefore no retry.
     record: Option<crate::jobs::JobDoc>,
+    /// The tenant to run under: the row's, or the one the hand-off was made
+    /// under.
+    tenant: Option<crate::db::tenancy::Tenant>,
 }
 
 /// Set once when the pool starts. `enqueue` returns `false` while unset so
@@ -96,6 +99,7 @@ pub fn enqueue(class_name: String, args_json: String) -> bool {
         class_name,
         args_json,
         record: None,
+        tenant: crate::db::tenancy::current(),
     })
 }
 
@@ -103,10 +107,12 @@ pub fn enqueue(class_name: String, args_json: String) -> bool {
 /// the job store, so the row is completed or retried. Returns `false` when the
 /// pool isn't running — the caller must then release its claim.
 pub fn enqueue_with_id(class_name: String, args_json: String, record: crate::jobs::JobDoc) -> bool {
+    let tenant = record.tenant.clone();
     send(BackgroundJob {
         class_name,
         args_json,
         record: Some(record),
+        tenant,
     })
 }
 
@@ -299,8 +305,11 @@ fn worker_recv_loop(
             crate::jobs::engine::mark_started(&record.key);
         }
         // Every exit path below must clear the in-flight marker, or the poller
-        // keeps renewing a lease for work that already finished.
-        let outcome = run_one(&job, interpreter, &runner);
+        // keeps renewing a lease for work that already finished. The job runs
+        // under the tenant it was enqueued under, and the next one starts with
+        // none.
+        let outcome =
+            crate::db::tenancy::scoped(job.tenant.clone(), || run_one(&job, interpreter, &runner));
         if let Some(record) = &job.record {
             crate::jobs::engine::mark_finished(&record.key);
             crate::jobs::engine::report_outcome(record, outcome.as_deref());

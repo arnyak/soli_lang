@@ -159,6 +159,10 @@ pub fn handle(request: EdgeRequest) -> EdgeResponse {
     if let Some(script) = framework_script(&request.method, &request.path) {
         return script;
     }
+    // An isolate serves one request after another: each starts and ends with
+    // no tenant, so one site's database never answers another site's request.
+    crate::db::tenancy::clear();
+    let _tenant_guard = crate::db::tenancy::ClearOnDrop;
 
     let mut headers = hyper::header::HeaderMap::new();
     for (name, value) in &request.headers {
@@ -283,36 +287,39 @@ pub fn run_job(message: &str, attempts: u32) -> serde_json::Value {
             })
         }
     };
-    let error = APP.with(|app| {
-        let mut app = app.borrow_mut();
-        let Some(app) = app.as_mut() else {
-            return Some("the Soli app has not booted".to_string());
-        };
-        let _handler_budget = crate::interpreter::deadline::enter_default();
-        if doc.handler == crate::jobs::WEBHOOK_HANDLER {
-            return crate::jobs::engine::deliver_webhook(&doc).err();
-        }
-        let Some(runner) = app
-            .interpreter
-            .environment
-            .borrow()
-            .get("__soli_run_job_bg")
-        else {
-            return Some("the job runner is not defined".to_string());
-        };
-        let args = match crate::interpreter::value::parse_json(&doc.args.to_string()) {
-            Ok(args) => args,
-            Err(e) => return Some(format!("invalid args JSON: {e}")),
-        };
-        let name = Value::String(doc.handler.clone().into());
-        match app
-            .interpreter
-            .call_value(runner, vec![name, args], Span::default())
-        {
-            Ok(Value::String(error)) => Some(error.to_string()),
-            Ok(_) => None,
-            Err(e) => Some(e.to_string()),
-        }
+    // Under the tenant the job was enqueued under, and none after it.
+    let error = crate::db::tenancy::scoped(doc.tenant.clone(), || {
+        APP.with(|app| {
+            let mut app = app.borrow_mut();
+            let Some(app) = app.as_mut() else {
+                return Some("the Soli app has not booted".to_string());
+            };
+            let _handler_budget = crate::interpreter::deadline::enter_default();
+            if doc.handler == crate::jobs::WEBHOOK_HANDLER {
+                return crate::jobs::engine::deliver_webhook(&doc).err();
+            }
+            let Some(runner) = app
+                .interpreter
+                .environment
+                .borrow()
+                .get("__soli_run_job_bg")
+            else {
+                return Some("the job runner is not defined".to_string());
+            };
+            let args = match crate::interpreter::value::parse_json(&doc.args.to_string()) {
+                Ok(args) => args,
+                Err(e) => return Some(format!("invalid args JSON: {e}")),
+            };
+            let name = Value::String(doc.handler.clone().into());
+            match app
+                .interpreter
+                .call_value(runner, vec![name, args], Span::default())
+            {
+                Ok(Value::String(error)) => Some(error.to_string()),
+                Ok(_) => None,
+                Err(e) => Some(e.to_string()),
+            }
+        })
     });
     let mut report = match crate::jobs::queues::outcome(&doc, attempts, error.clone()) {
         crate::jobs::queues::Outcome::Done => serde_json::json!({ "status": "done" }),

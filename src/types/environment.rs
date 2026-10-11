@@ -155,6 +155,13 @@ impl TypeEnvironment {
             },
         );
 
+        // switch_tenant(key, options?), with_tenant(key, options?) { … } and
+        // current_tenant(): one database per tenant. Any, for the optional
+        // options hash and the block.
+        for name in ["switch_tenant", "with_tenant", "current_tenant"] {
+            self.functions.insert(name.to_string(), Type::Any);
+        }
+
         // grouped(fn() { ... }) -> Any — request-coalescing batch; runs the
         // block and returns its value (the DB reads inside are combined into a
         // single round-trip).

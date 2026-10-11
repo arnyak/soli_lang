@@ -459,6 +459,7 @@ print("Seeded users")</code></pre>
         <li>Without a declaration, a migration runs on <code class="text-cyan-400">--connection</code> if given, else the default connection.</li>
         <li><code class="text-cyan-400">--connection NAME</code> is a <strong class="text-white">filter</strong>: a migration declaring another database is held back (and reported as skipped) rather than applied to the wrong schema.</li>
         <li><code class="text-cyan-400">soli db:migrate status</code> grows a Connection column as soon as one migration declares one.</li>
+        <li>A connection with one database per tenant (<code class="text-cyan-400">{tenant}</code> in its url) is migrated site by site: <code class="text-cyan-400">soli db:migrate up --tenant acme</code> runs only its migrations, on <code class="text-cyan-400">acme</code>'s database; a plain run leaves them out and says so. See <a href="/docs/database/multi-database#tenant-migrations" class="text-cyan-400 hover:underline">one database per tenant</a>.</li>
     </ul>
 
     <h2 id="sql-adapters" class="text-2xl font-bold text-white mb-6 scroll-mt-24">On the SQL adapters</h2>

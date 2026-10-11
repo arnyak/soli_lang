@@ -332,7 +332,11 @@ fn a_refused_batch_falls_back_to_one_statement_each() {
     clear_registry_override();
     // Same answers: every read ran on its own after D1 refused the batch.
     result.expect("the grouped reads failed after a refused batch");
-    assert_eq!(trips, vec![1, 7, 1, 1, 1, 1, 1, 1, 1], "round trips: {trips:?}");
+    assert_eq!(
+        trips,
+        vec![1, 7, 1, 1, 1, 1, 1, 1, 1],
+        "round trips: {trips:?}"
+    );
 }
 
 #[test]
@@ -365,4 +369,58 @@ check("count", total, 3)
     result.expect("the dependent read failed");
     // count + find_by in one batch, then the find on its own.
     assert_eq!(trips, vec![2, 1], "round trips: {trips:?}");
+}
+
+#[test]
+fn a_tenant_template_names_each_sites_binding() {
+    let _lock = registry_test_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let d1 = Arc::new(SqliteAsD1::new());
+    set_executor(d1.clone());
+    let mut registry = d1_registry("d1://MAIN");
+    let mut site = registry.connections["primary"].clone();
+    site.name = "site".to_string();
+    site.url = Some("d1://SITE_{tenant}".to_string());
+    registry.connections.insert("site".to_string(), site);
+    set_registry_for_tests(registry);
+
+    // A name of its own: the model registry is process-wide, and a `Note` on
+    // the `site` connection would follow `models_work_on_d1`'s `Note` there.
+    let result = run(r##"
+class Account < Model
+end
+
+class SiteNote < Model
+  connection "site"
+end
+
+Account.create({"name": "main"})
+switch_tenant("acme")
+SiteNote.create({"title": "for acme"})
+switch_tenant("globex")
+SiteNote.create({"title": "for globex"})
+switch_tenant(nil)
+"##);
+    solilang::db::tenancy::clear();
+    clear_registry_override();
+    result.expect("the Soli script failed against D1");
+
+    let seen = d1.seen.lock().unwrap();
+    let bindings: std::collections::BTreeSet<_> = seen.iter().map(|(b, _)| b.as_str()).collect();
+    assert_eq!(
+        bindings,
+        ["MAIN", "SITE_acme", "SITE_globex"].into_iter().collect(),
+        "{seen:?}"
+    );
+    // Each site note went to its site's binding, the account to the main one.
+    assert!(seen
+        .iter()
+        .any(|(b, sql)| b == "SITE_acme" && sql.contains("INSERT INTO \"site_notes\"")));
+    assert!(seen
+        .iter()
+        .any(|(b, sql)| b == "MAIN" && sql.contains("INSERT INTO \"accounts\"")));
+    assert!(!seen
+        .iter()
+        .any(|(b, sql)| b == "MAIN" && sql.contains("\"site_notes\"")));
 }

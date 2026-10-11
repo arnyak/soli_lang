@@ -98,6 +98,7 @@ static REGISTRY_OVERRIDE: TenantCell<Arc<ConnectionRegistry>> = TenantCell::new(
 
 /// Install a registry for tests (or reload).
 pub fn set_registry_for_tests(reg: ConnectionRegistry) {
+    super::tenancy::note_registry(&reg);
     REGISTRY_OVERRIDE.set(Arc::new(reg));
 }
 
@@ -122,16 +123,19 @@ pub fn registry() -> Arc<ConnectionRegistry> {
         return r;
     }
     REGISTRY.get_or_init(|| {
-        Arc::new(load_registry(None).unwrap_or_else(|e| {
+        let reg = load_registry(None).unwrap_or_else(|e| {
             eprintln!("[WARN] database config: {}", e.message());
             env_only_primary().expect("solidb default always works")
-        }))
+        });
+        super::tenancy::note_registry(&reg);
+        Arc::new(reg)
     })
 }
 
 /// Force-load registry from an app path (e.g. serve boot). Safe to call once.
 pub fn init_from_app_path(app: &Path) -> Result<ConnectionRegistry, DbError> {
     let reg = load_registry(Some(app))?;
+    super::tenancy::note_registry(&reg);
     // Prefer filling the empty slot; fall back to the override when something
     // already loaded a registry for this application (a test, or an early
     // access before boot).
@@ -413,19 +417,36 @@ pub fn active_spec() -> Result<ConnectionSpec, String> {
 }
 
 /// Run `f` against the active (or default) connection's spec, without copying
-/// it. Resolves exactly as `active_spec` does.
+/// it. Resolves exactly as `active_spec` does. A connection with one database
+/// per tenant resolves to the current tenant's (see [`super::tenancy`]), and
+/// fails when no tenant is chosen.
 pub fn with_active_spec<R>(f: impl FnOnce(&ConnectionSpec) -> R) -> Result<R, String> {
     let reg = registry();
     // The thread-local borrow ends before `f` runs, so `f` may itself switch
     // connections with `with_connection`.
     let spec = ACTIVE.with(|c| reg.resolve(c.borrow().as_deref()))?;
+    if super::tenancy::is_template(spec) {
+        let resolved = super::tenancy::resolve(spec)?;
+        return Ok(f(&resolved));
+    }
+    Ok(f(spec))
+}
+
+/// [`with_active_spec`] without resolving a tenant template: the connection
+/// as `database.toml` declares it, `{tenant}` and all.
+pub fn with_template_spec<R>(f: impl FnOnce(&ConnectionSpec) -> R) -> Result<R, String> {
+    let reg = registry();
+    let spec = ACTIVE.with(|c| reg.resolve(c.borrow().as_deref()))?;
     Ok(f(spec))
 }
 
 /// Adapter of the active (or default) connection — the cheap question most
-/// per-query dispatch (`is_sql`, `route_sql!`) actually asks.
+/// per-query dispatch (`is_sql`, `route_sql!`) actually asks. Answered from
+/// the declaration, so a tenant connection is still known to be SQL (or
+/// SoliDB) before a tenant is chosen, and its queries fail with the reason
+/// rather than going to another backend.
 pub fn active_adapter() -> Result<Adapter, String> {
-    with_active_spec(|spec| spec.adapter)
+    with_template_spec(|spec| spec.adapter)
 }
 
 #[cfg(test)]

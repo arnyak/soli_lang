@@ -1879,6 +1879,9 @@ impl Model {
         let mut native_methods: HashMap<String, Rc<NativeFunction>> = HashMap::new();
         super::register_instance::register(&mut native_methods);
 
+        let native_static_methods = on_model_connection(native_static_methods);
+        let native_methods = on_model_connection(native_methods);
+
         let model_class = Class {
             name: "Model".to_string(),
             superclass: None,
@@ -1894,6 +1897,41 @@ impl Model {
         };
         env.define("Model".to_string(), Value::Class(Rc::new(model_class)));
     }
+}
+
+/// Run each ORM method on the connection its model declares (`connection
+/// "site"`). The SQL paths pick a model's connection where they need it, but
+/// the SoliDB ones read the database from the active connection — so a model
+/// on a SoliDB connection with one database per tenant reached the main
+/// database instead of the tenant's. The model is the first argument: the
+/// class for a static method, the instance for an instance one. Only while a
+/// connection somewhere is a tenant template; otherwise one atomic load.
+fn on_model_connection(
+    methods: HashMap<String, Rc<NativeFunction>>,
+) -> HashMap<String, Rc<NativeFunction>> {
+    methods
+        .into_iter()
+        .map(|(name, native)| {
+            let inner = native.func.clone();
+            let wrapped = NativeFunction::new_with_auto(
+                native.name.clone(),
+                native.arity,
+                native.is_auto_invocable,
+                move |args| {
+                    if !crate::db::tenancy::any_templates() {
+                        return inner(args);
+                    }
+                    let class_name = match args.first() {
+                        Some(Value::Class(class)) => class.name.clone(),
+                        Some(Value::Instance(instance)) => instance.borrow().class.name.clone(),
+                        _ => return inner(args),
+                    };
+                    super::registry::run_on_model_connection(&class_name, || inner(args))
+                },
+            );
+            (name, Rc::new(wrapped))
+        })
+        .collect()
 }
 
 /// Shared body for `Model#increment` / `Model#decrement`. Resolves the

@@ -2832,6 +2832,9 @@ fn handle_websocket_event(
     // worker's query/HTTP/span logs only ever filled (see the LiveView/EUI
     // event path below for the measured cost).
     request_scope::forget_request_logs(crate::interpreter::builtins::template::is_dev_mode());
+    // Nor does it start under the tenant of whatever this worker ran before;
+    // a handler that serves one site's data chooses it (`switch_tenant`).
+    crate::db::tenancy::clear();
 
     // Clone connection_id for use in async spawns
     let connection_id = data.connection_id;
@@ -3477,6 +3480,8 @@ fn handle_liveview_event(
     // keeping anything. Measured on herdr-eui: 0.85 MB/s with `--dev`,
     // 0.16 MB/s without, on the same page.
     request_scope::forget_request_logs(crate::interpreter::builtins::template::is_dev_mode());
+    // No tenant inherited from the worker's previous request (see above).
+    crate::db::tenancy::clear();
 
     // Get the LiveView instance
     let mut instance = live_registry()
@@ -5989,6 +5994,9 @@ fn handle_request(
     // Bound here and not inside `install`: a guard built and dropped in there
     // would restore the default locale before the handler ever ran.
     let _locale_guard = LocaleGuard;
+    // And the tenant this request chose ends with it, so whatever this worker
+    // runs next — a socket event, a job handed inline — starts with none.
+    let _tenant_guard = crate::db::tenancy::ClearOnDrop;
 
     // Per-form CSRF token verification. The hyper layer's Origin/Referer
     // gate ran before the body was read; this second gate runs where the

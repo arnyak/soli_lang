@@ -40,6 +40,7 @@ pub mod sql_columns_compile;
 pub mod sql_compile;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
+pub mod tenancy;
 #[cfg(any(feature = "postgres", feature = "mysql"))]
 pub mod tls;
 pub mod trace;
@@ -192,7 +193,11 @@ pub fn ensure_runtime_ready() -> Result<(), DbError> {
                 .solidb_host
                 .as_deref()
                 .is_some_and(|h| h.trim_end_matches('/') != env_host.trim_end_matches('/'));
-            let db_mismatch = spec.solidb_database.as_deref().is_some_and(|d| d != env_db);
+            // A tenant template names a database per tenant: routed per
+            // request (`tenancy::active_solidb_database`), so only its host
+            // has to match.
+            let db_mismatch = !tenancy::is_template(spec)
+                && spec.solidb_database.as_deref().is_some_and(|d| d != env_db);
             if host_mismatch || db_mismatch {
                 return Err(DbError::Backend(format!(
                     "connection {name:?}: per-connection SoliDB hosts/databases are not \
@@ -213,6 +218,11 @@ pub fn ensure_runtime_ready() -> Result<(), DbError> {
             return Err(DbError::MissingDatabaseUrl {
                 adapter: spec.adapter,
             });
+        }
+        // One database per tenant: there is nothing to connect to before a
+        // request chooses one.
+        if tenancy::is_template(spec) {
+            continue;
         }
         with_connection(name, || sql::ensure_connected().map_err(DbError::Backend))?;
     }

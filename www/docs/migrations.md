@@ -61,6 +61,10 @@ end
   the wrong schema.
 - `soli db:migrate status` shows a Connection column as soon as one migration
   declares one.
+- A connection with one database per tenant (`{tenant}` in its url) is
+  migrated site by site: `soli db:migrate up --tenant acme` runs only its
+  migrations, on `acme`'s database; a plain run leaves them out and says so.
+  See [One database per tenant](multi-database.md#creating-and-migrating-a-sites-database).
 
 ## CLI Commands
 

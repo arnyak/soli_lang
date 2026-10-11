@@ -111,6 +111,10 @@ pub(super) fn install(data: &RequestData) -> Scope {
     // Drop the previous request's taint marks before this one records its own.
     crate::interpreter::taint::clear_request_values();
 
+    // No tenant until this request chooses one (`switch_tenant`): the worker
+    // may last have served another site, whose database must not answer here.
+    crate::db::tenancy::clear();
+
     // Parse the Cookie header ONCE: the same parse feeds both the session-ID
     // resolution here and `req["cookies"]` in the request hash below (the
     // header used to be scanned twice per request).

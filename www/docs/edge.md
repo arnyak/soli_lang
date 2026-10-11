@@ -240,6 +240,12 @@ What D1 does not offer:
 - **The job table and cron**: on the edge, jobs go through
   [Cloudflare Queues](#background-jobs-cloudflare-queues) instead.
 
+One D1 database per site: a connection `url = "d1://SITE_{tenant}"` sends each
+tenant's queries to its own binding (`switch_tenant("acme")` → `SITE_acme`),
+declared in `wrangler.toml` with one `[[d1_databases]]` block per site. Bindings
+are fixed at deploy, so a new site means a new binding and a redeploy — see
+[One database per tenant](multi-database.md#one-database-per-tenant).
+
 ### SoliDB
 
 Over SoliDB's HTTP API. The Worker must be able to reach `SOLIDB_HOST`: a

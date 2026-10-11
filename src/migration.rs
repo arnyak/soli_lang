@@ -134,8 +134,11 @@ impl DbConfig {
         // its scheme intact. The previous strip + reconnect made TLS
         // impossible — `connect` would re-add `http://` regardless of
         // the operator's https:// configuration.
-        let database =
-            crate::platform::env::var("SOLIDB_DATABASE").unwrap_or_else(|_| "default".to_string());
+        // `soli db:migrate --tenant KEY` on a SoliDB connection with one
+        // database per tenant migrates that tenant's.
+        let database = crate::db::tenancy::active_solidb_database().unwrap_or_else(|| {
+            crate::platform::env::var("SOLIDB_DATABASE").unwrap_or_else(|_| "default".to_string())
+        });
         let username = crate::platform::env::var("SOLIDB_USERNAME").ok();
         let password = crate::platform::env::var("SOLIDB_PASSWORD").ok();
 
@@ -387,6 +390,24 @@ impl MigrationRunner {
             (Some(filter), Some(declared)) => filter != declared,
             _ => false,
         }
+    }
+
+    /// Whether `migration` belongs on the other side of the tenant line. A
+    /// connection with one database per tenant (`{tenant}` in its url) is
+    /// migrated tenant by tenant: with `--tenant KEY` only its migrations run,
+    /// on that tenant's database, and without one they are left for such a run.
+    fn other_tenancy(&self, migration: &Migration) -> bool {
+        let target = self.target_of(migration);
+        let per_tenant = crate::db::registry()
+            .resolve(target.as_deref())
+            .map(crate::db::tenancy::is_template)
+            .unwrap_or(false);
+        per_tenant != crate::db::tenancy::current().is_some()
+    }
+
+    /// Left out of this run, by `--connection` or by the tenant line.
+    fn excluded(&self, migration: &Migration) -> bool {
+        self.filtered_out(migration) || self.other_tenancy(migration)
     }
 
     /// Run `f` against `target`, or the ambient connection when there is none.
@@ -882,10 +903,15 @@ let db = MigrationDb();
         let mut cache: HashMap<Option<String>, Vec<String>> = HashMap::new();
         let mut applied_migrations = Vec::new();
         let mut skipped = 0usize;
+        let mut other_tenancy = 0usize;
 
         for migration in &migrations {
             if self.filtered_out(migration) {
                 skipped += 1;
+                continue;
+            }
+            if self.other_tenancy(migration) {
+                other_tenancy += 1;
                 continue;
             }
             let target = self.target_of(migration);
@@ -925,14 +951,17 @@ let db = MigrationDb();
         if applied_migrations.is_empty() {
             return Ok(MigrationResult {
                 applied: vec![],
-                message: skip_note("No pending migrations", skipped),
+                message: tenancy_note(&skip_note("No pending migrations", skipped), other_tenancy),
             });
         }
 
         Ok(MigrationResult {
-            message: skip_note(
-                &format!("Applied {} migration(s)", applied_migrations.len()),
-                skipped,
+            message: tenancy_note(
+                &skip_note(
+                    &format!("Applied {} migration(s)", applied_migrations.len()),
+                    skipped,
+                ),
+                other_tenancy,
             ),
             applied: applied_migrations,
         })
@@ -947,7 +976,7 @@ let db = MigrationDb();
         // of whichever connection each one targets.
         let mut newest: Option<&Migration> = None;
         for migration in &migrations {
-            if self.filtered_out(migration) {
+            if self.excluded(migration) {
                 continue;
             }
             let target = self.target_of(migration);
@@ -1074,7 +1103,7 @@ let db = MigrationDb();
 
         let mut statuses: Vec<MigrationStatusEntry> = Vec::with_capacity(migrations.len());
         for m in &migrations {
-            if self.filtered_out(m) {
+            if self.excluded(m) {
                 continue;
             }
             let target = self.target_of(m);
@@ -1126,6 +1155,19 @@ fn skip_note(message: &str, skipped: usize) -> String {
         return message.to_string();
     }
     format!("{message} ({skipped} skipped — declared another connection)")
+}
+
+/// Append what the tenant line held back: tenant migrations on a plain run,
+/// main-database ones on a `--tenant` run.
+fn tenancy_note(message: &str, held_back: usize) -> String {
+    if held_back == 0 {
+        return message.to_string();
+    }
+    if crate::db::tenancy::current().is_some() {
+        format!("{message} ({held_back} skipped — main database; run without --tenant)")
+    } else {
+        format!("{message} ({held_back} skipped — one database per tenant; run with --tenant KEY)")
+    }
 }
 
 /// Generate a new migration file

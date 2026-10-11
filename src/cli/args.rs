@@ -171,6 +171,9 @@ pub enum Command {
         folder: String,
         /// Named connection from `config/database.toml` (SQL secondaries).
         connection: Option<String>,
+        /// `--tenant KEY`: migrate that tenant's database (connections with
+        /// `{tenant}` in their url).
+        tenant: Option<String>,
     },
     DbSeed {
         action: DbSeedAction,
@@ -189,19 +192,27 @@ pub enum Command {
     DbCreate {
         folder: String,
         connection: Option<String>,
+        /// `--tenant KEY`: that tenant's database.
+        tenant: Option<String>,
     },
     DbDrop {
         folder: String,
         connection: Option<String>,
+        /// `--tenant KEY`: that tenant's database.
+        tenant: Option<String>,
     },
     /// `soli db:schema:dump [folder]` / `soli db:schema:load [folder]`
     DbSchemaDump {
         folder: String,
         connection: Option<String>,
+        /// `--tenant KEY`: that tenant's database.
+        tenant: Option<String>,
     },
     DbSchemaLoad {
         folder: String,
         connection: Option<String>,
+        /// `--tenant KEY`: that tenant's database.
+        tenant: Option<String>,
     },
     /// `soli db:indexes [folder]` — create any missing indexes declared with
     /// the class-body DSL (`index`, `vector_index`, `fulltext_index`,
@@ -587,14 +598,16 @@ pub fn print_usage() {
     eprintln!("  soli env up [branch] [--server <name>] [--no-seed]");
     eprintln!("  soli env down [branch] [--server <name>] [--keep-data]");
     eprintln!("  soli env <list|url> [branch] [--server <name>]");
-    eprintln!("  soli db:schema:dump [--connection NAME] [folder]");
-    eprintln!("  soli db:schema:load [--connection NAME] [folder]");
-    eprintln!("  soli db:migrate <up|down|redo|reset|status> [--connection NAME] [folder]");
+    eprintln!("  soli db:schema:dump [--connection NAME] [--tenant KEY] [folder]");
+    eprintln!("  soli db:schema:load [--connection NAME] [--tenant KEY] [folder]");
+    eprintln!(
+        "  soli db:migrate <up|down|redo|reset|status> [--connection NAME] [--tenant KEY] [folder]"
+    );
     eprintln!("  soli db:migrate generate <name> [folder]");
     eprintln!("  soli db:seed [folder] [file.sl]");
     eprintln!("  soli db:seed generate <name> [folder]");
-    eprintln!("  soli db:create [folder] [--connection NAME]");
-    eprintln!("  soli db:drop [folder] [--connection NAME]");
+    eprintln!("  soli db:create [folder] [--connection NAME] [--tenant KEY]");
+    eprintln!("  soli db:drop [folder] [--connection NAME] [--tenant KEY]");
     eprintln!("  soli db:indexes [folder]");
     eprintln!("  soli routes [folder] [-g PATTERN] [--json]");
     eprintln!("  soli graph build [folder] [--no-embed] [--database NAME] [--dry-run] [--fresh]");
@@ -770,6 +783,7 @@ pub fn print_usage() {
     eprintln!("  soli db:migrate reset         Rollback everything, then migrate up");
     eprintln!("  soli db:migrate status        Show migration status");
     eprintln!("  soli db:migrate up --connection legacy  Migrate a named SQL connection");
+    eprintln!("  soli db:migrate up --tenant acme      Migrate one tenant's database");
     eprintln!("  soli db:migrate generate create_users  Generate new migration");
     eprintln!("  soli db:seed                  Run db/seeds.sl and db/seeds/*.sl");
     eprintln!("  soli db:seed db/seeds/demo.sl  Run a single seed file");
@@ -1203,6 +1217,7 @@ pub fn parse_args() -> Options {
                 };
                 i += 1;
                 let mut connection: Option<String> = None;
+                let mut tenant: Option<String> = None;
                 let mut folder = ".".to_string();
                 let mut action = action;
                 while i < args.len() {
@@ -1241,6 +1256,19 @@ pub fn parse_args() -> Options {
                             connection = Some(flag["--connection=".len()..].to_string());
                             i += 1;
                         }
+                        "--tenant" => {
+                            i += 1;
+                            if i >= args.len() {
+                                eprintln!("db:migrate --tenant requires a tenant key");
+                                process::exit(64);
+                            }
+                            tenant = Some(args[i].clone());
+                            i += 1;
+                        }
+                        flag if flag.starts_with("--tenant=") => {
+                            tenant = Some(flag["--tenant=".len()..].to_string());
+                            i += 1;
+                        }
                         other if other.starts_with('-') => {
                             eprintln!("Unknown db:migrate flag: {other}");
                             process::exit(64);
@@ -1255,6 +1283,7 @@ pub fn parse_args() -> Options {
                     action,
                     folder,
                     connection,
+                    tenant,
                 };
                 return options;
             }
@@ -1263,6 +1292,7 @@ pub fn parse_args() -> Options {
                 i += 1;
                 let mut folder = ".".to_string();
                 let mut connection = None;
+                let mut tenant: Option<String> = None;
                 let cmd = if dropping { "db:drop" } else { "db:create" };
                 while i < args.len() {
                     match args[i].as_str() {
@@ -1277,6 +1307,19 @@ pub fn parse_args() -> Options {
                         }
                         flag if flag.starts_with("--connection=") => {
                             connection = Some(flag["--connection=".len()..].to_string());
+                            i += 1;
+                        }
+                        "--tenant" => {
+                            i += 1;
+                            if i >= args.len() {
+                                eprintln!("{cmd} --tenant requires a tenant key");
+                                process::exit(64);
+                            }
+                            tenant = Some(args[i].clone());
+                            i += 1;
+                        }
+                        flag if flag.starts_with("--tenant=") => {
+                            tenant = Some(flag["--tenant=".len()..].to_string());
                             i += 1;
                         }
                         // Never fall through on an unrecognised flag. A typo'd
@@ -1294,9 +1337,17 @@ pub fn parse_args() -> Options {
                     }
                 }
                 options.command = if dropping {
-                    Command::DbDrop { folder, connection }
+                    Command::DbDrop {
+                        folder,
+                        connection,
+                        tenant,
+                    }
                 } else {
-                    Command::DbCreate { folder, connection }
+                    Command::DbCreate {
+                        folder,
+                        connection,
+                        tenant,
+                    }
                 };
                 return options;
             }
@@ -1305,6 +1356,7 @@ pub fn parse_args() -> Options {
                 i += 1;
                 let mut folder = ".".to_string();
                 let mut connection = None;
+                let mut tenant: Option<String> = None;
                 let cmd = if loading {
                     "db:schema:load"
                 } else {
@@ -1325,6 +1377,19 @@ pub fn parse_args() -> Options {
                             connection = Some(flag["--connection=".len()..].to_string());
                             i += 1;
                         }
+                        "--tenant" => {
+                            i += 1;
+                            if i >= args.len() {
+                                eprintln!("{cmd} --tenant requires a tenant key");
+                                process::exit(64);
+                            }
+                            tenant = Some(args[i].clone());
+                            i += 1;
+                        }
+                        flag if flag.starts_with("--tenant=") => {
+                            tenant = Some(flag["--tenant=".len()..].to_string());
+                            i += 1;
+                        }
                         // Never fall through on an unrecognised flag. A typo'd
                         // or value-less `--connection` used to leave
                         // `connection` as None and silently act on the DEFAULT
@@ -1340,9 +1405,17 @@ pub fn parse_args() -> Options {
                     }
                 }
                 options.command = if loading {
-                    Command::DbSchemaLoad { folder, connection }
+                    Command::DbSchemaLoad {
+                        folder,
+                        connection,
+                        tenant,
+                    }
                 } else {
-                    Command::DbSchemaDump { folder, connection }
+                    Command::DbSchemaDump {
+                        folder,
+                        connection,
+                        tenant,
+                    }
                 };
                 return options;
             }

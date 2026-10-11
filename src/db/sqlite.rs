@@ -63,6 +63,10 @@ type SqConn = Pooled<SqManager>;
 
 static POOLS: OnceLock<Mutex<HashMap<String, SqPool>>> = OnceLock::new();
 
+/// The tenant pools in `POOLS`, oldest first, so a server with many tenants
+/// does not keep a pool open for every one it ever served.
+static TENANT_POOLS: super::tenancy::PoolBudget = super::tenancy::PoolBudget::new();
+
 struct TxState {
     conn: SqConn,
     nest: u32,
@@ -357,7 +361,8 @@ thread_local! {
     /// The pool this thread handed out last, with the connection name and url
     /// it is cached under in `POOLS` — the same shortcut the postgres and mysql
     /// adapters take, so a query does not lock the global map and `format!` its
-    /// key. `POOLS` never evicts, so an entry here never outlives its original.
+    /// key. A tenant pool `POOLS` has closed stays usable here until this
+    /// thread asks for another one.
     static LAST_POOL: RefCell<Option<(String, String, SqPool)>> = const { RefCell::new(None) };
 }
 
@@ -418,7 +423,12 @@ fn pool_for_active_uncached() -> Result<SqPool, String> {
             if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
                 let _ = std::fs::create_dir_all(parent);
             }
-            spawn_checkpointer(path.clone());
+            // The checkpointer is a thread per file for the life of the
+            // process: one per tenant would grow without bound. A tenant
+            // database relies on SQLite's own automatic checkpoints.
+            if !super::tenancy::active_is_template() {
+                spawn_checkpointer(path.clone());
+            }
             spec.pool_size.unwrap_or(5).max(1)
         }
         // Each memory connection would be its OWN empty database, so the pool
@@ -433,6 +443,13 @@ fn pool_for_active_uncached() -> Result<SqPool, String> {
         pool.get()
             .map_err(|e| format!("sqlite pool ({name}): {e}"))?,
     );
+    // A pool per tenant database, within a budget (`tenancy::PoolBudget`): the
+    // oldest tenant pool closes when one more would pass it.
+    if super::tenancy::active_is_template() {
+        for closed in TENANT_POOLS.admit(&cache_key) {
+            map.remove(&closed);
+        }
+    }
     map.insert(cache_key, pool.clone());
     remember(&pool);
     Ok(pool)
@@ -1127,9 +1144,11 @@ pub fn create_or_drop_database(drop: bool) -> Result<String, String> {
     if drop {
         // Drop the pool first: deleting a file out from under open connections
         // leaves them writing to an unlinked inode.
+        // Keyed by name and url, as `pool_for_active_uncached` stores it.
         if let Ok(mut map) = pools().lock() {
-            map.remove(&active_connection_name());
+            map.remove(&format!("{}\u{1f}{url}", active_connection_name()));
         }
+        LAST_POOL.with(|last| *last.borrow_mut() = None);
         let mut removed = false;
         for suffix in ["", "-wal", "-shm"] {
             let target = if suffix.is_empty() {

@@ -452,6 +452,130 @@ end
 LegacyOrder.includes("user").all
 ```
 
+## One database per tenant
+
+A SaaS keeps its accounts and sites in one database and each site's data in a
+database of its own. In Soli that is two connections: the main one, and one
+whose `url` — or, on SoliDB, `database` — holds `{tenant}`:
+
+```toml
+# config/database.toml
+default = "primary"
+
+[connections.primary]            # accounts, sites, jobs, sessions
+adapter = "postgres"
+url = "${DATABASE_URL}"
+
+[connections.site]               # one database per site
+adapter = "postgres"
+url = "postgres://app@db.internal/site_{tenant}"
+```
+
+The same works on every adapter: `url = "mysql://…/site_{tenant}"`,
+`url = "sqlite://db/sites/{tenant}.sqlite3"` (one file per site),
+`database = "site_{tenant}"` on SoliDB, `url = "d1://SITE_{tenant}"` on
+[Cloudflare D1](edge.md#cloudflare-d1) (one binding per site).
+
+The models of the site data name the connection; the others stay on the main
+database:
+
+```soli
+# app/models/site.sl — main database
+class Site < Model
+end
+
+# app/models/post.sl — the current site's database
+class Post < Model
+  connection "site"
+end
+```
+
+A request chooses its site, usually in a middleware, from the host or a path
+segment:
+
+```soli
+# app/middleware/site.sl
+# order: 10
+def choose_site(req)
+  site = Site.find_by("host", req["headers"]["host"])
+  halt(404, "Unknown site") if site.nil?
+
+  switch_tenant(site.db_key)
+  req
+end
+```
+
+From then on every query on `site` goes to `site_<db_key>` — `Post.all`,
+`Post.create(…)`, query builders, `grouped`, transactions — and the main
+database answers the rest. The functions:
+
+| Call | Does |
+|------|------|
+| `switch_tenant(key)` | The tenant for the rest of the request (or script). `switch_tenant(nil)` clears it. |
+| `switch_tenant(key, {"url": u})` | A site whose data lives elsewhere — another server, another credential. `{"database": name}` on SoliDB. The URL replaces the template for that site. |
+| `with_tenant(key) do … end` | A block under that tenant (an admin page reading several sites, a script, a console); the tenant before comes back afterwards, also when the block raises. Takes the same options hash. |
+| `current_tenant()` | The current key, or `nil`. |
+
+What to know:
+
+- **The key goes into URLs, file names and database names**, so it is held to
+  1–63 letters, digits, `_` and `-`, starting with a letter or digit. Anything
+  else raises — a key taken from a host name cannot reach another directory or
+  database. Store a key on the site row rather than using the host itself.
+- **No tenant, no data.** A query on a tenant connection before
+  `switch_tenant` fails with an error saying so; it never falls back to another
+  site's database. Each request starts and ends with no tenant, so a worker
+  that last served one site cannot answer the next request with its data —
+  WebSocket and LiveView events start with none too.
+- **Jobs run under the tenant they were enqueued under.** `perform_later`
+  inside a request for `acme` runs against `acme`'s database, with the explicit
+  URL if the site had one (it is stored in the job row, in the main database).
+  Cron jobs have no tenant: loop over the sites with `with_tenant`.
+- **Keep the default connection the main database.** Jobs, sessions and the
+  error tracker live on the default connection; a default connection with
+  `{tenant}` in it would scatter them across sites.
+- **Pools.** Each site's database gets its own pool. Soli keeps at most
+  `SOLI_TENANT_POOLS` (32) site pools open per adapter and closes the oldest
+  when one more is needed; that site's next request reopens it. Set `pool` on
+  the `site` connection to size each one.
+- **SQLite**: site files rely on SQLite's automatic checkpoints, without the
+  background checkpointer the main file gets (one thread per file would not
+  scale to thousands of sites).
+- **SoliDB** creates a site's database on its first write.
+- **Column-aware models** (`table "orders"`) on a tenant connection are
+  inspected on first use rather than at boot, and the schema read for the first
+  site serves the others: every site runs the same migrations.
+- `switch_tenant` inside a transaction raises (the transaction holds the
+  current site's database), and reads a `grouped` block deferred run before the
+  tenant changes.
+
+### Creating and migrating a site's database
+
+A site's database is created explicitly — when the site is created, not on its
+first request:
+
+```bash
+soli db:create --tenant acme          # CREATE DATABASE site_acme (SQLite: the file)
+soli db:migrate up --tenant acme      # the migrations that declare connection "site"
+soli db:migrate status --tenant acme
+soli db:drop --tenant acme
+```
+
+Migrations name their connection (`connection "site"` as their first line). A
+plain `soli db:migrate up` runs the main database's and reports the site ones
+it left for `--tenant`; `--tenant KEY` runs only the site ones, on that site's
+database, which keeps its own `_migrations` table. Migrating every site is a
+loop over the keys:
+
+```bash
+for key in $(psql "$DATABASE_URL" -tAc "SELECT doc->>'db_key' FROM sites"); do
+  soli db:migrate up --tenant "$key"
+done
+```
+
+`--tenant` is refused on a connection without `{tenant}`, so it cannot act on
+the main database by mistake.
+
 ## Migrations and multi-DB
 
 - Default migrate target is the **default** connection (env / `database.toml` `default`).
@@ -465,10 +589,12 @@ soli db:migrate down --connection legacy
 
 - Prefer documenting which connection a migration belongs to in the filename/comment when multi-DB is in use.
 - SQL secondaries are fully supported. SoliDB still uses process env host/credentials for the SoliDB HTTP client today.
+- A connection with one database per tenant is migrated with `--tenant KEY` —
+  see [Creating and migrating a site's database](#creating-and-migrating-a-sites-database).
 
 ## Not yet / limitations
 
-- **Per-connection SoliDB hosts:** registry stores host fields; full multi-host SoliDB routing is still completing — prefer one SoliDB endpoint plus SQL secondaries for now. A mismatch with the env values is rejected at boot.
+- **Per-connection SoliDB hosts:** registry stores host fields; full multi-host SoliDB routing is still completing — prefer one SoliDB endpoint plus SQL secondaries for now. A mismatch with the env values is rejected at boot. The exception is a SoliDB connection with one database per tenant (`database = "site_{tenant}"`): its database follows the tenant, on the `SOLIDB_HOST` server.
 - **Column-aware models:** composite primary keys are still refused at boot.
   `encrypts` (text columns) and STI (string `type` column) are supported —
   see [Column-aware models](#column-aware-models-existing-databases).

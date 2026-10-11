@@ -237,6 +237,13 @@ pub fn force(cell: &Rc<RefCell<DeferredCell>>) -> Result<Value, String> {
     Ok(cell.borrow().resolved.clone().unwrap_or(Value::Null))
 }
 
+/// Run the reads collected so far, now. A no-op outside a batch or with
+/// nothing pending. Used before the tenant changes: a deferred read belongs to
+/// the tenant it was made under.
+pub fn flush() -> Result<(), String> {
+    flush_inner()
+}
+
 /// Best-effort flush used by the `Value` formatting/comparison helpers, which
 /// have no error channel. Errors are swallowed here — the real read sites use
 /// [`force`], which surfaces them.

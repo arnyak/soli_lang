@@ -614,6 +614,109 @@ end
         </div>
     </div>
 
+    <h2 id="tenants" class="text-2xl font-bold text-white mb-6 scroll-mt-24">One database per tenant</h2>
+    <p class="text-gray-400 mb-4">
+        A SaaS keeps its accounts and sites in one database and each site's data in a database of its own. In Soli that is two connections: the main one, and one whose <code>url</code> &mdash; or, on SoliDB, <code>database</code> &mdash; holds <code class="text-cyan-400">{tenant}</code>:
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-toml text-sm"># config/database.toml
+default = "primary"
+
+[connections.primary]            # accounts, sites, jobs, sessions
+adapter = "postgres"
+url = "${DATABASE_URL}"
+
+[connections.site]               # one database per site
+adapter = "postgres"
+url = "postgres://app@db.internal/site_{tenant}"</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-4">
+        The same works on every adapter: <code>mysql://…/site_{tenant}</code>, <code>sqlite://db/sites/{tenant}.sqlite3</code> (one file per site), <code>database = "site_{tenant}"</code> on SoliDB, <code>d1://SITE_{tenant}</code> on <a href="/docs/development-tools/edge#d1" class="text-cyan-400 hover:underline">Cloudflare D1</a> (one binding per site). The models of the site data name the connection; the others stay on the main database:
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-soli text-sm"># app/models/site.sl — main database
+class Site &lt; Model
+end
+
+# app/models/post.sl — the current site's database
+class Post &lt; Model
+  connection "site"
+end</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-4">A request chooses its site, usually in a middleware, from the host or a path segment:</p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-soli text-sm"># app/middleware/site.sl
+# order: 10
+def choose_site(req)
+  site = Site.find_by("host", req["headers"]["host"])
+  halt(404, "Unknown site") if site.nil?
+
+  switch_tenant(site.db_key)
+  req
+end</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-4">
+        From then on every query on <code>site</code> goes to <code>site_&lt;db_key&gt;</code> &mdash; <code>Post.all</code>, <code>Post.create(…)</code>, query builders, <code>grouped</code>, transactions &mdash; and the main database answers the rest.
+    </p>
+    <div class="overflow-x-auto mb-8">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-white/10">
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Call</th>
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Does</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-gray-400">
+                <tr>
+                    <td class="py-3 px-4"><code>switch_tenant(key)</code></td>
+                    <td class="py-3 px-4">The tenant for the rest of the request (or script). <code>switch_tenant(nil)</code> clears it.</td>
+                </tr>
+                <tr>
+                    <td class="py-3 px-4"><code>switch_tenant(key, {"url": u})</code></td>
+                    <td class="py-3 px-4">A site whose data lives elsewhere &mdash; another server, another credential. <code>{"database": name}</code> on SoliDB. The URL replaces the template for that site.</td>
+                </tr>
+                <tr>
+                    <td class="py-3 px-4"><code>with_tenant(key) do … end</code></td>
+                    <td class="py-3 px-4">A block under that tenant (an admin page reading several sites, a script, a console); the tenant before comes back afterwards, also when the block raises. Takes the same options hash.</td>
+                </tr>
+                <tr>
+                    <td class="py-3 px-4"><code>current_tenant()</code></td>
+                    <td class="py-3 px-4">The current key, or <code>nil</code>.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <ul class="list-disc list-inside space-y-2 text-gray-400 mb-8">
+        <li><strong class="text-white">The key goes into URLs, file names and database names</strong>, so it is held to 1&ndash;63 letters, digits, <code>_</code> and <code>-</code>, starting with a letter or digit. Anything else raises &mdash; a key taken from a host name cannot reach another directory or database. Store a key on the site row rather than using the host itself.</li>
+        <li><strong class="text-white">No tenant, no data.</strong> A query on a tenant connection before <code>switch_tenant</code> fails with an error saying so; it never falls back to another site's database. Each request starts and ends with no tenant, so a worker that last served one site cannot answer the next request with its data &mdash; WebSocket and LiveView events start with none too.</li>
+        <li><strong class="text-white">Jobs run under the tenant they were enqueued under</strong>, with the explicit URL if the site had one (stored in the job row, in the main database). Cron jobs have no tenant: loop over the sites with <code>with_tenant</code>.</li>
+        <li><strong class="text-white">Keep the default connection the main database.</strong> Jobs, sessions and the error tracker live on the default connection; a default connection with <code>{tenant}</code> in it would scatter them across sites.</li>
+        <li><strong class="text-white">Pools.</strong> Each site's database gets its own pool. Soli keeps at most <code>SOLI_TENANT_POOLS</code> (32) site pools open per adapter and closes the oldest when one more is needed; that site's next request reopens it. Set <code>pool</code> on the <code>site</code> connection to size each one.</li>
+        <li><strong class="text-white">SQLite</strong> site files rely on SQLite's automatic checkpoints, without the background checkpointer the main file gets. <strong class="text-white">SoliDB</strong> creates a site's database on its first write.</li>
+        <li><strong class="text-white">Column-aware models</strong> (<code>table "orders"</code>) on a tenant connection are inspected on first use rather than at boot, and the schema read for the first site serves the others: every site runs the same migrations.</li>
+        <li><code>switch_tenant</code> inside a transaction raises (the transaction holds the current site's database), and reads a <code>grouped</code> block deferred run before the tenant changes.</li>
+    </ul>
+
+    <h3 id="tenant-migrations" class="text-xl font-bold text-white mb-4 scroll-mt-24">Creating and migrating a site's database</h3>
+    <p class="text-gray-400 mb-4">A site's database is created explicitly &mdash; when the site is created, not on its first request:</p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-bash text-sm">soli db:create --tenant acme          # CREATE DATABASE site_acme (SQLite: the file)
+soli db:migrate up --tenant acme      # the migrations that declare connection "site"
+soli db:migrate status --tenant acme
+soli db:drop --tenant acme</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-12">
+        Migrations name their connection (<code>connection "site"</code> as their first line). A plain <code>soli db:migrate up</code> runs the main database's and reports the site ones it left for <code>--tenant</code>; <code>--tenant KEY</code> runs only the site ones, on that site's database, which keeps its own <code>_migrations</code> table. Migrating every site is a loop over the keys. <code>--tenant</code> is refused on a connection without <code>{tenant}</code>, so it cannot act on the main database by mistake.
+    </p>
+
     <h2 id="migrations" class="text-2xl font-bold text-white mb-6 scroll-mt-24">Migrations</h2>
     <p class="text-gray-400 mb-4">
         Default migrate target is the <strong class="text-white">default</strong> connection.
@@ -623,7 +726,8 @@ end
         <div class="p-4 overflow-x-auto">
 <pre><code class="language-bash text-sm">soli db:migrate up --connection legacy
 soli db:migrate status -c legacy
-soli db:migrate down --connection legacy</code></pre>
+soli db:migrate down --connection legacy
+soli db:migrate up --tenant acme      # one database per tenant: see above</code></pre>
         </div>
     </div>
     <p class="text-gray-400 mb-12">
@@ -633,7 +737,7 @@ soli db:migrate down --connection legacy</code></pre>
 
     <h2 id="limits" class="text-2xl font-bold text-white mb-6 scroll-mt-24">Limitations</h2>
     <ul class="list-disc list-inside space-y-2 text-gray-400 mb-12">
-        <li>Per-connection SoliDB hosts: registry stores fields; prefer one SoliDB endpoint + SQL secondaries for now</li>
+        <li>Per-connection SoliDB hosts: registry stores fields; prefer one SoliDB endpoint + SQL secondaries for now. A SoliDB connection with one database per tenant (<code>database = "site_{tenant}"</code>) is the exception: its database follows the tenant, on the <code>SOLIDB_HOST</code> server.</li>
         <li>A string-form <code>.includes("rel", "…")</code> filter is SoliDB-only; use a hash on SQL</li>
         <li>Read-replica / request-scoped roles are not v1</li>
         <li>pgvector on document tables remains SoliDB-only</li>

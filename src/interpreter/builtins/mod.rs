@@ -184,6 +184,7 @@ pub mod streaming;
 pub mod strings;
 pub mod system;
 pub mod template;
+pub mod tenancy;
 pub mod test_dsl;
 pub mod test_helpers;
 pub mod test_progress;
@@ -474,6 +475,9 @@ pub fn register_builtins(env: &mut Environment, include_test_builtins: bool) {
 
     // Type conversion functions (str, int, float, type)
     types::register_type_builtins(env);
+
+    // switch_tenant / with_tenant / current_tenant (one database per tenant)
+    tenancy::register_tenancy_builtins(env);
 
     // Math functions (range, abs, min, max, sqrt, pow)
     math::register_math_builtins(env);

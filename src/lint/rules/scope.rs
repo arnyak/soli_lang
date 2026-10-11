@@ -154,6 +154,10 @@ const WELL_KNOWN_GLOBALS: &[&str] = &[
     "redirect",
     // Request-coalescing block
     "grouped",
+    // One database per tenant
+    "switch_tenant",
+    "with_tenant",
+    "current_tenant",
     "h",
     "h!",
     "raw",

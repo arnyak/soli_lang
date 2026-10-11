@@ -149,6 +149,10 @@ type PgPooled = Pooled<PgManager>;
 
 static POOLS: OnceLock<Mutex<HashMap<String, PgPool>>> = OnceLock::new();
 
+/// The tenant pools in `POOLS`, oldest first, so a server with many tenants
+/// does not keep a pool open for every one it ever served.
+static TENANT_POOLS: super::tenancy::PoolBudget = super::tenancy::PoolBudget::new();
+
 /// Open SQL transaction on this thread: holds one pool connection until
 /// commit/rollback. Nested `Model.transaction` increments `nest` only.
 struct TxState {
@@ -295,8 +299,8 @@ thread_local! {
     /// The pool this thread handed out last, with the connection name and url
     /// it is cached under in `POOLS`. Almost every query on a worker targets the
     /// same connection, so this answers `pool_for_active` without the global
-    /// mutex, the spec copy or the `format!`ed key. `POOLS` never evicts, so
-    /// an entry here can never outlive the one it mirrors.
+    /// mutex, the spec copy or the `format!`ed key. A tenant pool `POOLS` has
+    /// closed stays usable here until this thread asks for another one.
     static LAST_POOL: RefCell<Option<(String, String, PgPool)>> = const { RefCell::new(None) };
 }
 
@@ -366,6 +370,13 @@ fn pool_for_active_uncached() -> Result<PgPool, String> {
             ),
             None => format!("postgres pool ({name}): {e}"),
         });
+    }
+    // A pool per tenant database, within a budget (`tenancy::PoolBudget`): the
+    // oldest tenant pool closes when one more would pass it.
+    if super::tenancy::active_is_template() {
+        for closed in TENANT_POOLS.admit(&cache_key) {
+            map.remove(&closed);
+        }
     }
     map.insert(cache_key, pool.clone());
     remember(&pool);

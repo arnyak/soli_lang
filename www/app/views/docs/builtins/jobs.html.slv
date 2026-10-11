@@ -532,6 +532,7 @@ end</code></pre>
                 <li><strong class="text-white">Leases recover crashes.</strong> A <code class="text-amber-400">running</code> row whose <code class="text-amber-400">locked_until</code> has passed becomes claimable again, so a killed process's work is picked up rather than stranded. The poller heartbeats in-flight leases each tick.</li>
                 <li><strong class="text-white">Exhausted budgets are buried.</strong> Once <code class="text-amber-400">attempts</code> passes <code class="text-amber-400">max_retries</code> the row becomes <code class="text-amber-400">dead</code> with its last error, and is kept for inspection.</li>
                 <li><strong class="text-white">Completed rows are pruned</strong> after <code class="text-amber-400">SOLI_JOBS_RETENTION_SECS</code>; <code class="text-amber-400">failed</code> and <code class="text-amber-400">dead</code> rows are not.</li>
+                <li><strong class="text-white">A job runs under the tenant it was enqueued under</strong>: <code class="text-amber-400">perform_later</code> in a request that chose <code class="text-amber-400">switch_tenant("acme")</code> uses <code class="text-amber-400">acme</code>'s database (<a href="/docs/database/multi-database#tenants" class="text-amber-400 hover:underline">one database per tenant</a>). Cron jobs have none; loop over the sites with <code class="text-amber-400">with_tenant</code>.</li>
             </ul>
         </div>
 

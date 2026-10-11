@@ -74,21 +74,34 @@ pub fn run() {
             action,
             folder,
             connection,
-        } => commands::run_db_migrate(action, folder, connection.as_deref()),
+            tenant,
+        } => commands::run_db_migrate(action, folder, connection.as_deref(), tenant.as_deref()),
         Command::DbSeed { action, folder } => commands::run_db_seed(action, folder),
         Command::DbImport { collections } => commands::run_db_import(collections),
         Command::DbIndexes { folder } => commands::run_db_indexes(folder),
-        Command::DbSchemaDump { folder, connection } => {
-            commands::run_db_schema(folder, connection.as_deref(), false)
+        Command::DbSchemaDump {
+            folder,
+            connection,
+            tenant,
+        } => commands::run_db_schema(folder, connection.as_deref(), tenant.as_deref(), false),
+        Command::DbSchemaLoad {
+            folder,
+            connection,
+            tenant,
+        } => commands::run_db_schema(folder, connection.as_deref(), tenant.as_deref(), true),
+        Command::DbCreate {
+            folder,
+            connection,
+            tenant,
+        } => {
+            commands::run_db_create_or_drop(folder, connection.as_deref(), tenant.as_deref(), false)
         }
-        Command::DbSchemaLoad { folder, connection } => {
-            commands::run_db_schema(folder, connection.as_deref(), true)
-        }
-        Command::DbCreate { folder, connection } => {
-            commands::run_db_create_or_drop(folder, connection.as_deref(), false)
-        }
-        Command::DbDrop { folder, connection } => {
-            commands::run_db_create_or_drop(folder, connection.as_deref(), true)
+        Command::DbDrop {
+            folder,
+            connection,
+            tenant,
+        } => {
+            commands::run_db_create_or_drop(folder, connection.as_deref(), tenant.as_deref(), true)
         }
         Command::Routes { folder, grep, json } => {
             commands::run_routes(folder, grep.as_deref(), *json)

@@ -171,6 +171,9 @@ SOLI_DB_ADAPTER = "d1"</code></pre>
         <li><strong class="text-white">Column-aware models</strong> (a model that declares its columns) raise: store them as documents.</li>
         <li><strong class="text-white">The job table and cron</strong>: on the edge, jobs go through <a href="#queues" class="text-amber-400 hover:underline">Cloudflare Queues</a> instead.</li>
     </ul>
+    <p class="text-gray-400 mb-10">
+        One D1 database per site: a connection <code>url = "d1://SITE_{tenant}"</code> sends each tenant's queries to its own binding (<code>switch_tenant("acme")</code> &rarr; <code>SITE_acme</code>), declared in <code>wrangler.toml</code> with one <code>[[d1_databases]]</code> block per site. Bindings are fixed at deploy, so a new site means a new binding and a redeploy &mdash; see <a href="/docs/database/multi-database#tenants" class="text-amber-400 hover:underline">one database per tenant</a>.
+    </p>
 
     <h3 id="solidb" class="text-2xl font-semibold text-white mb-4 scroll-mt-24">SoliDB</h3>
     <p class="text-gray-400 mb-12">

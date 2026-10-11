@@ -398,6 +398,8 @@ end
 
 `Model.find(id)` raises `RecordNotFound` when the id doesn't exist, and the request handler turns that into a `404` automatically. **Don't add a manual `if record.nil? { return 404 }` guard after `.find` — it's dead code.** When you want the "or nil" shape, use `find_by(field, value)` or `first_by(...)`, both of which return `nil` on miss.
 
+**One database per tenant** — a `config/database.toml` connection whose `url` (or SoliDB `database`) holds `{tenant}` is filled per request: `switch_tenant(site.db_key)` in a middleware, `with_tenant(key) do … end`, `current_tenant()`. Resolution lives in `db::tenancy` (hooked into `registry::with_active_spec`, so pools and per-URL caches split per tenant on their own); requests, socket events and Worker requests clear it, jobs carry it in `JobDoc.tenant`, `db:* --tenant KEY` targets one site. Full reference: `www/docs/multi-database.md` → "One database per tenant".
+
 **Coalescing reads (`grouped`)** — every read is one network round-trip, so an action that loads three unrelated things pays for three. Wrap them in `grouped(fn() { ... })` and they are deferred and shipped as a **single** `LET … RETURN […]` request:
 
 ```soli

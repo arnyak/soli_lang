@@ -114,6 +114,12 @@ pub struct JobDoc {
     pub cron_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub webhook: Option<WebhookSpec>,
+    /// The tenant the job was enqueued under (`switch_tenant`), which it runs
+    /// under. With an explicit `url` / `database` it carries that too: it is
+    /// the main database's own record of where the site lives, stored next to
+    /// the site row it came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<crate::db::tenancy::Tenant>,
 }
 
 impl JobDoc {
@@ -144,6 +150,7 @@ impl JobDoc {
             finished_at: None,
             cron_name: None,
             webhook: None,
+            tenant: crate::db::tenancy::current(),
         }
     }
 
@@ -360,6 +367,30 @@ pub fn backoff_secs(attempts: i64, key: &str) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_job_remembers_the_tenant_it_was_enqueued_under() {
+        use crate::db::tenancy::{self, Tenant};
+        let acme = Tenant {
+            url: Some("postgres://h/acme".into()),
+            ..Tenant::new("acme").unwrap()
+        };
+        let job = tenancy::scoped(Some(acme.clone()), || {
+            JobDoc::new("StampJob", serde_json::json!({}), "default", now_iso())
+        });
+        assert_eq!(job.tenant.as_ref(), Some(&acme));
+        let json = job.to_json().unwrap();
+        assert_eq!(json["tenant"]["key"], "acme");
+        assert_eq!(JobDoc::from_json(json).unwrap().tenant, Some(acme));
+
+        // Without a tenant the row carries no field, and old rows still parse.
+        let plain = tenancy::scoped(None, || {
+            JobDoc::new("StampJob", serde_json::json!({}), "default", now_iso())
+        });
+        let json = plain.to_json().unwrap();
+        assert!(json.get("tenant").is_none());
+        assert!(JobDoc::from_json(json).unwrap().tenant.is_none());
+    }
 
     #[test]
     fn state_strings_round_trip_through_serde() {

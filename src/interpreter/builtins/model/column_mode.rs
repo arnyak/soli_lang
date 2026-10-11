@@ -917,6 +917,17 @@ pub fn validate_declared_models() -> Vec<String> {
             ));
         }
 
+        // A connection with one database per tenant has no database before a
+        // request chooses one: its tables are inspected on first use, under
+        // that tenant, and the schema serves every tenant (they share their
+        // migrations).
+        if super::registry::run_on_collection_connection(
+            &model.collection,
+            crate::db::tenancy::active_is_template,
+        ) {
+            continue;
+        }
+
         // Introspect now, so a missing table, a composite primary key, or a
         // non-SQL connection is reported at boot instead of mid-request.
         match super::registry::run_on_collection_connection(&model.collection, || {

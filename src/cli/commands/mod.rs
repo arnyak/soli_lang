@@ -2654,7 +2654,66 @@ fn create_tarball(project_dir: &Path, dest: &std::path::Path) -> Result<(), Stri
 }
 
 /// `soli db:schema:dump` / `soli db:schema:load`.
-pub fn run_db_schema(folder: &str, connection: Option<&str>, load: bool) {
+/// `--tenant KEY` on a `db:*` command: act on that tenant's database. The
+/// connection the command targets must hold one database per tenant —
+/// `--tenant` on any other connection would be silently ignored, so it is
+/// refused instead.
+fn select_cli_tenant(tenant: Option<&str>, connection: Option<&str>) {
+    let Some(key) = tenant else {
+        return;
+    };
+    let tenant = match solilang::db::tenancy::Tenant::new(key) {
+        Ok(tenant) => tenant,
+        Err(e) => {
+            eprintln!("  \x1b[31mError:\x1b[0m --tenant: {e}");
+            process::exit(64);
+        }
+    };
+    let reg = solilang::db::registry();
+    // Without --connection, the connection with `{tenant}` in it: the
+    // migrations name theirs, and create/drop/schema need one to act on.
+    let target = reg
+        .resolve(tenant_connection(connection, Some(key)).as_deref())
+        .ok()
+        .cloned();
+    match target {
+        Some(spec) if solilang::db::tenancy::is_template(&spec) => {
+            println!();
+            println!("  \x1b[1mTenant:\x1b[0m {key} (connection {})", spec.name);
+        }
+        _ => {
+            eprintln!(
+                "  \x1b[31mError:\x1b[0m --tenant needs a connection with one database per \
+                 tenant: put {{tenant}} in its url (or its SoliDB database) in \
+                 config/database.toml."
+            );
+            process::exit(1);
+        }
+    }
+    solilang::db::tenancy::set(Some(tenant));
+}
+
+/// The connection a create/drop/schema command acts on: `--connection`, or
+/// with `--tenant` and none, the connection with one database per tenant.
+fn tenant_connection(connection: Option<&str>, tenant: Option<&str>) -> Option<String> {
+    if connection.is_some() || tenant.is_none() {
+        return connection.map(str::to_string);
+    }
+    let reg = solilang::db::registry();
+    if solilang::db::tenancy::is_template(reg.default_spec()) {
+        return None;
+    }
+    let mut names: Vec<_> = reg
+        .connections
+        .values()
+        .filter(|spec| solilang::db::tenancy::is_template(spec))
+        .map(|spec| spec.name.clone())
+        .collect();
+    names.sort();
+    names.into_iter().next()
+}
+
+pub fn run_db_schema(folder: &str, connection: Option<&str>, tenant: Option<&str>, load: bool) {
     use std::path::PathBuf;
     // `.env` first, like `db:create` and `db:migrate`. Without it a
     // `DATABASE_URL` that lives in `.env` was invisible, so `db:schema:dump`
@@ -2662,6 +2721,9 @@ pub fn run_db_schema(folder: &str, connection: Option<&str>, load: bool) {
     // where every other db command works.
     solilang::serve::env_loader::load_env_files(std::path::Path::new(folder));
     solilang::db::init_from_app_path(std::path::Path::new(folder)).ok();
+    select_cli_tenant(tenant, connection);
+    let connection = tenant_connection(connection, tenant);
+    let connection = connection.as_deref();
     let path = PathBuf::from(folder).join("db/schema.sql");
     let run = || {
         if !solilang::db::is_sql() {
@@ -2718,7 +2780,12 @@ pub fn run_db_schema(folder: &str, connection: Option<&str>, load: bool) {
 /// SoliDB creates its database on first use, but a SQL server does not: pointing
 /// `DATABASE_URL` at a database nobody has created yet fails at boot with a
 /// driver error. This is the missing step.
-pub fn run_db_create_or_drop(folder: &str, connection: Option<&str>, drop: bool) {
+pub fn run_db_create_or_drop(
+    folder: &str,
+    connection: Option<&str>,
+    tenant: Option<&str>,
+    drop: bool,
+) {
     let app_path = Path::new(folder);
     if !app_path.exists() {
         eprintln!("Error: Folder '{}' does not exist", folder);
@@ -2729,6 +2796,9 @@ pub fn run_db_create_or_drop(folder: &str, connection: Option<&str>, drop: bool)
         eprintln!("  \x1b[31mError:\x1b[0m {}", e.message());
         process::exit(1);
     }
+    select_cli_tenant(tenant, connection);
+    let connection = tenant_connection(connection, tenant);
+    let connection = connection.as_deref();
     if let Some(name) = connection {
         let reg = solilang::db::registry();
         if !reg.connections.contains_key(name) {
@@ -2782,7 +2852,12 @@ pub fn run_db_create_or_drop(folder: &str, connection: Option<&str>, drop: bool)
     }
 }
 
-pub fn run_db_migrate(action: &DbMigrateAction, folder: &str, connection: Option<&str>) {
+pub fn run_db_migrate(
+    action: &DbMigrateAction,
+    folder: &str,
+    connection: Option<&str>,
+    tenant: Option<&str>,
+) {
     use solilang::migration::{DbConfig, MigrationRunner};
 
     let app_path = Path::new(folder);
@@ -2824,6 +2899,7 @@ pub fn run_db_migrate(action: &DbMigrateAction, folder: &str, connection: Option
                 .unwrap_or("?")
         );
     }
+    select_cli_tenant(tenant, connection);
 
     let run = || {
         let config = DbConfig::from_env(app_path);

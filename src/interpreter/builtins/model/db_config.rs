@@ -520,6 +520,10 @@ pub fn get_database_name() -> String {
     if let Some(name) = override_database() {
         return name;
     }
+    // A connection with one database per tenant: this request's tenant's.
+    if let Some(name) = crate::db::tenancy::active_solidb_database() {
+        return name;
+    }
     with_db_config(|cfg| cfg.database.clone())
 }
 
@@ -538,7 +542,7 @@ pub fn get_database_name() -> String {
 /// limitation is documented rather than papered over — see
 /// `www/docs/models.md`, "Transactions".
 pub fn get_cursor_url() -> String {
-    if let Some(name) = override_database() {
+    if let Some(name) = override_database().or_else(crate::db::tenancy::active_solidb_database) {
         // SEC-027: per-thread DB-name override still uses the same
         // scheme `DbConfig::from_env` picked, not a hard-coded http://.
         let (scheme, host) = db_scheme_and_host();

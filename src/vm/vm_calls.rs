@@ -608,6 +608,9 @@ impl Vm {
         if native.name == "with_transaction" {
             return self.call_with_transaction_block(args, span);
         }
+        if native.name == "with_tenant" {
+            return self.call_with_tenant_block(args, span);
+        }
         // SEC-013b: `render_json(record)` sends what the class's `as_json`
         // returns, as on the tree-walker (`try_evaluate_render_json_with_as_json`).
         // The native has no engine to call a user method with, so on the VM
@@ -695,6 +698,32 @@ impl Vm {
                 message: format!("grouped: failed to flush queries: {}", e),
                 span,
             },
+        )?;
+        self.push(result);
+        Ok(())
+    }
+
+    /// `with_tenant(key, options?) do … end` — see the tree-walker's
+    /// `try_evaluate_with_tenant`.
+    fn call_with_tenant_block(
+        &mut self,
+        mut args: Vec<Value>,
+        span: Span,
+    ) -> Result<(), RuntimeError> {
+        if !args.last().is_some_and(Self::is_callable_block) {
+            return Err(RuntimeError::new(
+                "with_tenant(key, options?) expects a block: with_tenant(\"acme\") do … end",
+                span,
+            ));
+        }
+        let block = args.pop().expect("checked above");
+        let general = |message: String| RuntimeError::General { message, span };
+        let tenant = crate::interpreter::builtins::tenancy::tenant_from_args(&args, "with_tenant")
+            .map_err(general)?;
+        let result = crate::interpreter::builtins::tenancy::with_tenant(
+            tenant,
+            || self.invoke_callable(block.clone(), &[], span),
+            general,
         )?;
         self.push(result);
         Ok(())

@@ -216,6 +216,8 @@ Because claiming is atomic, several `soli serve` **or** `soli jobs` processes ca
 
 Job code never runs on a web-server worker, so a slow handler cannot delay request serving.
 
+A job runs under the tenant it was enqueued under: `perform_later` in a request that chose `switch_tenant("acme")` reads and writes `acme`'s database (see [One database per tenant](multi-database.md#one-database-per-tenant)). Cron jobs have none; loop over the sites with `with_tenant(key) do … end`.
+
 ## Retries and Crash Recovery
 
 - **Backoff** is exponential from 5 seconds, doubling per attempt, capped at 1 hour, with a small per-job spread so a burst of sibling failures doesn't retry in lockstep.
