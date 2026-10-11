@@ -172,7 +172,38 @@ SOLI_DB_ADAPTER = "d1"</code></pre>
         <li><strong class="text-white">The job table and cron</strong>: on the edge, jobs go through <a href="#queues" class="text-amber-400 hover:underline">Cloudflare Queues</a> instead.</li>
     </ul>
     <p class="text-gray-400 mb-10">
-        One D1 database per site: a connection <code>url = "d1://SITE_{tenant}"</code> sends each tenant's queries to its own binding (<code>switch_tenant("acme")</code> &rarr; <code>SITE_acme</code>), declared in <code>wrangler.toml</code> with one <code>[[d1_databases]]</code> block per site. Bindings are fixed at deploy, so a new site means a new binding and a redeploy &mdash; see <a href="/docs/database/multi-database#tenants" class="text-amber-400 hover:underline">one database per tenant</a>.
+        One D1 database per site: a connection <code>url = "d1://SITE_{tenant}"</code> sends each tenant's queries to its own binding (<code>switch_tenant("acme")</code> &rarr; <code>SITE_acme</code>), declared in <code>wrangler.toml</code> with one <code>[[d1_databases]]</code> block per site. Bindings are fixed at deploy, so a new site means a new binding and a redeploy &mdash; for many sites, use <a href="#durable-objects" class="text-amber-400 hover:underline">SQLite in Durable Objects</a> instead. See <a href="/docs/database/multi-database#tenants" class="text-amber-400 hover:underline">one database per tenant</a>.
+    </p>
+
+    <h3 id="durable-objects" class="text-2xl font-semibold text-white mb-4 scroll-mt-24">SQLite in Durable Objects: a database per tenant</h3>
+    <p class="text-gray-400 mb-6">
+        A <a href="https://developers.cloudflare.com/durable-objects/" class="text-amber-400 hover:underline">Durable Object</a> with SQLite storage is a small database of its own, created the first time it is named. Soli's D1 adapter reaches one with a <code class="text-amber-400">do://</code> url: the binding, then the object's name.
+    </p>
+    <div class="rounded-xl bg-[#0C0A09] ring-1 ring-white/10 overflow-hidden shadow-xl mb-4">
+        <pre data-filename="config/database.toml"><code class="language-toml text-sm">default = "primary"
+
+[connections.primary]            # accounts, sites — on D1
+adapter = "d1"
+url = "d1://DB"
+
+[connections.site]               # each site's data — its own Durable Object
+adapter = "d1"
+url = "do://SITES/{tenant}"</code></pre>
+    </div>
+    <div class="rounded-xl bg-[#0C0A09] ring-1 ring-white/10 overflow-hidden shadow-xl mb-6">
+        <pre data-filename="wrangler.toml"><code class="language-toml text-sm">[[durable_objects.bindings]]
+name = "SITES"
+class_name = "SoliSqlObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SoliSqlObject"]</code></pre>
+    </div>
+    <p class="text-gray-400 mb-4">
+        <code class="text-amber-400">SoliSqlObject</code> ships in every Worker <code>soli edge build</code> packages: it runs the statements it is sent on its own storage and answers like D1, so models, <code>grouped</code> (one RPC per block, run in one storage transaction), and everything else the D1 adapter does work unchanged. With <a href="/docs/database/multi-database#tenants" class="text-amber-400 hover:underline"><code>switch_tenant(site.db_key)</code></a> in a middleware, <code>do://SITES/{tenant}</code> gives every site a database of its own &mdash; unlike a D1 binding per site, nothing is declared per site and nothing is redeployed when one is added. A fixed name (<code>do://SITES/main</code>) makes a single object-backed database.
+    </p>
+    <p class="text-gray-400 mb-10">
+        The same limits as D1 apply (no <code>Model.transaction</code>, no column-aware models), a Durable Object holds up to 10&nbsp;GB, and its object name is limited to letters, digits, <code>_</code> and <code>-</code>. Under <code>soli edge dev</code> the objects are local, in <code>dist/edge/.wrangler/state</code>.
     </p>
 
     <h3 id="solidb" class="text-2xl font-semibold text-white mb-4 scroll-mt-24">SoliDB</h3>

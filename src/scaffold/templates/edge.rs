@@ -49,6 +49,16 @@ database_id = "00000000-0000-0000-0000-000000000000"
 # [images]
 # binding = "IMAGES"
 
+# One SQLite database per site, each in a Durable Object: a connection in
+# config/database.toml with adapter = "d1", url = "do://SITES/{{tenant}}" (see
+# switch_tenant). Objects are created by naming them: nothing per site here.
+# [[durable_objects.bindings]]
+# name = "SITES"
+# class_name = "SoliSqlObject"
+# [[migrations]]
+# tag = "v1"
+# new_sqlite_classes = ["SoliSqlObject"]
+
 # Background jobs (`perform_later`) through Cloudflare Queues
 # (`npx wrangler queues create {worker}-jobs`).
 # [[queues.producers]]

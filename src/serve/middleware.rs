@@ -341,14 +341,19 @@ pub fn extract_middleware_result(result: &Value) -> MiddlewareResult {
 pub fn scan_middleware_files(middleware_dir: &Path) -> Result<Vec<PathBuf>, RuntimeError> {
     let mut files = Vec::new();
 
-    if !middleware_dir.exists() {
+    // Through `platform::fs`, like the files it lists: on the edge build the
+    // app lives in an in-memory tree, where `std::fs` found no directory and
+    // every middleware of a Worker app was silently skipped.
+    if !crate::platform::fs::exists(middleware_dir) {
         return Ok(files);
     }
 
-    for entry in std::fs::read_dir(middleware_dir).map_err(|e| RuntimeError::General {
-        message: format!("Failed to read middleware directory: {}", e),
-        span: Span::default(),
-    })? {
+    for entry in
+        crate::platform::fs::read_dir(middleware_dir).map_err(|e| RuntimeError::General {
+            message: format!("Failed to read middleware directory: {}", e),
+            span: Span::default(),
+        })?
+    {
         let entry = entry.map_err(|e| RuntimeError::General {
             message: format!("Failed to read directory entry: {}", e),
             span: Span::default(),

@@ -12,13 +12,20 @@ use std::path::{Path, PathBuf};
 /// The files `scripts/build-edge.sh` produces, all required. The first four are
 /// copied into every Worker, the Postgres driver's glue only when the app uses
 /// Postgres.
-pub const RUNTIME_FILES: [&str; 5] = [
+pub const RUNTIME_FILES: [&str; 6] = [
     "soli_edge_bg.wasm",
     "soli_edge.js",
     "jspi.js",
     "worker.js",
+    // The Durable Object a `do://BINDING/name` connection reaches; worker.js
+    // re-exports it, so every Worker carries it.
+    "durable.js",
     "sql-pg.js",
 ];
+
+/// How many of [`RUNTIME_FILES`] every Worker gets; the rest are SQL drivers'
+/// glue, copied only for an app that uses them.
+const ALWAYS_COPIED: usize = 5;
 
 /// The SQL dialects a Worker can carry a JavaScript driver for: the dialect's
 /// name in `src/sql.js`, its driver module, and the npm package it imports.
@@ -92,7 +99,7 @@ pub fn build(opts: &Options<'_>) -> Result<Summary, String> {
             found
         }
     };
-    let mut copied: Vec<&str> = RUNTIME_FILES[..4].to_vec();
+    let mut copied: Vec<&str> = RUNTIME_FILES[..ALWAYS_COPIED].to_vec();
     for (dialect, module, _, _) in SQL_DRIVERS {
         let stale = src.join(module);
         if sql_drivers.contains(&dialect) {
@@ -460,6 +467,16 @@ directory = "./public"
 # [images]
 # binding = "IMAGES"
 
+# One SQLite database per site, each in a Durable Object: a connection in
+# config/database.toml with adapter = "d1", url = "do://SITES/{tenant}" (see
+# switch_tenant). Objects are created by naming them: nothing per site here.
+# [[durable_objects.bindings]]
+# name = "SITES"
+# class_name = "SoliSqlObject"
+# [[migrations]]
+# tag = "v1"
+# new_sqlite_classes = ["SoliSqlObject"]
+
 # Background jobs (`perform_later`, `Job.enqueue`) through Cloudflare Queues
 # (`npx wrangler queues create my-app-jobs`). Soli decides retries with each
 # job's max_retries, so let Cloudflare redeliver as often as it asks.
@@ -545,7 +562,7 @@ mod tests {
         );
         assert!(out.join("public/css/site.css").is_file());
         // The SQL drivers' glue stays out of an app that uses no SQL.
-        for name in &RUNTIME_FILES[..4] {
+        for name in &RUNTIME_FILES[..ALWAYS_COPIED] {
             assert!(out.join("src").join(name).is_file(), "{name}");
         }
         let toml = fs::read_to_string(out.join("wrangler.toml")).unwrap();

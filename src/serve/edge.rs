@@ -72,6 +72,10 @@ pub fn boot(folder: &Path) -> Result<(), RuntimeError> {
 
     crate::serve::tenant::set_app_root(folder);
     crate::interpreter::builtins::model::init_db_config();
+    // The app's named connections (`config/database.toml`), as `soli serve`
+    // loads them: without this only the env-derived `primary` existed on the
+    // edge, so a model with `connection "…"` failed to load.
+    crate::db::init_from_app_path(folder).map_err(|e| general(e.message()))?;
 
     // Boot interpreter: fills the process-global registries (routes,
     // controller metadata, templates), exactly as the server's boot thread.

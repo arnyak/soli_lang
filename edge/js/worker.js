@@ -10,6 +10,9 @@ import wasmModule from "./soli_edge_bg.wasm";
 import { initSync, mount, set_env, boot } from "./soli_edge.js";
 import { setHost, endSql } from "./jspi.js";
 import appFiles from "./app.json";
+// The Durable Object a `do://BINDING/name` connection reaches (wrangler.toml
+// binds it by this class name).
+export { SoliSqlObject } from "./durable.js";
 
 let wasm = null;
 let handleRequest = null;

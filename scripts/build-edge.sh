@@ -6,6 +6,7 @@
 #   soli_edge_bg.wasm   the interpreter, size-optimised (opt-level z, fat LTO)
 #   soli_edge.js        wasm-bindgen glue (--target web)
 #   jspi.js, worker.js  the Worker host, copied from edge/js
+#   durable.js          the Durable Object behind `do://BINDING/name` connections
 #   sql-pg.js           the Postgres driver's glue, copied into an app's Worker
 #                       when it uses Postgres
 #
@@ -41,7 +42,7 @@ RUSTFLAGS="${RUSTFLAGS:-} --cfg getrandom_backend=\"wasm_js\"" \
 mkdir -p "$OUT"
 wasm-bindgen --target web --out-dir "$OUT" \
   "$TARGET_DIR/wasm32-unknown-unknown/release/soli_edge.wasm"
-cp "$ROOT/edge/js/jspi.js" "$ROOT/edge/js/worker.js" "$ROOT/edge/js/sql-pg.js" "$OUT/"
+cp "$ROOT/edge/js/jspi.js" "$ROOT/edge/js/worker.js" "$ROOT/edge/js/durable.js" "$ROOT/edge/js/sql-pg.js" "$OUT/"
 rm -f "$OUT"/*.d.ts
 
 wasm="$OUT/soli_edge_bg.wasm"

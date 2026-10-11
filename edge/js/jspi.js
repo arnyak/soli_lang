@@ -26,9 +26,7 @@ export const soli_d1 = new WebAssembly.Suspending(async (ptr, len) => {
   let response;
   try {
     const request = readRequest(ptr, len);
-    const db = d1Binding(request.binding);
-    const result = await db.prepare(request.sql).bind(...request.params).all();
-    response = { ok: true, ...d1Rows(result) };
+    response = { ok: true, ...(await sqlTarget(request.binding).all(request.sql, request.params)) };
   } catch (error) {
     response = { ok: false, error: String(error?.message ?? error) };
   }
@@ -43,11 +41,8 @@ export const soli_d1_batch = new WebAssembly.Suspending(async (ptr, len) => {
   let response;
   try {
     const request = readRequest(ptr, len);
-    const db = d1Binding(request.binding);
-    const results = await db.batch(
-      request.statements.map((s) => db.prepare(s.sql).bind(...s.params)),
-    );
-    response = { ok: true, results: results.map(d1Rows) };
+    const results = await sqlTarget(request.binding).batch(request.statements);
+    response = { ok: true, results };
   } catch (error) {
     response = { ok: false, error: String(error?.message ?? error) };
   }
@@ -58,6 +53,34 @@ function readRequest(ptr, len) {
   return JSON.parse(
     new TextDecoder().decode(new Uint8Array(host.wasm.memory.buffer, ptr, len)),
   );
+}
+
+// Where a D1-adapter statement goes: a D1 binding (`DB`), or the SQLite storage
+// of a Durable Object (`do://SITES/acme`: binding SITES, object "acme", run by
+// durable.js's SoliSqlObject over RPC). Both answer {columns, rows, changes}.
+function sqlTarget(name) {
+  if (name.startsWith("do://")) {
+    const [binding, object] = name.slice(5).split("/", 2);
+    const namespace = host.env[binding];
+    if (!namespace || typeof namespace.idFromName !== "function") {
+      throw new Error(
+        `no Durable Object binding named ${binding}: add [[durable_objects.bindings]] ` +
+          `name = "${binding}", class_name = "SoliSqlObject" (and a new_sqlite_classes ` +
+          `migration) to wrangler.toml`,
+      );
+    }
+    const stub = namespace.get(namespace.idFromName(object));
+    return {
+      all: (sql, params) => stub.query(sql, params),
+      batch: (statements) => stub.batch(statements),
+    };
+  }
+  const db = d1Binding(name);
+  return {
+    all: async (sql, params) => d1Rows(await db.prepare(sql).bind(...params).all()),
+    batch: async (statements) =>
+      (await db.batch(statements.map((s) => db.prepare(s.sql).bind(...s.params)))).map(d1Rows),
+  };
 }
 
 function d1Binding(name) {

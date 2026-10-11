@@ -633,7 +633,7 @@ url = "postgres://app@db.internal/site_{tenant}"</code></pre>
         </div>
     </div>
     <p class="text-gray-400 mb-4">
-        The same works on every adapter: <code>mysql://…/site_{tenant}</code>, <code>sqlite://db/sites/{tenant}.sqlite3</code> (one file per site), <code>database = "site_{tenant}"</code> on SoliDB, <code>d1://SITE_{tenant}</code> on <a href="/docs/development-tools/edge#d1" class="text-cyan-400 hover:underline">Cloudflare D1</a> (one binding per site). The models of the site data name the connection; the others stay on the main database:
+        The same works on every adapter: <code>mysql://…/site_{tenant}</code>, <code>sqlite://db/sites/{tenant}.sqlite3</code> (one file per site), <code>database = "site_{tenant}"</code> on SoliDB, <code>d1://SITE_{tenant}</code> on <a href="/docs/development-tools/edge#d1" class="text-cyan-400 hover:underline">Cloudflare D1</a> (one binding per site), and on the edge <code>do://SITES/{tenant}</code> with the D1 adapter: a <a href="/docs/development-tools/edge#durable-objects" class="text-cyan-400 hover:underline">Durable Object per site</a>, created by naming it, with nothing declared per site. The models of the site data name the connection; the others stay on the main database:
     </p>
     <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
         <div class="p-4 overflow-x-auto">

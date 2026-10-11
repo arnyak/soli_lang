@@ -15,6 +15,13 @@
 //! D1 has no interactive transactions (only batches), so `transaction` is
 //! refused, and neither the job engine's row claims nor column-aware tables
 //! are supported yet.
+//!
+//! The same adapter reaches the SQLite storage of a Durable Object: a url
+//! `do://SITES/acme` names the Durable Object binding and the object, and the
+//! host sends each statement to that object (the runtime's `SoliSqlObject`)
+//! instead of to a D1 binding. The SQL is the same SQLite; what changes is
+//! that an object is created by naming it, so `do://SITES/{tenant}` gives
+//! every tenant a database of its own with nothing to declare per tenant.
 
 use super::introspect::TableSchema;
 use super::registry::active_spec;
@@ -86,12 +93,38 @@ fn executor() -> Result<Arc<dyn D1Executor>, String> {
     }
 }
 
-/// The Worker binding the active connection names: `d1://DB` (or plain `DB`).
+/// What the active connection's statements go to, as the host reads it: a D1
+/// binding (`d1://DB`, or plain `DB`, comes back as `DB`) or a Durable Object
+/// (`do://SITES/acme` comes back whole).
 fn binding() -> Result<String, String> {
     let spec = active_spec()?;
     let url = spec.url.as_deref().unwrap_or("d1://DB");
+    let is_binding = |name: &str| {
+        !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    if let Some(target) = url.strip_prefix("do://") {
+        // The object's name reaches `idFromName`: held to what a tenant key
+        // may be, so a url filled from a request cannot name anything odd.
+        let object_ok = |name: &str| {
+            !name.is_empty()
+                && name.len() <= 128
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        };
+        return match target.trim_end_matches('/').split_once('/') {
+            Some((binding, object)) if is_binding(binding) && object_ok(object) => {
+                Ok(format!("do://{binding}/{object}"))
+            }
+            _ => Err(format!(
+                "connection {:?}: a Durable Object url names the binding and the object, \
+                 like do://SITES/acme or do://SITES/{{tenant}} (got {url:?})",
+                spec.name
+            )),
+        };
+    }
     let name = url.strip_prefix("d1://").unwrap_or(url).trim_matches('/');
-    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+    if !is_binding(name) {
         return Err(format!(
             "connection {:?}: a D1 url names the Worker binding, like d1://DB (got {url:?})",
             spec.name

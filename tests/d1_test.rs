@@ -424,3 +424,65 @@ switch_tenant(nil)
         .iter()
         .any(|(b, sql)| b == "MAIN" && sql.contains("\"site_notes\"")));
 }
+
+#[test]
+fn a_durable_object_url_names_one_object_per_tenant() {
+    let _lock = registry_test_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let d1 = Arc::new(SqliteAsD1::new());
+    set_executor(d1.clone());
+    let mut registry = d1_registry("d1://MAIN");
+    let mut site = registry.connections["primary"].clone();
+    site.name = "site".to_string();
+    site.url = Some("do://SITES/{tenant}".to_string());
+    registry.connections.insert("site".to_string(), site);
+    set_registry_for_tests(registry);
+
+    // Model names of their own: the model registry is process-wide.
+    let result = run(r##"
+class DoAccount < Model
+end
+
+class DoNote < Model
+  connection "site"
+end
+
+def check(label, got, want)
+  throw "#{label}: got #{got}, want #{want}" unless got == want
+end
+
+DoAccount.create({"name": "main"})
+switch_tenant("acme")
+DoNote.create({"title": "for acme"})
+switch_tenant("globex")
+DoNote.create({"title": "for globex"})
+
+# An explicit url still has to name a binding and a well-formed object.
+bad = with_tenant("odd", {"url": "do://SITES/a.b"}) do
+  DoNote.count
+end rescue "refused"
+check("an object name with a dot", bad, "refused")
+missing = with_tenant("odd", {"url": "do://SITES"}) do
+  DoNote.count
+end rescue "refused"
+check("no object", missing, "refused")
+switch_tenant(nil)
+"##);
+    solilang::db::tenancy::clear();
+    clear_registry_override();
+    result.expect("the Soli script failed");
+
+    let seen = d1.seen.lock().unwrap();
+    let targets: std::collections::BTreeSet<_> = seen.iter().map(|(b, _)| b.as_str()).collect();
+    assert_eq!(
+        targets,
+        ["MAIN", "do://SITES/acme", "do://SITES/globex"]
+            .into_iter()
+            .collect(),
+        "{seen:?}"
+    );
+    assert!(seen
+        .iter()
+        .any(|(b, sql)| b == "do://SITES/acme" && sql.contains("INSERT INTO \"do_notes\"")));
+}

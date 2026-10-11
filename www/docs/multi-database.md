@@ -474,7 +474,10 @@ url = "postgres://app@db.internal/site_{tenant}"
 The same works on every adapter: `url = "mysql://…/site_{tenant}"`,
 `url = "sqlite://db/sites/{tenant}.sqlite3"` (one file per site),
 `database = "site_{tenant}"` on SoliDB, `url = "d1://SITE_{tenant}"` on
-[Cloudflare D1](edge.md#cloudflare-d1) (one binding per site).
+[Cloudflare D1](edge.md#cloudflare-d1) (one binding per site), and on the edge
+`url = "do://SITES/{tenant}"` with the D1 adapter: a
+[Durable Object per site](edge.md#sqlite-in-durable-objects-a-database-per-tenant),
+created by naming it, with nothing declared per site.
 
 The models of the site data name the connection; the others stay on the main
 database:

@@ -28,6 +28,11 @@ class ProbeController < Controller
     {"status": 200, "body": "patched #{params["title"]}"}
   end
 
+  # GET /probe/tenant — the tenant the middleware chose
+  def tenant(req)
+    {"status": 200, "body": "tenant=#{current_tenant()}"}
+  end
+
   # GET /probe/jobs
   def jobs(req)
     ProbeJob.perform_later({"n": params["n"].to_i})
@@ -48,6 +53,31 @@ class ProbeJob
   end
 end
 "#;
+
+/// A middleware choosing the tenant from a header: it only runs if the edge
+/// boot finds `app/middleware` in the mounted tree.
+const PROBE_MIDDLEWARE: &str = r#"# order: 10
+def probe_site(req)
+  key = req["headers"]["x-site"]
+  switch_tenant(key) unless key.blank?
+  req
+end
+"#;
+
+/// A connection with one database per tenant, in Durable Objects, and a model
+/// on it: the app boots only if `config/database.toml` is read on the edge.
+const PROBE_DATABASE_TOML: &str = r#"default = "primary"
+
+[connections.primary]
+adapter = "d1"
+url = "d1://DB"
+
+[connections.probe]
+adapter = "d1"
+url = "do://PROBE/{tenant}"
+"#;
+
+const PROBE_MODEL: &str = "class ProbeNote < Model\n  connection \"probe\"\nend\n";
 
 /// What `soli_queue_send` would have handed to Cloudflare.
 #[derive(Default)]
@@ -79,7 +109,7 @@ fn example_files() -> Vec<(String, Vec<u8>)> {
     for (path, contents) in files.iter_mut() {
         if path == "/app/config/routes.sl" {
             contents.extend_from_slice(
-                b"\npost(\"/probe\", \"probe#create\")\npatch(\"/probe\", \"probe#update\")\nget(\"/probe/jobs\", \"probe#jobs\")\n",
+                b"\npost(\"/probe\", \"probe#create\")\npatch(\"/probe\", \"probe#update\")\nget(\"/probe/jobs\", \"probe#jobs\")\nget(\"/probe/tenant\", \"probe#tenant\")\n",
             );
         }
     }
@@ -90,6 +120,18 @@ fn example_files() -> Vec<(String, Vec<u8>)> {
     files.push((
         "/app/app/jobs/probe_job.sl".to_string(),
         PROBE_JOB.as_bytes().to_vec(),
+    ));
+    files.push((
+        "/app/app/middleware/probe_site.sl".to_string(),
+        PROBE_MIDDLEWARE.as_bytes().to_vec(),
+    ));
+    files.push((
+        "/app/config/database.toml".to_string(),
+        PROBE_DATABASE_TOML.as_bytes().to_vec(),
+    ));
+    files.push((
+        "/app/app/models/probe_note.sl".to_string(),
+        PROBE_MODEL.as_bytes().to_vec(),
     ));
     files
 }
@@ -158,6 +200,25 @@ fn boots_a_mounted_app_and_answers_requests() {
             assert_eq!(info["colo"], "MRS");
 
             assert_eq!(get("/no/such/page", "").0, 404);
+
+            // The app's middleware runs on the edge, and the tenant it chose
+            // lasts for its request only.
+            let tenant = |site: Option<&str>| {
+                let mut headers = vec![("host".to_string(), "cf.example.test".to_string())];
+                if let Some(site) = site {
+                    headers.push(("x-site".to_string(), site.to_string()));
+                }
+                let response = edge::handle(EdgeRequest {
+                    method: "GET".to_string(),
+                    path: "/probe/tenant".to_string(),
+                    query: String::new(),
+                    headers,
+                    body: Vec::new(),
+                });
+                String::from_utf8(response.body).unwrap()
+            };
+            assert_eq!(tenant(Some("acme")), "tenant=acme");
+            assert_eq!(tenant(None), "tenant=null", "no tenant carried into the next request");
 
             // A multipart upload of bytes that are not UTF-8 reaches the action
             // whole, and an action answering bytes sends them back unchanged.

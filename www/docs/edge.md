@@ -243,8 +243,55 @@ What D1 does not offer:
 One D1 database per site: a connection `url = "d1://SITE_{tenant}"` sends each
 tenant's queries to its own binding (`switch_tenant("acme")` → `SITE_acme`),
 declared in `wrangler.toml` with one `[[d1_databases]]` block per site. Bindings
-are fixed at deploy, so a new site means a new binding and a redeploy — see
-[One database per tenant](multi-database.md#one-database-per-tenant).
+are fixed at deploy, so a new site means a new binding and a redeploy — for many
+sites, use [SQLite in Durable Objects](#sqlite-in-durable-objects-a-database-per-tenant)
+instead. See [One database per tenant](multi-database.md#one-database-per-tenant).
+
+### SQLite in Durable Objects: a database per tenant
+
+A [Durable Object](https://developers.cloudflare.com/durable-objects/) with
+SQLite storage is a small database of its own, created the first time it is
+named. Soli's D1 adapter reaches one with a `do://` url: the binding, then the
+object's name.
+
+```toml
+# config/database.toml
+default = "primary"
+
+[connections.primary]            # accounts, sites — on D1
+adapter = "d1"
+url = "d1://DB"
+
+[connections.site]               # each site's data — its own Durable Object
+adapter = "d1"
+url = "do://SITES/{tenant}"
+```
+
+```toml
+# wrangler.toml
+[[durable_objects.bindings]]
+name = "SITES"
+class_name = "SoliSqlObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SoliSqlObject"]
+```
+
+`SoliSqlObject` ships in every Worker `soli edge build` packages: it runs the
+statements it is sent on its own storage and answers like D1, so models,
+`grouped` (one RPC per block, run in one storage transaction), and everything
+else the D1 adapter does work unchanged. With
+[`switch_tenant(site.db_key)`](multi-database.md#one-database-per-tenant) in a
+middleware, `do://SITES/{tenant}` gives every site a database of its own —
+unlike a D1 binding per site, nothing is declared per site and nothing is
+redeployed when one is added. A fixed name (`do://SITES/main`) makes a single
+object-backed database.
+
+The same limits as D1 apply (no `Model.transaction`, no column-aware models), a
+Durable Object holds up to 10 GB, and its object name is limited to letters,
+digits, `_` and `-`. Under `soli edge dev` the objects are local, in
+`dist/edge/.wrangler/state`.
 
 ### SoliDB
 
