@@ -2,6 +2,7 @@
 
 pub mod builtins;
 pub mod deadline;
+pub mod domain;
 pub mod environment;
 pub mod executor;
 pub mod hidden_class;

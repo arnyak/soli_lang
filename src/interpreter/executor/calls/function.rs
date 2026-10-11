@@ -5,7 +5,7 @@ use crate::ast::{Expr, ExprKind};
 use crate::error::RuntimeError;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::executor::{Interpreter, RuntimeResult};
-use crate::interpreter::value::{HashKey, Instance, Value, NATIVE_CONSTRUCTOR};
+use crate::interpreter::value::{HashKey, Instance, Value};
 use crate::span::Span;
 
 use std::cell::RefCell;
@@ -2381,80 +2381,7 @@ impl Interpreter {
             }
 
             Value::Class(class) => {
-                // Class instantiation
-                let instance = Rc::new(RefCell::new(Instance::new(class.clone())));
-                self.initialize_instance_fields(&class, &instance)?;
-
-                if let Some(ref ctor) = class.constructor {
-                    let required_arity = ctor.arity();
-                    let full_arity = ctor.full_arity();
-
-                    let param_names: Vec<String> =
-                        ctor.params.iter().map(|p| p.name.clone()).collect();
-
-                    for name in named_args.keys() {
-                        if !param_names.contains(name) {
-                            return Err(RuntimeError::undefined_variable(name.clone(), span));
-                        }
-                    }
-
-                    let mut ctor_args = Vec::new();
-                    let mut used_params = std::collections::HashSet::new();
-
-                    for (i, arg_val) in positional_args.iter().enumerate() {
-                        if i < param_names.len() {
-                            ctor_args.push(arg_val.clone());
-                            used_params.insert(param_names[i].clone());
-                        } else {
-                            return Err(RuntimeError::wrong_arity(
-                                full_arity,
-                                positional_args.len() + named_args.len(),
-                                span,
-                            ));
-                        }
-                    }
-
-                    for (i, param_name) in param_names.iter().enumerate() {
-                        if used_params.contains(param_name) {
-                            continue;
-                        }
-                        if let Some(named_val) = named_args.get(param_name) {
-                            ctor_args.push(named_val.clone());
-                        } else if let Some(default_expr) = ctor.param_default_value(i) {
-                            let default_value = self.evaluate(default_expr)?;
-                            ctor_args.push(default_value);
-                        } else {
-                            return Err(RuntimeError::wrong_arity(
-                                required_arity,
-                                ctor_args.len(),
-                                span,
-                            ));
-                        }
-                    }
-
-                    let ctor_env = Environment::with_enclosing(ctor.closure.clone());
-                    let mut ctor_env = ctor_env;
-                    ctor_env.define("this".to_string(), Value::Instance(instance.clone()));
-
-                    for (param, value) in ctor.params.iter().zip(ctor_args.iter()) {
-                        ctor_env.define(param.name.clone(), value.clone());
-                    }
-
-                    self.execute_constructor_body(ctor, ctor_env)?;
-                } else if let Some(init) = class.find_native_method(NATIVE_CONSTRUCTOR) {
-                    if let Some(name) = named_args.keys().next() {
-                        return Err(RuntimeError::new(
-                            format!("{}() takes no named argument '{}'", class.name, name),
-                            span,
-                        ));
-                    }
-                    let mut init_args = Vec::with_capacity(positional_args.len() + 1);
-                    init_args.push(Value::Instance(instance.clone()));
-                    init_args.extend(positional_args.iter().cloned());
-                    (init.func)(&init_args).map_err(|e| RuntimeError::new(e, span))?;
-                }
-
-                Ok(Value::Instance(instance))
+                self.instantiate_class(&class, positional_args, named_args, span)
             }
 
             Value::Instance(inst) => {
@@ -2537,63 +2464,10 @@ impl Interpreter {
                     _ => return Err(RuntimeError::type_error("'super' outside of class", span)),
                 };
 
-                if let Some(ref ctor) = superclass.constructor {
-                    let required_arity = ctor.arity();
-                    let full_arity = ctor.full_arity();
-
-                    let param_names: Vec<String> =
-                        ctor.params.iter().map(|p| p.name.clone()).collect();
-
-                    for name in named_args.keys() {
-                        if !param_names.contains(name) {
-                            return Err(RuntimeError::undefined_variable(name.clone(), span));
-                        }
-                    }
-
-                    let mut ctor_args = Vec::new();
-                    let mut used_params = std::collections::HashSet::new();
-
-                    for (i, arg_val) in positional_args.iter().enumerate() {
-                        if i < param_names.len() {
-                            ctor_args.push(arg_val.clone());
-                            used_params.insert(param_names[i].clone());
-                        } else {
-                            return Err(RuntimeError::wrong_arity(
-                                full_arity,
-                                positional_args.len() + named_args.len(),
-                                span,
-                            ));
-                        }
-                    }
-
-                    for (i, param_name) in param_names.iter().enumerate() {
-                        if used_params.contains(param_name) {
-                            continue;
-                        }
-                        if let Some(named_val) = named_args.get(param_name) {
-                            ctor_args.push(named_val.clone());
-                        } else if let Some(default_expr) = ctor.param_default_value(i) {
-                            let default_value = self.evaluate(default_expr)?;
-                            ctor_args.push(default_value);
-                        } else {
-                            return Err(RuntimeError::wrong_arity(
-                                required_arity,
-                                ctor_args.len(),
-                                span,
-                            ));
-                        }
-                    }
-
-                    let ctor_env = Environment::with_enclosing(ctor.closure.clone());
-                    let mut ctor_env = ctor_env;
-                    ctor_env.define("this".to_string(), Value::Instance(instance.clone()));
-
-                    for (param, value) in ctor.params.iter().zip(ctor_args) {
-                        ctor_env.define(param.name.clone(), value);
-                    }
-
-                    self.execute_constructor_body(ctor, ctor_env)?;
-                }
+                // The nearest constructor up from the superclass, native ones
+                // included — `super(message)` in an `Error` subclass reaches
+                // `Error`'s.
+                self.run_constructor(&instance, &superclass, positional_args, named_args, span)?;
 
                 Ok(Value::Null)
             }
@@ -2679,56 +2553,7 @@ impl Interpreter {
             }
 
             Value::Class(class) => {
-                let instance = Rc::new(RefCell::new(Instance::new(class.clone())));
-                self.initialize_instance_fields(&class, &instance)?;
-
-                if let Some(ref ctor) = class.constructor {
-                    let required_arity = ctor.arity();
-                    let full_arity = ctor.full_arity();
-
-                    if arguments.len() < required_arity {
-                        return Err(RuntimeError::wrong_arity(
-                            required_arity,
-                            arguments.len(),
-                            span,
-                        ));
-                    }
-
-                    if arguments.len() > full_arity {
-                        return Err(RuntimeError::wrong_arity(full_arity, arguments.len(), span));
-                    }
-
-                    let mut final_args = arguments.clone();
-                    while final_args.len() < full_arity {
-                        if let Some(default_expr) = ctor.param_default_value(final_args.len()) {
-                            let default_value = self.evaluate(default_expr)?;
-                            final_args.push(default_value);
-                        } else {
-                            return Err(RuntimeError::wrong_arity(
-                                full_arity,
-                                final_args.len(),
-                                span,
-                            ));
-                        }
-                    }
-
-                    let ctor_env = Environment::with_enclosing(ctor.closure.clone());
-                    let mut ctor_env = ctor_env;
-                    ctor_env.define("this".to_string(), Value::Instance(instance.clone()));
-
-                    for (param, value) in ctor.params.iter().zip(final_args) {
-                        ctor_env.define(param.name.clone(), value);
-                    }
-
-                    self.execute_constructor_body(ctor, ctor_env)?;
-                } else if let Some(init) = class.find_native_method(NATIVE_CONSTRUCTOR) {
-                    let mut init_args = Vec::with_capacity(arguments.len() + 1);
-                    init_args.push(Value::Instance(instance.clone()));
-                    init_args.extend(arguments.iter().cloned());
-                    (init.func)(&init_args).map_err(|e| RuntimeError::new(e, span))?;
-                }
-
-                Ok(Value::Instance(instance))
+                self.instantiate_class(&class, arguments, std::collections::HashMap::new(), span)
             }
 
             Value::Method(method) => self.call_method(method, arguments, span),

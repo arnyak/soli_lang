@@ -1011,6 +1011,44 @@ end
 - A bare `catch e` catches everything (catch-all)
 - If no typed catch matches and there is no catch-all, the exception re-throws to the outer scope
 
+### Error classes: `Error` and `DomainError`
+
+`Error` is the built-in base for thrown objects. It takes a message and optional
+details, and `to_s` gives `"ClassName: message"`:
+
+```soli
+class InsufficientFunds < DomainError
+end
+
+try
+  throw new InsufficientFunds("balance too low", {"needed": 30})
+catch DomainError e
+  print(e.message)            # balance too low
+  print(e.details["needed"])  # 30
+  print(e.to_s)               # InsufficientFunds: balance too low
+end
+```
+
+A subclass that needs more fields keeps its own constructor and passes the
+message up with `super`:
+
+```soli
+class Overdrawn < DomainError
+  amount: Int
+
+  new(amount: Int)
+    super("overdrawn by #{amount}", {"amount": amount})
+    @amount = amount
+  end
+end
+```
+
+Built in: `Error`, with `ValueError`, `TypeError`, `KeyError`, `IndexError` and
+`RuntimeError` under it, and `DomainError` — the base for errors a domain rule
+raises, as opposed to a bug — with `InvariantViolation` under it. Errors Soli
+itself raises (a missing method, a failed query) still reach `catch` as strings,
+so a typed catch does not match them; a bare `catch e` does.
+
 ### What `catch` receives
 
 `throw` carries a **value**, not a message, and that value arrives at `catch` intact — no

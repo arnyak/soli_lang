@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+* **language:** **`Error` carries a message and details; `DomainError` and `InvariantViolation` are built in.** `new InsufficientFunds("balance too low", {"needed": 30})` sets `message` and `details` (the built-in `Error` classes had no constructor, so `new ValueError("bad")` dropped its argument and `e.message` failed), `to_s` gives `"InsufficientFunds: balance too low"`, and a subclass with its own constructor reaches it with `super(message, details)` on both engines. `DomainError < Error` is the base for errors a domain rule raises, `InvariantViolation < DomainError` the one a broken invariant raises. The type checker knows the hierarchy, so `e.message` and `super(...)` check in scripts; `super` toward a parent it cannot see (declared in another file of the app) now types as `Any` instead of "Class 'X' has no superclass".
+
+### Changed
+
+* **language:** **Every way of instantiating a class runs the same constructor.** `new Klass(...)`, `Klass(...)` and named-argument calls went through three copies of the binding code on the tree-walker, which disagreed: only `new` looked for an inherited constructor, only `Klass(...)` ran a native one, and `super(...)` saw the parent's own constructor only. They now share one path — the class's own or nearest inherited constructor, else a native one — and `super(...)` follows the same rule. Arguments to a class with no constructor are now evaluated (they were skipped by `new`).
+
 ### Fixed
 
 * **vm:** **A typed `catch` that is the last clause no longer rethrows after handling.** On the VM, `try … catch ValueError e … end` with the matching typed clause last ran its body and then threw `Unhandled exception: <fn >`: the compiler emitted the jump past the no-match `Rethrow` for every clause but the last. Scripts (VM by default) and production request handlers were affected; `soli test` runs on the tree-walker and did not show it.

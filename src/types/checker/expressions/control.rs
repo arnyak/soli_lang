@@ -22,6 +22,11 @@ impl TypeChecker {
         if let Some(class_type) = self.env.current_class_type() {
             if let Some(ref superclass) = class_type.superclass {
                 Ok(Type::Class(*superclass.clone()))
+            } else if class_type.unresolved_superclass.is_some() {
+                // A parent declared where this pass cannot see it (a sibling
+                // file of the app, a framework class): its constructor and
+                // methods are unknown, not missing.
+                Ok(Type::Any)
             } else {
                 Err(TypeError::NoSuperclass(class_type.name.clone(), span))
             }

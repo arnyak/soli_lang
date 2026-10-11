@@ -39,102 +39,146 @@ impl Interpreter {
             ));
         }
 
-        // Create instance
-        let instance = Rc::new(RefCell::new(Instance::new(class.clone())));
-
-        // Initialize fields from class field declarations (including inherited fields)
-        self.initialize_instance_fields(&class, &instance)?;
-
-        // Call constructor if present
-        if let Some(ctor) = class.find_constructor() {
-            let ctor = &ctor;
-            let mut positional_args = Vec::new();
-            let mut named_args = HashMap::new();
-
-            for arg in arguments {
-                match arg {
-                    Argument::Positional(expr) => {
-                        positional_args.push(self.evaluate(expr)?);
-                    }
-                    Argument::Named(named) => {
-                        if named_args.contains_key(&named.name) {
-                            return Err(RuntimeError::type_error(
-                                format!("duplicate named argument '{}'", named.name),
-                                named.span,
-                            ));
-                        }
-                        named_args.insert(named.name.clone(), self.evaluate(&named.value)?);
-                    }
-                    Argument::Block(_) => {
+        let mut positional_args = Vec::new();
+        let mut named_args = HashMap::new();
+        for arg in arguments {
+            match arg {
+                Argument::Positional(expr) => {
+                    positional_args.push(self.evaluate(expr)?);
+                }
+                Argument::Named(named) => {
+                    if named_args.contains_key(&named.name) {
                         return Err(RuntimeError::type_error(
-                            "constructor does not support block arguments",
-                            span,
+                            format!("duplicate named argument '{}'", named.name),
+                            named.span,
                         ));
                     }
+                    named_args.insert(named.name.clone(), self.evaluate(&named.value)?);
                 }
-            }
-
-            let param_names: Vec<String> = ctor.params.iter().map(|p| p.name.clone()).collect();
-
-            // Check for unknown named arguments
-            for name in named_args.keys() {
-                if !param_names.contains(name) {
-                    return Err(RuntimeError::undefined_variable(name.clone(), span));
-                }
-            }
-
-            // Build constructor arguments
-            let mut ctor_args = Vec::new();
-            let mut used_params = HashSet::new();
-
-            // Positional arguments first
-            for (i, arg_val) in positional_args.iter().enumerate() {
-                if i < param_names.len() {
-                    ctor_args.push(arg_val.clone());
-                    used_params.insert(param_names[i].clone());
-                } else {
-                    return Err(RuntimeError::wrong_arity(
-                        ctor.full_arity(),
-                        positional_args.len() + named_args.len(),
+                Argument::Block(_) => {
+                    return Err(RuntimeError::type_error(
+                        "constructor does not support block arguments",
                         span,
                     ));
                 }
             }
-
-            // Named arguments and defaults
-            for (i, param_name) in param_names.iter().enumerate() {
-                if used_params.contains(param_name) {
-                    continue;
-                }
-                if let Some(named_val) = named_args.get(param_name) {
-                    ctor_args.push(named_val.clone());
-                } else if let Some(default_expr) = ctor.param_default_value(i) {
-                    let default_value = self.evaluate(default_expr)?;
-                    ctor_args.push(default_value);
-                } else {
-                    return Err(RuntimeError::wrong_arity(
-                        ctor.arity(),
-                        ctor_args.len(),
-                        span,
-                    ));
-                }
-            }
-
-            // Create constructor environment
-            let ctor_env = Environment::with_enclosing(ctor.closure.clone());
-            let mut ctor_env = ctor_env;
-            ctor_env.define("this".to_string(), Value::Instance(instance.clone()));
-
-            for (param, value) in ctor.params.iter().zip(ctor_args.iter()) {
-                ctor_env.define(param.name.clone(), value.clone());
-            }
-
-            // Execute constructor body (pushes a frame so coverage/stack
-            // traces attribute constructor lines to the class's own file).
-            self.execute_constructor_body(ctor, ctor_env)?;
         }
 
+        self.instantiate_class(&class, positional_args, named_args, span)
+    }
+
+    /// Create an instance of `class` and run its constructor — the one path
+    /// behind `new Klass(...)`, `Klass(...)` and every other way the
+    /// tree-walker instantiates a class, so they cannot disagree.
+    ///
+    /// Fields first (inherited ones included), then the constructor: the
+    /// class's own or the nearest inherited one, else a native constructor
+    /// (`__construct__`, e.g. `Error`'s message). Arguments bind positionally,
+    /// then by name, then from defaults. With no constructor at all the
+    /// arguments are ignored, as they always were.
+    pub(crate) fn instantiate_class(
+        &mut self,
+        class: &Rc<crate::interpreter::value::Class>,
+        positional_args: Vec<Value>,
+        named_args: HashMap<String, Value>,
+        span: Span,
+    ) -> RuntimeResult<Value> {
+        if class.is_module {
+            return Err(RuntimeError::type_error(
+                format!("cannot instantiate module {}", class.name),
+                span,
+            ));
+        }
+
+        let instance = Rc::new(RefCell::new(Instance::new(class.clone())));
+        self.initialize_instance_fields(class, &instance)?;
+        self.run_constructor(&instance, class, positional_args, named_args, span)?;
         Ok(Value::Instance(instance))
+    }
+
+    /// Run `class`'s constructor on `instance`: its own or the nearest
+    /// inherited one, else a native constructor, else nothing. Shared by
+    /// instantiation and `super(...)` in a subclass constructor.
+    pub(crate) fn run_constructor(
+        &mut self,
+        instance: &Rc<RefCell<Instance>>,
+        class: &crate::interpreter::value::Class,
+        positional_args: Vec<Value>,
+        named_args: HashMap<String, Value>,
+        span: Span,
+    ) -> RuntimeResult<()> {
+        if let Some(ctor) = class.find_constructor() {
+            let ctor_args =
+                self.bind_constructor_args(&ctor, positional_args, &named_args, span)?;
+            let mut ctor_env = Environment::with_enclosing(ctor.closure.clone());
+            ctor_env.define("this".to_string(), Value::Instance(instance.clone()));
+            for (param, value) in ctor.params.iter().zip(ctor_args) {
+                ctor_env.define(param.name.clone(), value);
+            }
+            // Pushes a frame so coverage/stack traces attribute constructor
+            // lines to the class's own file.
+            self.execute_constructor_body(&ctor, ctor_env)?;
+        } else if let Some(init) =
+            class.find_native_method(crate::interpreter::value::NATIVE_CONSTRUCTOR)
+        {
+            if let Some(name) = named_args.keys().next() {
+                return Err(RuntimeError::new(
+                    format!("{}() takes no named argument '{}'", class.name, name),
+                    span,
+                ));
+            }
+            let mut init_args = Vec::with_capacity(positional_args.len() + 1);
+            init_args.push(Value::Instance(instance.clone()));
+            init_args.extend(positional_args);
+            (init.func)(&init_args).map_err(|e| RuntimeError::new(e, span))?;
+        }
+        Ok(())
+    }
+
+    /// A constructor's argument list from positional and named arguments and
+    /// the parameters' defaults.
+    fn bind_constructor_args(
+        &mut self,
+        ctor: &crate::interpreter::value::Function,
+        positional_args: Vec<Value>,
+        named_args: &HashMap<String, Value>,
+        span: Span,
+    ) -> RuntimeResult<Vec<Value>> {
+        let param_names: Vec<&str> = ctor.params.iter().map(|p| p.name.as_str()).collect();
+        for name in named_args.keys() {
+            if !param_names.contains(&name.as_str()) {
+                return Err(RuntimeError::undefined_variable(name.clone(), span));
+            }
+        }
+        if positional_args.len() > param_names.len() {
+            return Err(RuntimeError::wrong_arity(
+                ctor.full_arity(),
+                positional_args.len() + named_args.len(),
+                span,
+            ));
+        }
+        let given = positional_args.len();
+        let mut ctor_args = positional_args;
+        let mut used_params: HashSet<&str> = param_names[..given].iter().copied().collect();
+        for (i, param_name) in param_names.iter().enumerate() {
+            if used_params.contains(param_name) {
+                continue;
+            }
+            if let Some(named_val) = named_args.get(*param_name) {
+                ctor_args.push(named_val.clone());
+            } else if let Some(default_expr) = ctor.param_default_value(i) {
+                let default_value = self.evaluate(default_expr)?;
+                ctor_args.push(default_value);
+            } else {
+                return Err(RuntimeError::wrong_arity(
+                    ctor.arity(),
+                    ctor_args.len(),
+                    span,
+                ));
+            }
+            used_params.insert(param_name);
+        }
+        Ok(ctor_args)
     }
 
     /// Initialize instance fields from class field declarations, including

@@ -3218,6 +3218,15 @@ impl Vm {
                         let this_val = self.stack[receiver_idx].clone();
                         self.run_jit_method_to_completion(&ctor, argc, span)?;
                         self.push(this_val);
+                    } else if let Some(init) =
+                        superclass.find_native_method(crate::interpreter::value::NATIVE_CONSTRUCTOR)
+                    {
+                        // A native superclass constructor — `super(message)`
+                        // in an `Error` subclass. It takes `this` first, then
+                        // the arguments; the expression evaluates to `this`.
+                        let call_args: Vec<Value> = self.stack[receiver_idx..].to_vec();
+                        self.stack.truncate(receiver_idx + 1);
+                        (init.func)(&call_args).map_err(|e| RuntimeError::new(e, span))?;
                     } else {
                         // No superclass constructor: drop args, evaluate to
                         // `this` (matching tree-walker behavior).

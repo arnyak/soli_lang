@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::types::type_repr::{ClassType, EnumType, InterfaceType, MethodInfo, Type};
+use crate::types::type_repr::{ClassType, EnumType, FieldInfo, InterfaceType, MethodInfo, Type};
 
 /// A type environment tracking types of variables and declarations.
 #[derive(Debug, Clone)]
@@ -1417,6 +1417,58 @@ impl TypeEnvironment {
         self.register_builtin_classes();
     }
 
+    /// `Error` and the built-in errors: a `message` and `details` set by the
+    /// native constructor, and `to_s`. `message` is `Any` — an error thrown
+    /// without one carries `nil`.
+    fn register_error_classes(&mut self) {
+        let mut error = ClassType::new("Error".to_string());
+        for name in ["message", "details"] {
+            error.fields.insert(
+                name.to_string(),
+                FieldInfo {
+                    name: name.to_string(),
+                    ty: Type::Any,
+                    is_private: false,
+                    is_protected: false,
+                    is_static: false,
+                },
+            );
+        }
+        error.methods.insert(
+            "to_s".to_string(),
+            MethodInfo {
+                name: "to_s".to_string(),
+                params: vec![],
+                return_type: Type::String,
+                is_private: false,
+                is_protected: false,
+                is_static: false,
+            },
+        );
+        let subclass = |name: &str, superclass: &ClassType| {
+            let mut class = ClassType::new(name.to_string());
+            class.superclass = Some(Box::new(superclass.clone()));
+            class
+        };
+        for name in [
+            "ValueError",
+            "TypeError",
+            "KeyError",
+            "IndexError",
+            "RuntimeError",
+        ] {
+            self.classes
+                .insert(name.to_string(), subclass(name, &error));
+        }
+        let domain_error = subclass("DomainError", &error);
+        self.classes.insert(
+            "InvariantViolation".to_string(),
+            subclass("InvariantViolation", &domain_error),
+        );
+        self.classes.insert("DomainError".to_string(), domain_error);
+        self.classes.insert("Error".to_string(), error);
+    }
+
     fn register_builtin_classes(&mut self) {
         // DateTime class
         let mut datetime_class = ClassType::new("DateTime".to_string());
@@ -1692,6 +1744,8 @@ impl TypeEnvironment {
             );
         }
         self.classes.insert("DateTime".to_string(), datetime_class);
+
+        self.register_error_classes();
 
         // Duration class
         let mut duration_class = ClassType::new("Duration".to_string());

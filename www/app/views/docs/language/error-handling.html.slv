@@ -348,6 +348,35 @@ end</code></pre>
             </div>
         </section>
 
+        <section id="error-classes" class="scroll-mt-20 mb-6">
+            <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+                <a href="#error-classes" class="group flex items-center gap-2 mb-3">
+                    <code class="text-lg font-mono text-amber-400">Error and DomainError</code>
+                </a>
+                <p class="text-gray-400 mb-3"><code class="text-amber-400">Error</code> is the built-in base for thrown objects. It takes a message and optional details, and <code class="text-amber-400">to_s</code> gives <code>"ClassName: message"</code>. A subclass with more fields keeps its own constructor and passes the message up with <code class="text-amber-400">super</code>.</p>
+<pre data-filename="Example"><code class="language-soli text-sm">class InsufficientFunds &lt; DomainError
+end
+
+class Overdrawn &lt; DomainError
+  amount: Int
+
+  new(amount: Int)
+    super("overdrawn by #{amount}", {"amount": amount})
+    @amount = amount
+  end
+end
+
+try
+  throw new InsufficientFunds("balance too low", {"needed": 30})
+catch DomainError e
+  print(e.message)            # balance too low
+  print(e.details["needed"])  # 30
+  print(e.to_s)               # InsufficientFunds: balance too low
+end</code></pre>
+                <p class="text-gray-400 mt-3">Built in: <code class="text-amber-400">Error</code>, with <code>ValueError</code>, <code>TypeError</code>, <code>KeyError</code>, <code>IndexError</code> and <code>RuntimeError</code> under it, and <code class="text-amber-400">DomainError</code> &mdash; the base for errors a domain rule raises, as opposed to a bug &mdash; with <code>InvariantViolation</code> under it. Errors Soli itself raises (a missing method, a failed query) still reach <code>catch</code> as strings: a typed catch does not match them, a bare <code>catch e</code> does.</p>
+            </div>
+        </section>
+
         <div class="rounded-xl bg-amber-500/10 border border-amber-500/30 p-5 mb-6">
             <div class="flex gap-3">
                 <svg class="w-5 h-5 text-amber-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

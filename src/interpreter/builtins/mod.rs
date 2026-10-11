@@ -788,17 +788,65 @@ pub fn register_builtins(env: &mut Environment, include_test_builtins: bool) {
 }
 
 /// Register the Error class and built-in error types.
+///
+/// `Error` carries a `message` and optional `details`, set by its native
+/// constructor (`new InsufficientFunds("balance too low", {"needed": 30})`) and
+/// read by `catch` blocks (`e.message`) and by the request handler when an
+/// error goes uncaught. A subclass with its own constructor keeps it, and
+/// `super(message)` from there reaches this one.
+///
+/// `DomainError` is the base for errors a domain rule raises — an outcome of
+/// the request, not a bug: uncaught in a served app it answers 422 with its
+/// message. `InvariantViolation` is the `DomainError` a value object's broken
+/// invariant raises.
 fn register_error_classes(env: &mut Environment) {
-    use crate::interpreter::value::Class;
+    use crate::interpreter::value::{Class, NativeFunction, NATIVE_CONSTRUCTOR};
 
-    // Create the Error base class (shared by all subclasses)
+    let mut native_methods: HashMap<String, Rc<NativeFunction>> = HashMap::new();
+    native_methods.insert(
+        NATIVE_CONSTRUCTOR.to_string(),
+        Rc::new(NativeFunction::new("Error", None, |args| {
+            let this = match args.first() {
+                Some(Value::Instance(inst)) => inst,
+                _ => return Err("Error(message, details) must be called on a class".to_string()),
+            };
+            if args.len() > 3 {
+                return Err(format!(
+                    "{}(message, details) takes at most 2 arguments, got {}",
+                    this.borrow().class.name,
+                    args.len() - 1
+                ));
+            }
+            let mut this = this.borrow_mut();
+            this.set("message", args.get(1).cloned().unwrap_or(Value::Null));
+            this.set("details", args.get(2).cloned().unwrap_or(Value::Null));
+            Ok(Value::Null)
+        })),
+    );
+    // "InsufficientFunds: balance too low", or the class name alone.
+    native_methods.insert(
+        "to_s".to_string(),
+        Rc::new(NativeFunction::new("to_s", Some(0), |args| {
+            let Some(Value::Instance(inst)) = args.first() else {
+                return Err("to_s must be called on an error".to_string());
+            };
+            let inst = inst.borrow();
+            let name = inst.class.name.clone();
+            Ok(Value::String(match inst.get("message") {
+                Some(Value::Null) | None => name.into(),
+                Some(Value::String(message)) => format!("{name}: {message}").into(),
+                Some(other) => format!("{name}: {other}").into(),
+            }))
+        })),
+    );
+
     let error_class = Rc::new(Class {
         name: "Error".to_string(),
         superclass: None,
         methods: Rc::new(RefCell::new(HashMap::new())),
         static_methods: HashMap::new(),
         native_static_methods: HashMap::new(),
-        native_methods: HashMap::new(),
+        native_methods,
         static_fields: Rc::new(RefCell::new(HashMap::new())),
         fields: HashMap::new(),
         constructor: None,
@@ -807,11 +855,10 @@ fn register_error_classes(env: &mut Environment) {
     });
     env.define("Error".to_string(), Value::Class(error_class.clone()));
 
-    // Helper to create an error subclass sharing the same Error base Rc
-    let mut define_error_subclass = |name: &str| {
-        let subclass = Class {
+    let subclass = |name: &str, superclass: &Rc<Class>| {
+        Rc::new(Class {
             name: name.to_string(),
-            superclass: Some(error_class.clone()),
+            superclass: Some(superclass.clone()),
             methods: Rc::new(RefCell::new(HashMap::new())),
             static_methods: HashMap::new(),
             native_static_methods: HashMap::new(),
@@ -821,13 +868,27 @@ fn register_error_classes(env: &mut Environment) {
             constructor: None,
             nested_classes: Rc::new(RefCell::new(HashMap::new())),
             ..Default::default()
-        };
-        env.define(name.to_string(), Value::Class(Rc::new(subclass)));
+        })
     };
 
-    define_error_subclass("ValueError");
-    define_error_subclass("TypeError");
-    define_error_subclass("KeyError");
-    define_error_subclass("IndexError");
-    define_error_subclass("RuntimeError");
+    for name in [
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "IndexError",
+        "RuntimeError",
+    ] {
+        env.define(name.to_string(), Value::Class(subclass(name, &error_class)));
+    }
+    let domain_error = subclass("DomainError", &error_class);
+    env.define(
+        "DomainError".to_string(),
+        Value::Class(domain_error.clone()),
+    );
+    let invariant_violation = subclass("InvariantViolation", &domain_error);
+    env.define(
+        "InvariantViolation".to_string(),
+        Value::Class(invariant_violation.clone()),
+    );
+    crate::interpreter::domain::remember_error_classes(domain_error, invariant_violation);
 }
