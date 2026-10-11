@@ -171,7 +171,6 @@ describe("typed catch in a script run on the VM") do
   end
 
   test("a sole typed catch lets execution continue") do
-    pending("bug: on the VM a lone typed catch at script level rethrows `<fn >` after its body")
     soli_path = System.run_sync(["sh", "-c", "command -v soli"])["stdout"].trim
     script = "try\n  throw new ValueError()\ncatch ValueError e\n  print(\"c\")\nend\nprint(\"after\")\n"
     barf(TYPED_CATCH_SCRIPT, script)

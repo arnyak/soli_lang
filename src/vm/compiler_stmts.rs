@@ -446,7 +446,11 @@ impl Compiler {
                 self.compile_stmt(&clause.body)?;
                 self.end_scope(line);
 
-                if i < catch_clauses.len() - 1 {
+                // Jump past the rest — including, after a typed last clause,
+                // the `Rethrow` its no-match path falls into below. Without
+                // it a matching last typed clause ran its body and then
+                // rethrew the exception it had just handled.
+                if i < catch_clauses.len() - 1 || clause.type_name.is_some() {
                     end_jumps.push(self.emit_jump(Op::Jump(0), line));
                 }
             }

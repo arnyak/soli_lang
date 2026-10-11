@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **vm:** **A typed `catch` that is the last clause no longer rethrows after handling.** On the VM, `try … catch ValueError e … end` with the matching typed clause last ran its body and then threw `Unhandled exception: <fn >`: the compiler emitted the jump past the no-match `Rethrow` for every clause but the last. Scripts (VM by default) and production request handlers were affected; `soli test` runs on the tree-walker and did not show it.
+
 ## [2.22.0] - 2026-10-11
 
 ### Added

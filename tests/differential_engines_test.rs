@@ -229,6 +229,24 @@ const CASES: &[(&str, &str)] = &[
         "g = 1\nfn f() { g = 99 }\nf()\nprint(g)",
     ),
     // --- try / catch / finally ---
+    // A typed last clause that matches runs its body and continues: the VM
+    // used to fall into the no-match `Rethrow` after the body.
+    (
+        "typed_catch_lone",
+        "try\n  throw new ValueError()\ncatch ValueError e\n  print(\"caught\")\nend\nprint(\"after\")",
+    ),
+    (
+        "typed_catch_last_of_two_matches",
+        "class A < Error\nend\nclass B < Error\nend\ntry\n  throw new B()\ncatch A e\n  print(\"a\")\ncatch B e\n  print(\"b\")\nend\nprint(\"after\")",
+    ),
+    (
+        "typed_catch_with_finally",
+        "fn f() { let log = []\n  try { throw new ValueError() } catch ValueError e { log.push(\"c\") } finally { log.push(\"f\") }\n  return log }\nprint(f())",
+    ),
+    (
+        "typed_catch_no_match_rethrows",
+        "try\n  try\n    throw new KeyError()\n  catch ValueError e\n    print(\"wrong\")\n  end\ncatch KeyError e\n  print(\"outer\")\nend",
+    ),
     (
         "try_finally_runs",
         "fn f() { let log = []\n  try { log.push(\"t\") } finally { log.push(\"f\") }\n  return log }\nprint(f())",
