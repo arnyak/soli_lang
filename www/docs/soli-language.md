@@ -3818,8 +3818,9 @@ end
 
 Inside a module, its classes are read unqualified — `Invoice` in a method
 of `Billing::PayInvoice` (or in a block there, or a module function) is
-`Billing::Invoice`, the way Ruby resolves constants lexically; outside, write
-`Billing::Invoice`. A declared return type may name a class of the module by
+`Billing::Invoice`; outside, write `Billing::Invoice`. The module is looked
+in when no global has that name, so a top-level `Invoice` would win — name
+the context (`Billing::Invoice`) where both exist. A declared return type may name a class of the module by
 its short name (`-> Invoice`).
 
 A model in a context gets its own collection (`billing_invoices`), and its

@@ -2,32 +2,39 @@
 
 Every app has rules that are not about HTTP or SQL: an amount of money is
 never negative, an invoice is paid once, an account cannot spend credit it
-does not have. In most codebases those rules end up wherever the first bug
-report put them — a check in one controller, a validation on one model, a
-condition in a background job — and the second place that needs one forgets
-it. Domain-driven design's tactical patterns are a way to give them a home:
-**value objects** that refuse to exist in a bad state, **aggregates** that
-guard their own consistency, and **domain errors** that say which rule was
-broken.
+does not have, and when an invoice is paid the warehouse should hear about it.
+In most codebases those rules end up wherever the first bug report put them
+— a check in one controller, a callback on one model, a line in a job — and
+the second place that needs one forgets it.
 
-Soli now has the three of them, without a new framework on the side: a value
-object is a class that inherits `ValueObject`, an aggregate is the `Model` you
-already write, and a domain error is a class that inherits `DomainError`. This
-post builds a small billing domain with them — accounts with prepaid credit,
-invoices paid from that credit — and every snippet below was run against that
+Domain-driven design gives them a home. Soli now ships its building blocks
+as part of the language and the ORM, with no framework on the side:
+
+- **value objects** that refuse to exist in a bad state;
+- **aggregates** — the `Model` you already write — with invariants and
+  optimistic locking;
+- **domain errors** that answer the HTTP status of the rule they broke;
+- **domain events** published after the commit, to in-process subscribers,
+  to jobs through a transactional outbox, and to an
+  [es](/docs/builtins/es) stream;
+- **bounded contexts**: modules with their own models, tables and names.
+
+This post builds one small billing domain with all of it — accounts with
+prepaid credit, invoices paid from that credit, a shipping context that
+reacts — and every snippet and every output below comes from running that
 app.
 
 <figure style="margin:1.5rem auto;max-width:1024px;">
-  <img src="/images/blog/domain-driven-design-in-soli.svg" width="1024" height="576" alt="Paying an invoice in a Soli app. A request POST /invoices/:id/pay reaches a thin controller, which calls the PayInvoice service. Inside one transaction, the Invoice aggregate (total and paid are Amount value objects, guarded by invariants) asks the Account (credit is an Amount) to debit itself. The outcome is 200 paid, 422 InsufficientFunds with its message, or 409 InvoiceAlreadyPaid; an Amount below zero cannot exist." style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid #30363d;background:#0b0d0f;">
-  <figcaption style="text-align:center;color:#8b949e;font-size:0.875rem;margin-top:0.5rem;">The rules live in the domain classes; the controller asks, and the domain errors become HTTP statuses.</figcaption>
+  <img src="/images/blog/domain-driven-design-in-soli.svg" width="1024" height="576" alt="Paying an invoice. POST /invoices/:id/pay calls Billing::PayInvoice, which runs one transaction: the Invoice aggregate (Amount value fields, invariants, optimistic lock) debits the Account and records InvoicePaid. The answer is 200, 422 InsufficientFunds or 409 InvoiceAlreadyPaid / StaleRecord. After the commit, InvoicePaid reaches a Shipping subscriber that creates a shipment, a ReceiptJob enqueued in the transaction (the outbox), and the billing topic of es." style="display:block;width:100%;height:auto;border-radius:12px;border:1px solid #30363d;background:#0b0d0f;">
+  <figcaption style="text-align:center;color:#8b949e;font-size:0.875rem;margin-top:0.5rem;">One use case, one transaction; what happened travels on as an event, once it is committed.</figcaption>
 </figure>
 
 ## A value object: `Amount`
 
 Money is the textbook value object. Five hundred euro cents is five hundred
 euro cents wherever it appears; it has no identity, and changing it means
-having a different amount. Keeping it as a bare integer is how a price ends up
-added to a quantity, or euros to dollars.
+having a different amount. As a bare integer it ends up added to a quantity,
+or euros to dollars.
 
 ```soli
 # app/models/values/amount.sl
@@ -65,126 +72,130 @@ class Amount < ValueObject
     throw CurrencyMismatch.new("cannot combine #{@currency} and #{other.currency}")
   end
 end
-```
 
-What `ValueObject` gives the class:
-
-- **Construction from the fields.** `Amount.new(500, "USD")`,
-  `Amount.new(cents: 500)` and `Amount.new({"cents": 500})` (a hash, as it
-  arrives from JSON) all work, and `currency` takes its default. A class that
-  needs to clean its input up — trimming and downcasing an email — keeps a
-  constructor of its own.
-- **Equality by value.** `Amount.new(500) == Amount.new(500, "EUR")` is
-  `true`, so `includes?` and `uniq` work on lists of amounts.
-- **Immutability.** `amount.cents = 1` raises *value objects are immutable —
-  build a changed copy with with(cents: …)*. `with` is how `plus` and `minus`
-  return a new amount; it goes through the constructor again.
-- **Invariants.** Each `invariant` block runs every time an amount is built,
-  `with` included. A falsy one throws an `InvariantViolation`.
-
-That last point is what makes the type worth having. `minus` does not check
-for a negative result: if the subtraction goes below zero, building the new
-`Amount` fails, and *no code anywhere* can hold a negative amount. An
-`Amount.new(-1)` in a served app answers 422 with *Amount: an amount is never
-negative*, and `Amount.new(100, "eur")` with *Amount: must be a three-letter
-code*.
-
-The file sits in `app/models/values/`, a subdirectory, and the models in
-`app/models/` still find it: files that declare a value object or an enum load
-before the other models.
-
-## The errors the domain raises
-
-Domain errors are ordinary classes:
-
-```soli
-# app/models/domain_errors.sl
 class CurrencyMismatch < DomainError
 end
+```
 
-class InsufficientFunds < DomainError
-end
+`ValueObject` builds an `Amount` from its fields — `Amount.new(500)`,
+`Amount.new(cents: 500)`, `Amount.new({"cents": 500})` from JSON — makes two
+amounts with the same fields equal (`Amount.new(500) == Amount.new(500, "EUR")`
+is `true`, so `includes?` and `uniq` work), and freezes it: `amount.cents = 1`
+raises, and `with(cents: …)` is how `plus` and `minus` return a new one.
 
-class InvoiceAlreadyPaid < DomainError
-  static http_status: Int = 409
+The invariants run every time an amount is built, `with` included. `minus`
+does not check for a negative result: if the subtraction goes below zero,
+building the new `Amount` fails, so no code anywhere can hold a negative
+amount. `Amount.new(-1)` throws an `InvariantViolation` — *Amount: an amount
+is never negative* — and in a served app, left uncaught, it answers 422.
+
+## Domain errors
+
+```soli
+# app/models/billing/errors.sl
+module Billing
+  class InsufficientFunds < DomainError
+  end
+
+  class InvoiceAlreadyPaid < DomainError
+    static http_status: Int = 409
+  end
 end
 ```
 
-`DomainError` inherits `Error`, which carries a `message` and optional
-`details`. What sets it apart is what happens when nobody catches it in a
-served app: the request answers **422** with the error page showing its
-message — a broken business rule is an answer to the request, not a crash —
-and the `static http_status` above turns `InvoiceAlreadyPaid` into a 409. No
-500 block lands in the log, and the action stays on the bytecode VM. Any other
-uncaught `throw` is still a 500.
+`DomainError` carries a `message` and optional `details`. What sets it apart
+is what happens when nobody catches it in a served app: the request answers
+**422** with the error page showing its message — a broken business rule is
+an answer, not a crash — and `static http_status` picks another status. No
+500 block lands in the log. `StaleRecord`, which we will meet below, is a
+built-in one with status 409.
 
-## The account and the invoice: aggregates on `Model`
+## The aggregates: `Account` and `Invoice`
 
 Soli keeps aggregates on `Model` rather than asking for a parallel layer of
-repositories and mappers. The model holds its value objects with `value_field`
-and states its own rules:
+repositories and mappers. They live in the `Billing` context — a module — and
+state their own rules:
 
 ```soli
-# app/models/account.sl
-class Account < Model
-  value_field :credit, Amount
-  validates("name", {"presence": true})
+# app/models/billing/account.sl
+module Billing
+  class Account < Model
+    optimistic_lock
+    value_field :credit, Amount
+    validates("name", {"presence": true})
 
-  def debit(amount: Amount)
-    unless @credit.covers?(amount)
-      throw InsufficientFunds.new(
-        "#{@name} has #{@credit.to_display} of credit, the invoice needs #{amount.to_display}",
-        {"credit": @credit.to_h, "needed": amount.to_h}
-      )
+    def debit(amount: Amount)
+      unless @credit.covers?(amount)
+        throw InsufficientFunds.new(
+          "#{@name} has #{@credit.to_display} of credit, the invoice needs #{amount.to_display}",
+          {"credit": @credit.to_h, "needed": amount.to_h}
+        )
+      end
+      @credit = @credit.minus(amount)
     end
-    @credit = @credit.minus(amount)
   end
 end
 ```
 
 ```soli
-# app/models/invoice.sl
-class Invoice < Model
-  value_field :total, Amount
-  value_field :paid, Amount
-  validates("number", {"presence": true})
-  validates("account_key", {"presence": true})
+# app/models/billing/invoice.sl
+module Billing
+  class Invoice < Model
+    optimistic_lock
+    value_field :total, Amount
+    value_field :paid, Amount
+    belongs_to("account")
+    validates("number", {"presence": true})
 
-  invariant(:total, "must be more than zero") { @total.cents > 0 }
-  invariant(:paid, "cannot exceed the total") { @paid.nil? || @total.covers?(@paid) }
-  invariant(:status, "a paid invoice records its payment") { @status != "paid" || !@paid.nil? }
+    invariant(:total, "must be more than zero") { @total.cents > 0 }
+    invariant(:paid, "cannot exceed the total") { @paid.nil? || @total.covers?(@paid) }
+    invariant(:status, "a paid invoice records its payment") { @status != "paid" || !@paid.nil? }
 
-  def pay_from(account: Account)
-    throw InvoiceAlreadyPaid.new("invoice #{@number} is already paid") if @status == "paid"
+    def pay_from(account: Account)
+      throw InvoiceAlreadyPaid.new("invoice #{@number} is already paid") if @status == "paid"
 
-    account.debit(@total)
-    @paid = @total
-    @status = "paid"
+      account.debit(@total)
+      @paid = @total
+      @status = "paid"
+      @record_event(InvoicePaid.new(@number, account._key, @total.cents))
+    end
+  end
+
+  class Receipt < Model
   end
 end
 ```
 
-`value_field :total, Amount` stores the amount as an object of its fields and
-gives it back as an `Amount` on every read. In SQLite, the row is:
+Four things are at work here.
 
-```json
-{"number":"F-001","status":"paid","total":{"cents":3000,"currency":"EUR"},"paid":{"cents":3000,"currency":"EUR"}, …}
-```
-
-Anything that is not an `Amount` (or a hash of its fields) is refused with
+**`value_field :total, Amount`** stores the amount as an object of its fields
+and gives it back as an `Amount` on every read. Anything else is refused with
 *must be a Amount*.
 
-An `invariant` on a model is not an exception but a validation: a falsy one
-puts `{field, message}` into `_errors` and the record is not saved, through
-`create`, `save`, `update` or the static `Model.update`. Model invariants run
-once every `validates` rule has passed, so `@total.cents` never meets a
-missing total — that one is for `presence` to report. They are about the
-record as a whole: `paid` alone and `status` alone are fine, but a paid
-invoice with no payment recorded is not.
+**Model invariants** are validations of the record as a whole: a falsy one
+puts `{field, message}` into `_errors` and the record is not saved — through
+`create`, `save`, `update` or `Model.update`. They run once every `validates`
+rule has passed, so `@total.cents` never meets a missing total.
 
-`pay_from` and `debit` are the aggregate's behaviour. Nothing outside these
-classes sets `status` to `"paid"` or lowers a credit; code that wants an
-invoice paid calls `pay_from`, and the rules come along.
+**`optimistic_lock`** gives each record a `lock_version`. Every update checks
+that the stored version is still the one the record was read with, and bumps
+it, in one atomic write; a stale save returns `false` with `record.stale?`
+true. More on it below.
+
+**`record_event`** keeps an event on the record; it is published when the
+record is saved. A method that raises an event and then fails to save
+publishes nothing. The event itself is a value object:
+
+```soli
+# app/models/billing/events.sl
+module Billing
+  class InvoicePaid < DomainEvent
+    number: String
+    account_key: String
+    cents: Int
+  end
+end
+```
 
 ## One use case, one transaction
 
@@ -193,28 +204,102 @@ all:
 
 ```soli
 # app/services/pay_invoice.sl
-class PayInvoice
-  static def call(invoice_key: String) -> Invoice
-    Invoice.transaction do
-      invoice = Invoice.find(invoice_key)
-      account = Account.find(invoice.account_key)
-      invoice.pay_from(account)
-      unless account.save && invoice.save
-        throw DomainError.new("payment refused", {"account": account._errors, "invoice": invoice._errors})
+module Billing
+  class PayInvoice
+    static def call(invoice_key: String) -> Invoice
+      Invoice.transaction do
+        invoice = Invoice.find(invoice_key)
+        account = Account.find(invoice.account_id)
+        invoice.pay_from(account)
+        unless account.save && invoice.save
+          throw StaleRecord.new("invoice #{invoice.number} changed while it was being paid")
+        end
+        after_commit { broadcast("invoices", {"paid": invoice.number}) }
+        invoice
       end
-      invoice
     end
   end
 end
 ```
 
+Inside the `Billing` module, `Invoice` and `Account` need no prefix: a class
+name that is not a global resolves in the context the code is written in.
+
 `Model.transaction` commits when the block returns and rolls back when it
 throws. A `throw` from `pay_from` or `debit` happens before anything is
 written. The one after the saves matters more: `save` reports a refused
-record by returning `false` and filling `_errors` rather than by raising, so
-without that line a debited account could commit next to an invoice that
-failed its invariants. Throwing there rolls the debit back — we checked: the
-account still has its credit afterwards.
+record by returning `false` rather than raising — an invariant, or a stale
+`lock_version` because someone else paid from the same account a moment ago —
+and throwing there rolls the debit back. `StaleRecord` answers 409, the
+status for "reload and try again".
+
+`after_commit { … }` runs once the data is durable: after the outermost
+commit, never after a rollback. Side effects that must not happen for a
+payment that was never stored go there.
+
+## Reacting to what happened
+
+Billing does not know who cares that an invoice was paid. The subscribers,
+in `app/subscribers/`, say so:
+
+```soli
+# app/subscribers/billing.sl
+# Shipping reacts to Billing's event, in this process, once the payment is committed.
+subscribe(Billing::InvoicePaid) do |event|
+  Shipping::Shipment.create({"invoice_number": event.number, "status": "ready"})
+end
+
+# A job, enqueued in the payment's transaction: the outbox.
+subscribe(Billing::InvoicePaid, ReceiptJob)
+
+# The same event, appended to the `billing` topic of es for other services.
+subscribe(Billing::InvoicePaid, {"stream": "billing", "key": "number"})
+```
+
+```soli
+# app/jobs/receipt_job.sl
+class ReceiptJob
+  static def perform(event)
+    Billing::Receipt.create({"invoice_number": event["number"], "cents": event["cents"]})
+  end
+end
+```
+
+Three kinds of handler, three delivery guarantees:
+
+- A **block** runs in the same process after the commit — never for a payment
+  that rolled back. It is the simplest, and it fails with the request: use it
+  for work that cannot fail, or does not matter if it does.
+- A **job** is enqueued when the event is published, inside the transaction.
+  The job row is written by that transaction, so it commits or rolls back with
+  the payment: a *transactional outbox*, with the job queue's retries for
+  delivery. Nothing to forget, nothing sent twice for one payment.
+- A **stream** appends the event to an es topic, for services outside this
+  app. It goes through the same outbox — a built-in `EventStreamJob` — so the
+  topic receives every committed payment, at least once, and never one that
+  was rolled back.
+
+## Bounded contexts
+
+`Billing` and `Shipping` are modules, and a model in a module is its own
+thing: `Billing::Invoice` is what `print` and `.class` show, its table is
+`billing_invoices`, and a `Shipping::Invoice` could exist beside it without a
+collision. A module can be declared in several files, so each context keeps
+its own folder:
+
+```soli
+# app/models/shipping/shipment.sl
+module Shipping
+  class Shipment < Model
+    validates("invoice_number", {"presence": true})
+  end
+end
+```
+
+Inside a context, relations name its own models — `belongs_to("account")` on
+`Billing::Invoice` is `Billing::Account` — and `class_name:` reaches any
+other. Shipping depends on Billing only through `Billing::InvoicePaid`: the
+event is the contract between them.
 
 ## The controller only asks
 
@@ -224,9 +309,9 @@ class InvoicesController < Controller
   # POST /invoices
   def create(req)
     total = Amount.new(params["total_cents"], params["currency"] || "EUR")
-    invoice = Invoice.create({
+    invoice = Billing::Invoice.create({
       "number": params["number"],
-      "account_key": params["account_key"],
+      "account_id": params["account_id"],
       "total": total,
       "status": "open"
     })
@@ -235,28 +320,16 @@ class InvoicesController < Controller
     render_json(invoice, 201)
   end
 
-  # POST /invoices/:id/pay — a DomainError left uncaught answers 422 (409 for InvoiceAlreadyPaid)
+  # POST /invoices/:id/pay — a DomainError left uncaught answers 422 (409 for InvoiceAlreadyPaid, StaleRecord)
   def pay(req)
-    invoice = PayInvoice.call(params["id"])
+    invoice = Billing::PayInvoice.call(params["id"])
     render_json({"number": invoice.number, "status": invoice.status, "paid": invoice.paid.to_display})
-  end
-
-  # POST /api/invoices/:id/pay — the same, answering JSON
-  def pay_json(req)
-    try
-      invoice = PayInvoice.call(params["id"])
-      render_json({"status": invoice.status})
-    catch DomainError e
-      render_json({"error": e.message, "details": e.details}, 422)
-    end
   end
 end
 ```
 
-`pay` has no error handling at all, and needs none: every way paying can fail
-is a domain error with a status. An API that wants JSON instead of the error
-page catches `DomainError` once, as `pay_json` does, and gets the message and
-the details the domain attached.
+`pay` has no error handling, and needs none: every way paying can fail is a
+domain error with a status.
 
 ## On the wire
 
@@ -264,7 +337,7 @@ An account with 50 € of credit, two invoices of 30 € and 25 €:
 
 ```text
 POST /accounts {"name": "Acme", "credit_cents": 5000}
-→ 201 {"_key":"8737f8e7-…","name":"Acme","credit":{"cents":5000,"currency":"EUR"}, …}
+→ 201 {"_key":"938c3630-…","name":"Acme","credit":{"cents":5000,"currency":"EUR"},"lock_version":0, …}
 
 POST /invoices {"number": "F-003", "total_cents": 0, …}
 → 422 {"errors":[{"field":"total","message":"must be more than zero"}]}
@@ -278,36 +351,66 @@ POST /invoices/<F-001>/pay
 POST /invoices/<F-002>/pay
 → 422  error page: "Acme has 20.00 EUR of credit, the invoice needs 25.00 EUR"
 
-POST /api/invoices/<F-002>/pay
-→ 422 {"error":"Acme has 20.00 EUR of credit, the invoice needs 25.00 EUR",
-       "details":{"credit":{"cents":2000,"currency":"EUR"},"needed":{"cents":2500,"currency":"EUR"}}}
-
-POST /api/invoices/<a USD invoice>/pay
-→ 422 {"error":"cannot combine EUR and USD","details":null}
-
-GET /accounts/<Acme>
-→ 200 {"name":"Acme","credit":"20.00 EUR"}
+GET /shipments
+→ 200 {"shipments":["F-001"],"receipts":1}
 ```
 
-`render_json` writes a value object as its fields, in the order they are
-declared. In a script or a log line, `print(amount)` shows
-`Amount(cents: 2000, currency: "EUR")`.
+The shipment was created by Shipping's subscriber after the commit, the
+receipt by the job; the second and third payments, refused, published
+nothing. On the es side:
+
+```text
+$ es consume --topic billing --partition 0 --offset 0
+p=0 off=0 key=Some("F-001") value={"data":{"account_key":"938c3630-…","cents":3000,"number":"F-001"},
+  "occurred_at":"2026-10-11T19:34:41Z","type":"Billing::InvoicePaid"}
+```
+
+And what SQLite holds — each context its tables, each amount an object of
+its fields, each record its version:
+
+```text
+billing_accounts   billing_invoices   billing_receipts   shipping_shipments   _jobs
+
+{"name":"Acme","credit":{"cents":2000,"currency":"EUR"},"lock_version":1, …}
+{"number":"F-001","status":"paid","total":{"cents":3000,"currency":"EUR"},
+ "paid":{"cents":3000,"currency":"EUR"},"lock_version":1, …}
+```
+
+## Two people, one record
+
+Optimistic locking in one picture — two requests that loaded the same
+account:
+
+```soli
+first = Billing::Account.find(acme._key)
+second = Billing::Account.find(acme._key)
+first.debit(Amount.new(1000))
+first.save            # true — lock_version 1
+second.debit(Amount.new(1000))
+second.save           # false — second.stale? is true
+Billing::Account.find(acme._key).credit   # Amount(cents: 4000, currency: "EUR")
+```
+
+Without the lock, the second save would have written 40 € over the first
+one's 40 €, and 10 € of debit would have vanished. With it, `PayInvoice`
+throws `StaleRecord` and the client retries on fresh data. A form can do the
+same: a hidden `lock_version` field makes `Model.update` refuse a submission
+made after someone else's edit.
 
 ## What is not there yet
 
-This is the first part of DDD support, and some of the rest is still to come:
+- **Value objects as hash keys**, and a `value_field` holding a list of them
+  (an invoice's lines as values rather than a related model).
+- **Optimistic locking on column-mode tables** — models over an existing SQL
+  schema. Document tables, on every adapter, are covered.
+- **Consuming a stream into subscribers.** Events go out to es; reading
+  another service's topic back into `subscribe` handlers is done by hand with
+  `ES.group_consume` for now.
+- **Controllers per context.** Contexts hold models, services, events and
+  errors; controllers stay top-level, namespaced by folder as before.
 
-- **Domain events and an outbox.** Today a use case that must notify
-  something after paying enqueues a job itself. Events recorded by the
-  aggregate and dispatched after commit come next, with optimistic locking for
-  aggregates two requests edit at once.
-- **Bounded contexts.** All application classes share one namespace (and a
-  duplicate name now stops the boot rather than replacing a class silently).
-  Contexts with their own namespaces are on the list after events.
-- **Value objects as hash keys**, and a `value_field` that holds a list of
-  them — an invoice's lines as values rather than a related model. Use
-  `amount.to_s` as a key for now, and a `has_many` for lines.
-
-The guides go further: [Value Objects](/docs/language/value-objects),
-[Value fields and invariants](/docs/database/validations#value-fields-and-invariants)
-and [error classes](/docs/language/error-handling#error-classes).
+The reference: [value objects](/docs/language/value-objects),
+[value fields and invariants](/docs/database/validations#value-fields-and-invariants),
+[domain events, after-commit and locking](/docs/database/domain-events),
+[bounded contexts](/docs/language/modules#bounded-contexts) and
+[error classes](/docs/language/error-handling#error-classes).
