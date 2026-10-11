@@ -1,0 +1,167 @@
+# Build and deploy the Cloudflare Workers demo (cf.solisoft.net,
+# examples/cloudflare-worker) when the app or the edge runtime changes on main,
+# and on every release tag so the site runs the Soli just released.
+#
+# Everything is built from this commit: the edge runtime (scripts/build-edge.sh)
+# and the `soli` that packages the app (`soli edge build`). The app's own
+# wrangler.toml is the deploy config — Worker name, account, custom domain, D1.
+#
+# One secret: CLOUDFLARE_API_TOKEN. Give it to a token scoped to the solisoft
+# account only (Workers Scripts: Edit, Workers Routes: Edit on solisoft.net,
+# D1: Edit) — never a token that reaches other accounts. Without the secret the
+# workflow builds and checks the Worker, and stops before deploying.
+name: deploy cf.solisoft.net
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/cloudflare-worker/**'
+      - 'edge/**'
+      - 'src/edge_build.rs'
+      - 'src/serve/edge.rs'
+      - 'scripts/build-edge.sh'
+      - '.github/workflows/deploy-cf.yml'
+    tags: ['v*']
+  workflow_dispatch:
+
+# A deploy already running finishes; the next one waits for it.
+concurrency:
+  group: deploy-cf
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  APP: examples/cloudflare-worker
+  WRANGLER: wrangler@4.149.0
+  # The account that owns solisoft.net. The deploy refuses a wrangler.toml
+  # that points anywhere else.
+  ACCOUNT_ID: 25eae110152414e597d0507d069d142b
+  SITE: https://cf.solisoft.net
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: cloudflare
+      url: https://cf.solisoft.net
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: deploy-cf
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The CLI must be the version edge/Cargo.toml pins; build-edge.sh checks.
+      - name: Install wasm-bindgen
+        run: |
+          set -euo pipefail
+          want="$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' edge/Cargo.toml)"
+          echo "WASM_BINDGEN=$want" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the edge runtime
+        run: OUT=target/edge scripts/build-edge.sh
+
+      # `ci` profile: optimised, no LTO. This binary only packages the app.
+      - name: Build soli
+        run: cargo build --profile ci --locked --bin soli
+
+      - name: The deploy targets the solisoft account
+        run: |
+          set -euo pipefail
+          got="$(sed -n 's/^account_id = "\(.*\)"$/\1/p' "$APP/wrangler.toml")"
+          [ "$got" = "$ACCOUNT_ID" ] || {
+            echo "$APP/wrangler.toml deploys to account '${got:-none}', not $ACCOUNT_ID" >&2
+            exit 1
+          }
+
+      - name: Package the Worker
+        run: target/ci/soli edge build "$APP" --runtime target/edge
+
+      # The gate: the packaged Worker boots on workerd and renders its pages,
+      # D1 page included (a local D1), before anything reaches Cloudflare.
+      - name: The Worker answers on workerd
+        working-directory: ${{ env.APP }}/dist/edge
+        run: |
+          set -euo pipefail
+          npx --yes "$WRANGLER" dev --local --ip 127.0.0.1 --port 8787 > /tmp/wrangler.log 2>&1 &
+          pid=$!
+          ok=""
+          for i in $(seq 1 60); do
+            if curl -fs -m 5 -o /dev/null http://127.0.0.1:8787/api/info; then ok=1; break; fi
+            kill -0 $pid 2>/dev/null || break
+            sleep 1
+          done
+          status=0
+          if [ -n "$ok" ]; then
+            for path in / /api/info /guide /limits /try /d1; do
+              code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:8787$path")"
+              echo "$path -> $code"
+              [ "$code" = "200" ] || status=1
+            done
+          else
+            echo "wrangler dev never answered" >&2
+            status=1
+          fi
+          kill $pid 2>/dev/null || true
+          wait $pid 2>/dev/null || true
+          if [ "$status" != 0 ]; then
+            tail -60 /tmp/wrangler.log >&2
+            exit 1
+          fi
+
+      - name: Is deployment configured?
+        id: cfg
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "CLOUDFLARE_API_TOKEN is not set: the Worker was built and checked, not deployed."
+            echo "Add a token scoped to the solisoft account as the CLOUDFLARE_API_TOKEN secret."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy
+        if: steps.cfg.outputs.configured == 'true'
+        working-directory: ${{ env.APP }}/dist/edge
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.ACCOUNT_ID }}
+        run: npx --yes "$WRANGLER" deploy
+
+      # Through Cloudflare, on the real hostname: the new version answers.
+      - name: The site serves this build
+        if: steps.cfg.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          want="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          for i in $(seq 1 12); do
+            info="$(curl -fs -m 10 "$SITE/api/info" || true)"
+            echo "attempt $i: $info"
+            if echo "$info" | grep -q "\"version\":\"$want\""; then
+              code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$SITE/")"
+              [ "$code" = "200" ] && { echo "$SITE serves Soli $want"; exit 0; }
+            fi
+            sleep 5
+          done
+          echo "$SITE did not answer with Soli $want" >&2
+          exit 1

@@ -25,6 +25,15 @@ soli edge build . --runtime ../../target/edge
 cd dist/edge && npx wrangler deploy   # after `npx wrangler login`, or with CLOUDFLARE_API_TOKEN
 ```
 
+On GitHub, `.github/workflows/deploy-cf.yml` does this on every push to `main`
+that touches this app or the edge runtime, and on release tags. It builds the
+runtime and `soli` from that commit, boots the Worker on workerd and checks
+its pages, deploys, then checks that https://cf.solisoft.net answers with the
+new version. It needs one repository secret, `CLOUDFLARE_API_TOKEN`: a token
+scoped to the solisoft account (Workers Scripts: Edit, Workers Routes: Edit on
+solisoft.net, D1: Edit). Without it the workflow builds and checks, and does
+not deploy.
+
 To run your own copy, change `name`, `account_id`, `routes` and the D1
 `database_id` first. The guide is the app itself (`/guide`), and the full reference is
 `www/docs/edge.md`.
