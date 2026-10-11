@@ -41,7 +41,16 @@ pub const DOMAIN_EVENT: &str = "DomainEvent";
 enum Handler {
     Block(Rc<Function>),
     Job(String),
+    /// `subscribe(Event, {"stream": "billing", "key": "number"})`: appended
+    /// to an ES topic, through the outbox (`EventStreamJob`).
+    Stream {
+        topic: String,
+        key: Option<String>,
+    },
 }
+
+/// The built-in job that appends an event to an ES stream.
+pub const EVENT_STREAM_JOB: &str = "EventStreamJob";
 
 #[derive(Clone)]
 struct Subscription {
@@ -108,6 +117,7 @@ pub fn subscribe(args: &[Value]) -> Result<Value, String> {
         Some(Value::Function(f)) => Handler::Block(f.clone()),
         Some(Value::Class(c)) => Handler::Job(c.name.clone()),
         Some(Value::String(s)) => Handler::Job(s.to_string()),
+        Some(Value::Hash(options)) => stream_handler(&options.borrow())?,
         Some(Value::VmClosure(_)) => {
             return Err(
                 "subscribe: a block handler belongs in app/subscribers/ (it was given from \
@@ -119,6 +129,29 @@ pub fn subscribe(args: &[Value]) -> Result<Value, String> {
     };
     SUBSCRIBERS.with(|s| s.borrow_mut().push(Subscription { event, handler }));
     Ok(Value::Null)
+}
+
+fn stream_handler(options: &crate::interpreter::value::HashPairs) -> Result<Handler, String> {
+    let mut topic = None;
+    let mut key = None;
+    for (name, value) in options.iter() {
+        let crate::interpreter::value::HashKey::String(name) = name else {
+            return Err("subscribe: stream options are \"stream\" and \"key\"".to_string());
+        };
+        match (name.as_ref(), value) {
+            ("stream", Value::String(s)) => topic = Some(s.to_string()),
+            ("key", Value::String(s)) | ("key", Value::Symbol(s)) => key = Some(s.to_string()),
+            ("key", Value::Null) => {}
+            (other, _) => {
+                return Err(format!(
+                "subscribe: unknown stream option \"{other}\" (\"stream\": topic, \"key\": field)"
+            ))
+            }
+        }
+    }
+    let topic =
+        topic.ok_or("subscribe: a stream subscription names its topic: {\"stream\": \"…\"}")?;
+    Ok(Handler::Stream { topic, key })
 }
 
 fn subscriptions_for(class: &Class) -> Vec<Handler> {
@@ -148,6 +181,7 @@ pub fn publish(event: &Value) -> Result<(), RuntimeError> {
     for handler in &handlers {
         match handler {
             Handler::Job(job) => enqueue_job(job, event)?,
+            Handler::Stream { topic, key } => enqueue_stream(&class, topic, key.as_deref(), event)?,
             Handler::Block(_) => has_blocks = true,
         }
     }
@@ -172,6 +206,85 @@ fn enqueue_job(job: &str, event: &Value) -> Result<(), RuntimeError> {
         .map_err(|e| RuntimeError::new(format!("publish: enqueueing {job}: {e}"), Span::default()))
 }
 
+/// Enqueue `EventStreamJob` with the record to append: the event as
+/// `{"type", "data", "occurred_at"}`, keyed by the named field.
+fn enqueue_stream(
+    class: &Class,
+    topic: &str,
+    key: Option<&str>,
+    event: &Value,
+) -> Result<(), RuntimeError> {
+    let Value::Instance(inst) = event else {
+        return Ok(());
+    };
+    let key_value = key.and_then(|field| inst.borrow().fields.get(field).cloned());
+    let mut envelope = crate::interpreter::value::HashPairs::default();
+    use crate::interpreter::value::HashKey;
+    envelope.insert(
+        HashKey::String("type".into()),
+        Value::String(class.name.clone().into()),
+    );
+    envelope.insert(
+        HashKey::String("data".into()),
+        crate::interpreter::domain::to_hash(&inst.borrow()),
+    );
+    envelope.insert(
+        HashKey::String("occurred_at".into()),
+        Value::String(crate::jobs::now_iso().into()),
+    );
+    let mut args = crate::interpreter::value::HashPairs::default();
+    args.insert(HashKey::String("topic".into()), Value::String(topic.into()));
+    args.insert(
+        HashKey::String("key".into()),
+        match key_value {
+            Some(Value::Null) | None => Value::Null,
+            Some(Value::String(s)) => Value::String(s),
+            Some(other) => Value::String(other.to_string().into()),
+        },
+    );
+    args.insert(
+        HashKey::String("event".into()),
+        Value::Hash(Rc::new(RefCell::new(envelope))),
+    );
+    crate::interpreter::builtins::jobs::enqueue_named(
+        EVENT_STREAM_JOB,
+        Value::Hash(Rc::new(RefCell::new(args))),
+    )
+    .map(|_| ())
+    .map_err(|e| {
+        RuntimeError::new(
+            format!("publish: streaming to {topic}: {e}"),
+            Span::default(),
+        )
+    })
+}
+
+/// `EventStreamJob.perform(args)`: append the event to its topic.
+pub fn perform_event_stream(args: &[Value]) -> Result<Value, String> {
+    let Some(Value::Hash(args)) = args.first() else {
+        return Err("EventStreamJob.perform expects its arguments hash".to_string());
+    };
+    let args = args.borrow();
+    let get = |name: &str| {
+        args.iter()
+            .find(|(k, _)| matches!(k, crate::interpreter::value::HashKey::String(s) if s.as_ref() == name))
+            .map(|(_, v)| v.clone())
+    };
+    let topic = match get("topic") {
+        Some(Value::String(s)) => s.to_string(),
+        _ => return Err("EventStreamJob: no topic".to_string()),
+    };
+    let key = match get("key") {
+        Some(Value::String(s)) => Some(s.to_string()),
+        _ => None,
+    };
+    let event = get("event").unwrap_or(Value::Null);
+    let value = serde_json::to_string(&crate::interpreter::value::value_to_json(&event)?)
+        .map_err(|e| e.to_string())?;
+    crate::interpreter::builtins::es::emit_record(&topic, key, value)?;
+    Ok(Value::Null)
+}
+
 fn run_blocks(class: &Class, event: &Value) -> Result<(), RuntimeError> {
     let depth = DEPTH.with(|d| d.get());
     if depth >= MAX_DEPTH {
@@ -188,7 +301,7 @@ fn run_blocks(class: &Class, event: &Value) -> Result<(), RuntimeError> {
         .iter()
         .try_for_each(|handler| match handler {
             Handler::Block(func) => call_block(func, event),
-            Handler::Job(_) => Ok(()),
+            Handler::Job(_) | Handler::Stream { .. } => Ok(()),
         });
     DEPTH.with(|d| d.set(depth));
     result

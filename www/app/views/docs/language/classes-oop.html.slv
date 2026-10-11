@@ -540,7 +540,7 @@ print(inner2.get_combined())   # 30</code></pre>
         <section id="nested-class-access" class="scroll-mt-20 mb-6">
             <div class="rounded-xl bg-white/5 border border-white/10 p-5">
                 <h3 class="text-lg font-semibold text-white mb-3">Accessing Nested Classes</h3>
-                <p class="text-gray-400 mb-3">Nested classes can be accessed through the outer class using dot notation.</p>
+                <p class="text-gray-400 mb-3">Nested classes can be accessed through the outer class with <code>::</code> or dot notation (<code>Tree::Node</code>, <code>Tree.Node</code>). A nested class is named after its outer class: <code>type(node)</code> is <code>"Tree::Node"</code>.</p>
                 <pre data-filename="Example"><code class="language-soli text-sm">class Tree
   class Node
     value: Int

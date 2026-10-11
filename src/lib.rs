@@ -379,7 +379,7 @@ pub fn tree_walker_reason(program: &ast::Program) -> Option<String> {
         if let StmtKind::Class(class) = &stmt.kind {
             if class.methods.iter().any(|m| m.name == "method_missing") {
                 reason = Some("`method_missing`".to_string());
-            } else if let Some(name) = class.class_statements.iter().find_map(class_body_call) {
+            } else if let Some(name) = class_body_dsl(class) {
                 // The VM compiles a class body's DSL calls as plain calls:
                 // `validates(...)` would miss the class it declares on.
                 reason = Some(format!("a class-body `{name}`"));
@@ -417,6 +417,15 @@ pub fn tree_walker_reason(program: &ast::Program) -> Option<String> {
     };
     ast::walk::walk_program(program, &mut on_stmt, &mut on_expr);
     reason.or(found)
+}
+
+/// The first class-body DSL call of `class` or of a class nested in it.
+fn class_body_dsl(class: &ast::stmt::ClassDecl) -> Option<&str> {
+    class
+        .class_statements
+        .iter()
+        .find_map(class_body_call)
+        .or_else(|| class.nested_classes.iter().find_map(class_body_dsl))
 }
 
 /// The function a class-body statement calls (`validates`, `has_many`…).

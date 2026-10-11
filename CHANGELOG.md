@@ -20,6 +20,10 @@
 
 * **orm:** **`optimistic_lock`.** On a model that declares it, a record starts at `lock_version` 0 and every update checks that the stored version is still the one the record was read with and bumps it, atomically: a conditional `UPDATE … WHERE lock_version = ?` on Postgres, MySQL, SQLite, D1 and Hyperdrive; on SoliDB a read then a PUT with `If-Match` on the revision just read. A stale `save` / `update` returns `false` with `_errors` naming `lock_version` and `record.stale?` true; the static `Model.update(key, changes)` checks a `lock_version` given in `changes` (a form's hidden field) or the stored one, and answers `{"_errors": […]}`. `StaleRecord` is a built-in `DomainError` with `http_status` 409 to throw from a use case. Column-mode tables are refused for now; `increment`/`decrement` do not bump the version.
 
+* **orm:** **Domain events to an ES stream.** `subscribe(OrderPaid, {"stream": "billing", "key": "number"})` appends each event to an [es](https://es.solisoft.net) topic as `{"type", "data", "occurred_at"}`, keyed by the named field. Publishing enqueues the built-in `EventStreamJob` inside the transaction and the job appends the record once committed, with the queue's retries: every committed event, at least once, none that rolled back.
+
+* **language:** **Bounded contexts.** A class nested in a module is named after it (`Billing::Invoice` — `print`, `.class`, errors), on both engines; a model in a context gets its own collection (`billing_invoices`) and registry entry, and its relations name models of the same context by default (`class_name:` reaches others; foreign keys use the short name, `customer_id`). A module may be declared again — in another file of the context — and adds to it instead of replacing it; the boot-time duplicate check now compares qualified class names and allows a reopened module. Files declaring a domain event load with the value objects, first.
+
 ### Changed
 
 * **language:** **`Klass.new(positional args)` runs the constructor.** `InsufficientFunds.new("balance too low", {"needed": 30})` failed with `new() expects a Hash of attributes, got string` (and the type checker refused `.new` on a plain class). Positional arguments now go to the constructor, like `new Klass(...)`; no arguments, one hash (or `nil`) and named-only arguments still assign attributes, as before. Models and classes with their own static `new` are left alone.
@@ -27,6 +31,10 @@
 * **language:** **Every way of instantiating a class runs the same constructor.** `new Klass(...)`, `Klass(...)` and named-argument calls went through three copies of the binding code on the tree-walker, which disagreed: only `new` looked for an inherited constructor, only `Klass(...)` ran a native one, and `super(...)` saw the parent's own constructor only. They now share one path — the class's own or nearest inherited constructor, else a native one — and `super(...)` follows the same rule. Arguments to a class with no constructor are now evaluated (they were skipped by `new`).
 
 ### Fixed
+
+* **vm:** **A class nested in a module resolves on the VM.** `Commerce::Product` evaluated to the module itself, so `new Commerce::Product(...)` failed with "cannot instantiate module Commerce" and `Billing::Invoice.create(...)` reached the module: the compiler bound a nested class declared at the top level as a global and dropped it, then stored the parent in its place.
+
+* **script:** **A model nested in a module routes its script to the tree-walker** like a top-level model (its class-body DSL needs the class).
 
 * **orm:** **`find` inside a SoliDB transaction finds committed records.** It asked SoliDB for `GET …/transaction/{id}/document/…`, a route the server did not have, so every key lookup inside `Model.transaction` read as missing (`RecordNotFound`). SoliDB now serves that route (in `../db`: the document as the transaction sees it, its own uncommitted insert, update or delete included) and Soli falls back to the committed document on servers that answer 405.
 

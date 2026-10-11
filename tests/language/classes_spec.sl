@@ -770,7 +770,8 @@ describe("Nested classes") do
 
     inner = new Outer::Inner()
     assert_eq(inner.greet, "Hello from Inner")
-    assert_eq(type(inner), "Inner")
+    # A nested class is named after its outer class.
+    assert_eq(type(inner), "Outer::Inner")
   end
 
   test("several nested classes in one outer class") do

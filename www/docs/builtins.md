@@ -5421,6 +5421,11 @@ A blocked call returns an error rather than running the command. To enable raw a
 
 The driver for [es](https://es.solisoft.net), a Kafka-shaped event log in one binary: topics with partitions, consumer groups, idempotent producers. Produce, consume and ping go over es's **binary protocol** when `ES_BINARY` names its listener — one long-lived connection per worker, raw bytes, no JSON — and over its HTTP API otherwise. Topics and consumer groups exist only on the HTTP API, and go there.
 
+To send domain events to a topic, subscribe a stream rather than calling
+`ES.emit` yourself: `subscribe(OrderPaid, {"stream": "billing", "key": "number"})`
+appends each committed event through the job outbox — see
+[Domain events → Streaming to ES](/docs/database/domain-events#streams).
+
 **Configuration** (per application, like `KV`):
 
 | Variable | Meaning | Default |

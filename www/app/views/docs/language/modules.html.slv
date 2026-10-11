@@ -248,6 +248,33 @@ end</code></pre>
             </div>
         </section>
 
+        <section id="bounded-contexts" class="scroll-mt-20 mb-6">
+            <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+                <a href="#bounded-contexts" class="group flex items-center gap-2 mb-3">
+                    <code class="text-lg font-mono text-amber-400">Bounded Contexts</code>
+                </a>
+                <p class="text-gray-400 mb-3">A class nested in a module is named after it &mdash; <code>Billing::Invoice</code>, as <code>print</code>, <code>.class</code> and error messages show &mdash; so two parts of an app can each have their <code>Invoice</code>. A module may be declared again in another file, which adds to it, so a context can spread over <code>app/models/billing/*.sl</code>. A model in a context gets its own collection (<code>billing_invoices</code>), and its relations name models of the same context by default.</p>
+<pre data-filename="app/models/billing/invoice.sl"><code class="language-soli text-sm">module Billing
+  class Invoice &lt; Model
+    belongs_to("customer")          # Billing::Customer, table billing_customers
+  end
+end</code></pre>
+<pre data-filename="app/models/billing/customer.sl"><code class="language-soli text-sm">module Billing                      # the same module, reopened
+  class Customer &lt; Model
+    has_many("invoices")
+  end
+end</code></pre>
+<pre data-filename="app/models/shipping/invoice.sl"><code class="language-soli text-sm">module Shipping
+  class Invoice &lt; Model             # table shipping_invoices
+  end
+end
+
+Billing::Invoice.count              # 1
+Shipping::Invoice.create({"number": "S-1"})</code></pre>
+                <p class="text-gray-400 mt-3">A relation that leaves its context says so: <code>belongs_to("user", {"class_name": "User"})</code>. Two files declaring the same qualified class still stop the boot. Controllers stay top-level (namespaced by directory, as before).</p>
+            </div>
+        </section>
+
         <section id="import-classes" class="scroll-mt-20 mb-6">
             <div class="rounded-xl bg-white/5 border border-white/10 p-5">
                 <a href="#import-classes" class="group flex items-center gap-2 mb-3">
@@ -256,7 +283,7 @@ end</code></pre>
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
                 </a>
-                <p class="text-gray-400 mb-3">Import the file that declares the module, then reach its classes with <code>::</code>. There is no <code>import Name from</code> form. <strong class="text-white">Current limitation:</strong> the VM (<code>soli file.sl</code>, <code>soli serve</code>) refuses <code>new Commerce::Product(...)</code> with &ldquo;cannot instantiate module&rdquo;; the tree-walker (<code>soli --tree</code>) runs it.</p>
+                <p class="text-gray-400 mb-3">Import the file that declares the module, then reach its classes with <code>::</code>. There is no <code>import Name from</code> form.</p>
 <pre data-filename="main.sl"><code class="language-soli text-sm"># Import commerce.sl, which declares the Commerce module
 import "./commerce.sl"
 

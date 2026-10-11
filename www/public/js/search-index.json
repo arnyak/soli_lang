@@ -4015,6 +4015,39 @@
       ]
     },
     {
+      "title": "Bounded contexts",
+      "type": "guide",
+      "category": "Language",
+      "path": "/docs/language/modules#bounded-contexts",
+      "signature": "module Billing; class Invoice < Model; end; end",
+      "description": "Models in modules: qualified names (Billing::Invoice), their own tables (billing_invoices), relations within the context, modules reopened across files",
+      "keywords": [
+        "bounded context",
+        "module",
+        "namespace",
+        "Billing::Invoice",
+        "ddd",
+        "context"
+      ]
+    },
+    {
+      "title": "Streaming events to ES",
+      "type": "guide",
+      "category": "Database",
+      "path": "/docs/database/domain-events#streams",
+      "signature": "subscribe(OrderPaid, {\"stream\": \"billing\", \"key\": \"number\"})",
+      "description": "Append every committed domain event to an es topic through the job outbox (EventStreamJob)",
+      "keywords": [
+        "es",
+        "stream",
+        "event streaming",
+        "kafka",
+        "EventStreamJob",
+        "outbox",
+        "subscribe"
+      ]
+    },
+    {
       "title": "import",
       "type": "keyword",
       "category": "Language",

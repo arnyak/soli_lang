@@ -480,6 +480,18 @@ fn bytes_to_text(bytes: Vec<u8>, base64: bool) -> String {
 
 // ----- operations -----
 
+/// Append one record to `topic` — `ES.emit(topic, key, value)` from Rust.
+/// What the built-in `EventStreamJob` does with a domain event.
+pub(crate) fn emit_record(topic: &str, key: Option<String>, value: String) -> Result<(), String> {
+    let record = Record {
+        key,
+        value,
+        partition: None,
+        sequence: None,
+    };
+    produce("ES.emit", topic, vec![record], None).map(|_| ())
+}
+
 fn produce(
     op: &str,
     topic: &str,

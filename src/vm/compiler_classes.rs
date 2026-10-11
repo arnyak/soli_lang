@@ -11,11 +11,19 @@ use super::opcode::Op;
 impl Compiler {
     /// Compile a class declaration.
     pub fn compile_class_decl(&mut self, decl: &ClassDecl, line: usize) -> CompileResult<()> {
+        // A nested class is its parent's member (`Billing::Invoice`): no
+        // global, no local; its value is left for the parent to store.
+        let nested = std::mem::take(&mut self.compiling_nested_class);
+        let top_level = self.scope_depth == 0 && !nested;
+        let qualified = match (nested, self.class_namespace.last()) {
+            (true, Some(outer)) => format!("{outer}::{}", decl.name),
+            _ => decl.name.clone(),
+        };
         // A top-level class declaration defines a global of that name.
-        if self.scope_depth == 0 {
+        if top_level {
             self.known_globals.borrow_mut().insert(decl.name.clone());
         }
-        let name_idx = self.add_string_constant(&decl.name);
+        let name_idx = self.add_string_constant(&qualified);
 
         // Create the class or module
         if decl.is_module {
@@ -39,7 +47,7 @@ impl Compiler {
         // Method/field attachments below remain visible through the global
         // because `Class` uses interior mutability. (Top-level only; nested
         // classes bind to a local at the end, as before.)
-        if self.scope_depth == 0 {
+        if top_level {
             let gname = self.add_string_constant(&decl.name);
             self.emit(Op::Dup, line);
             self.emit(Op::DefineGlobal(gname), line);
@@ -63,7 +71,7 @@ impl Compiler {
         for method in &decl.concern_class_methods {
             self.compile_method(method, line)?;
         }
-        self.compile_invariants(decl, line)?;
+        self.compile_invariants(decl, &qualified, line)?;
 
         if decl.is_module
             && (!decl.included_hooks.is_empty()
@@ -131,24 +139,33 @@ impl Compiler {
             self.compile_stmt(stmt)?;
         }
 
-        // Compile nested classes
+        // Compile nested classes: each is stored on its parent
+        // (`[parent, parent, nested]` → SetProperty → `[parent, nested]`),
+        // then the copy is dropped.
         for nested in &decl.nested_classes {
             self.emit(Op::Dup, line); // parent class on stack
-            self.compile_class_decl(nested, line)?;
-            // Store nested class as property of parent
+            self.compiling_nested_class = true;
+            self.class_namespace.push(qualified.clone());
+            let compiled = self.compile_class_decl(nested, line);
+            self.class_namespace.pop();
+            compiled?;
             let nested_name_idx = self.add_string_constant(&nested.name);
             self.emit(Op::SetProperty(nested_name_idx), line);
+            self.emit(Op::Pop, line);
         }
 
         // Restore class context
         self.class_context = prev_class_ctx;
 
         // Bind the class name. Top-level classes were bound to their global
-        // early (above); just discard the working copy left on the stack.
-        if self.scope_depth > 0 {
-            self.add_local(decl.name.clone(), false);
-        } else {
-            self.emit(Op::Pop, line);
+        // early (above); just discard the working copy left on the stack. A
+        // nested class stays on the stack for its parent.
+        if !nested {
+            if self.scope_depth > 0 {
+                self.add_local(decl.name.clone(), false);
+            } else {
+                self.emit(Op::Pop, line);
+            }
         }
 
         Ok(())
@@ -157,7 +174,12 @@ impl Compiler {
     /// Each `invariant(...) { … }` becomes a private method named after the
     /// class, and their messages the static field `__invariants__` — the same
     /// shape the tree-walker builds (see `interpreter::domain`).
-    fn compile_invariants(&mut self, decl: &ClassDecl, line: usize) -> CompileResult<()> {
+    fn compile_invariants(
+        &mut self,
+        decl: &ClassDecl,
+        qualified: &str,
+        line: usize,
+    ) -> CompileResult<()> {
         if decl.invariants.is_empty() {
             return Ok(());
         }
@@ -167,7 +189,7 @@ impl Compiler {
             let method = MethodDecl {
                 visibility: crate::ast::stmt::Visibility::Private,
                 is_static: false,
-                name: crate::interpreter::domain::invariant_method_name(&decl.name, i),
+                name: crate::interpreter::domain::invariant_method_name(qualified, i),
                 params: Vec::new(),
                 return_type: None,
                 body: invariant.body.clone(),

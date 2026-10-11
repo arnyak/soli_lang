@@ -1875,6 +1875,12 @@ impl Interpreter {
             return Ok(value);
         }
 
+        // `Organization.Department` — a nested class, as `Organization::Department`
+        // and as on the VM.
+        if let Some(nested) = class.nested_classes.borrow().get(name) {
+            return Ok(Value::Class(nested.clone()));
+        }
+
         // `Amount.new(500, "EUR")` on a value object is `Amount(500, "EUR")`:
         // the class itself, so the call runs its constructor (or binds the
         // fields) and its invariants. The attribute-hash form below would

@@ -2942,6 +2942,10 @@ end
 
 #### Accessing Nested Classes
 
+Reach a nested class through its outer class, with `::` or a dot
+(`Organization::Department`, `Organization.Department`). It is named after
+its outer class: `type(dept)` is `"Organization::Department"`.
+
 Use the `::` (scope resolution operator) to access nested classes:
 
 ```soli
@@ -3782,6 +3786,41 @@ export def fibonacci(n: Int) -> Int {
   fibonacci(n - 1) + fibonacci(n - 2)
 }
 ```
+
+### Bounded Contexts
+
+A class nested in a module is named after it — `Billing::Invoice`, as
+`print`, `.class` and error messages show — so two parts of an application
+can each have their own `Invoice`. A module may be declared again in another
+file, which adds to it, so one context can spread over several files:
+
+```soli
+# app/models/billing/invoice.sl
+module Billing
+  class Invoice < Model
+    belongs_to("customer")          # Billing::Customer, table billing_customers
+  end
+end
+
+# app/models/billing/customer.sl — the same module, reopened
+module Billing
+  class Customer < Model
+    has_many("invoices")
+  end
+end
+
+# app/models/shipping/invoice.sl
+module Shipping
+  class Invoice < Model             # table shipping_invoices
+  end
+end
+```
+
+A model in a context gets its own collection (`billing_invoices`), and its
+relations name models of the same context unless `class_name:` says
+otherwise (`belongs_to("user", {"class_name": "User"})`). Two files that
+declare the same qualified class still stop the boot. `new Billing::Invoice(…)`
+and `Billing::Invoice.new(…)` work on both engines.
 
 ### Importing Modules
 

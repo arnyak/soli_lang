@@ -49,6 +49,19 @@ subscribe(OrderPaid, ReceiptJob)   # ReceiptJob.perform(args) gets event.to_h</c
         <li>A <strong class="text-white">job</strong> handler is enqueued when the event is published, with the event&rsquo;s fields as its arguments. Inside a transaction the job row is written by that transaction (<code>_jobs</code> lives on the default connection), so it commits or rolls back with the data &mdash; the <em>transactional outbox</em> &mdash; and the job queue retries delivery. On Cloudflare Workers jobs go to a Queue, which is not transactional.</li>
     </ul>
 
+    <h3 id="streams" class="text-lg font-semibold text-white mb-4">Streaming to ES</h3>
+    <p class="text-gray-400 mb-4">
+        A stream subscription appends each event to a topic of an <a href="/docs/builtins/es" class="text-cyan-300 hover:underline">ES</a> broker (<code>ES_BROKER</code>), for other services to consume &mdash; keyed by the named field. It goes through the outbox: publishing enqueues the built-in <code>EventStreamJob</code> in the transaction, which appends the record once the data is committed, with the job queue&rsquo;s retries. A stream receives every committed event, at least once, and never a rolled-back one.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">
+        <div class="p-4 overflow-x-auto">
+            <pre data-filename="app/subscribers/streams.sl"><code class="language-soli text-sm">subscribe(OrderPaid, {"stream": "billing", "key": "number"})
+
+# on the topic `billing`, key "A-1":
+# {"type": "OrderPaid", "data": {"number": "A-1", "cents": 900}, "occurred_at": "2026-10-11T19:07:54Z"}</code></pre>
+        </div>
+    </div>
+
     <h2 id="after-commit" class="text-2xl font-bold text-white mb-6">After the commit</h2>
     <p class="text-gray-400 mb-4">
         <code>after_commit { … }</code> (or <code>after_commit do … end</code>) runs a block once the data is durable: after the outermost commit inside a transaction, never if it rolls back, at once outside one. It is the place for side effects that must not happen for data that was never stored.
@@ -92,4 +105,25 @@ b.stale?                # true — _errors names lock_version</code></pre>
         </div>
     </div>
     <p class="text-gray-400 mb-12">Not yet supported: column-mode tables (an existing SQL schema). <code>increment</code> and <code>decrement</code> do not bump the version.</p>
+
+    <h2 id="bounded-contexts" class="text-2xl font-bold text-white mb-6">Bounded contexts</h2>
+    <p class="text-gray-400 mb-4">
+        Models can live in modules, one per part of the domain, each with its own names. A class nested in a module is <code>Billing::Invoice</code>, its collection <code>billing_invoices</code>, a module may be declared in several files, and relations default to models of the same context (<code>class_name:</code> names any other).
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm"># app/models/billing/invoice.sl
+module Billing
+  class Invoice &lt; Model
+    belongs_to("customer")          # Billing::Customer
+  end
+end
+
+# app/models/shipping/invoice.sl
+module Shipping
+  class Invoice &lt; Model             # its own table: shipping_invoices
+  end
+end</code></pre>
+        </div>
+    </div>
 </div>

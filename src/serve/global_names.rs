@@ -81,15 +81,21 @@ impl Duplicate {
     }
 }
 
-/// The top-level names `statements` declare, in order.
+/// The top-level names `statements` declare, in order — and the classes
+/// nested in them, by their qualified name (`Billing::Invoice`): a module
+/// may be declared again (reopened, in another file of its bounded
+/// context), the classes in it may not.
 pub fn declarations(statements: &[Stmt], file: &Path) -> Vec<Declaration> {
     let mut out = Vec::new();
     for stmt in statements {
         let found = match &stmt.kind {
-            StmtKind::Class(decl) => Some((
-                decl.name.clone(),
-                if decl.is_module { "module" } else { "class" },
-            )),
+            StmtKind::Class(decl) => {
+                nested_declarations(decl, &decl.name, file, &mut out);
+                Some((
+                    decl.name.clone(),
+                    if decl.is_module { "module" } else { "class" },
+                ))
+            }
             StmtKind::Function(decl) => Some((decl.name.clone(), "def")),
             StmtKind::Enum(decl) => Some((decl.name.clone(), "enum")),
             StmtKind::Interface(decl) => Some((decl.name.clone(), "interface")),
@@ -112,13 +118,33 @@ pub fn declarations(statements: &[Stmt], file: &Path) -> Vec<Declaration> {
     out
 }
 
+fn nested_declarations(
+    decl: &crate::ast::stmt::ClassDecl,
+    qualifier: &str,
+    file: &Path,
+    out: &mut Vec<Declaration>,
+) {
+    for nested in &decl.nested_classes {
+        let name = format!("{qualifier}::{}", nested.name);
+        nested_declarations(nested, &name, file, out);
+        out.push(Declaration {
+            name,
+            kind: if nested.is_module { "module" } else { "class" },
+            file: file.to_path_buf(),
+            line: nested.span.line,
+        });
+    }
+}
+
 /// Every name declared more than once among `declarations`, in the order the
-/// second declarations appear.
+/// second declarations appear. A module declared twice is reopened, not
+/// replaced, so that pair is not one.
 pub fn duplicates(declarations: Vec<Declaration>) -> Vec<Duplicate> {
     let mut seen: BTreeMap<String, Declaration> = BTreeMap::new();
     let mut found = Vec::new();
     for declaration in declarations {
         match seen.get(&declaration.name) {
+            Some(first) if first.kind == "module" && declaration.kind == "module" => {}
             Some(first) => found.push(Duplicate {
                 first: first.clone(),
                 again: declaration,
@@ -250,6 +276,31 @@ mod tests {
         let message = found[0].message(Path::new(""));
         assert!(message.contains("app/models/notifications.sl:1 (class Notifications)"));
         assert!(message.contains("app/services/notifications.sl:3 (class Notifications)"));
+    }
+
+    #[test]
+    fn a_module_reopened_is_not_a_duplicate_but_its_classes_are() {
+        let mut all = parse(
+            "module Billing\n  class Invoice\n  end\nend\n",
+            "app/models/billing/invoice.sl",
+        );
+        all.extend(parse(
+            "module Billing\n  class Customer\n  end\nend\n",
+            "app/models/billing/customer.sl",
+        ));
+        all.extend(parse(
+            "module Shipping\n  class Invoice\n  end\nend\n",
+            "app/models/shipping.sl",
+        ));
+        assert!(duplicates(all.clone()).is_empty());
+
+        all.extend(parse(
+            "module Billing\n  class Invoice\n  end\nend\n",
+            "app/services/billing.sl",
+        ));
+        let found = duplicates(all);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].again.name, "Billing::Invoice");
     }
 
     #[test]

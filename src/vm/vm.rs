@@ -3149,6 +3149,15 @@ impl Vm {
                 }
                 Op::Module(idx) => {
                     let name = self.read_string_constant_owned(idx);
+                    // `module Billing` declared again (another file of the
+                    // same context): its members join the existing module.
+                    if let Some(Value::Class(existing)) = self.globals.get(&name) {
+                        if existing.is_module && existing.name == name {
+                            let existing = existing.clone();
+                            self.stack.push(Value::Class(existing));
+                            continue;
+                        }
+                    }
                     let class = Class {
                         name: name.clone(),
                         is_module: true,

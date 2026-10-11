@@ -614,6 +614,17 @@ impl Interpreter {
     }
 
     pub(super) fn execute_class(&mut self, decl: &ClassDecl) -> RuntimeResult<()> {
+        let qualified = qualified_class_name(&decl.name);
+        // `module Billing` declared again — in another file of the same
+        // bounded context — adds to the module instead of replacing it.
+        if decl.is_module {
+            let existing = self.environment.borrow().get(&decl.name);
+            if let Some(Value::Class(module)) = existing {
+                if module.is_module && module.name == qualified {
+                    return self.reopen_module(module, decl);
+                }
+            }
+        }
         let superclass = if let Some(ref superclass_name) = decl.superclass {
             match self.environment.borrow().get(superclass_name) {
                 Some(Value::Class(class)) => Some(class),
@@ -685,7 +696,7 @@ impl Interpreter {
             let method_decl = crate::ast::stmt::MethodDecl {
                 visibility: crate::ast::stmt::Visibility::Private,
                 is_static: false,
-                name: crate::interpreter::domain::invariant_method_name(&decl.name, i),
+                name: crate::interpreter::domain::invariant_method_name(&qualified, i),
                 params: Vec::new(),
                 return_type: None,
                 body: invariant.body.clone(),
@@ -763,7 +774,7 @@ impl Interpreter {
         }
 
         let class = Class {
-            name: decl.name.clone(),
+            name: qualified,
             superclass,
             methods: Rc::new(RefCell::new(methods)),
             static_methods,
@@ -1084,6 +1095,7 @@ impl Interpreter {
         parent_class: Rc<Class>,
     ) -> RuntimeResult<()> {
         for nested_decl in nested_decls {
+            let _namespace = NamespaceGuard::enter(&parent_class.name);
             // Save the current environment
             let previous_env = self.environment.clone();
 
@@ -1122,6 +1134,33 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `module Billing` declared a second time: its classes join the module's
+    /// nested classes, its methods the module's methods.
+    fn reopen_module(&mut self, module: Rc<Class>, decl: &ClassDecl) -> RuntimeResult<()> {
+        for method_decl in &decl.methods {
+            let func = Rc::new(Function::from_method(
+                method_decl,
+                self.environment.clone(),
+                self.current_source_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+            ));
+            if method_decl.is_static {
+                module
+                    .mixin_static_methods
+                    .borrow_mut()
+                    .insert(method_decl.name.clone(), func);
+            } else {
+                module
+                    .methods
+                    .borrow_mut()
+                    .insert(method_decl.name.clone(), func);
+            }
+        }
+        module.invalidate_method_cache();
+        self.execute_nested_classes(&decl.nested_classes, module)
+    }
+
     /// Execute a statement with a custom environment (used for static blocks).
     fn execute_with_env(
         &mut self,
@@ -1133,5 +1172,37 @@ impl Interpreter {
         self.environment = previous_env;
         result?;
         Ok(())
+    }
+}
+
+thread_local! {
+    /// The qualified names of the classes and modules being declared, so a
+    /// nested one is named after them: `Billing::Invoice`.
+    static NAMESPACE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The name a class declared here gets: qualified by the module or class it
+/// is nested in.
+pub(crate) fn qualified_class_name(name: &str) -> String {
+    NAMESPACE.with(|ns| match ns.borrow().last() {
+        Some(outer) => format!("{outer}::{name}"),
+        None => name.to_string(),
+    })
+}
+
+struct NamespaceGuard;
+
+impl NamespaceGuard {
+    fn enter(name: &str) -> Self {
+        NAMESPACE.with(|ns| ns.borrow_mut().push(name.to_string()));
+        NamespaceGuard
+    }
+}
+
+impl Drop for NamespaceGuard {
+    fn drop(&mut self) {
+        NAMESPACE.with(|ns| {
+            ns.borrow_mut().pop();
+        });
     }
 }

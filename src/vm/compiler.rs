@@ -85,6 +85,13 @@ pub struct Compiler {
     pub loop_context: Option<LoopContext>,
     /// Current class context for this/super.
     pub class_context: Option<ClassContext>,
+    /// Set while compiling a class nested in another (`module Billing` …
+    /// `class Invoice`): it becomes a member of its parent, not a global or
+    /// a local.
+    pub compiling_nested_class: bool,
+    /// Qualified names of the classes being compiled, outermost first: a
+    /// nested class is named after them (`Billing::Invoice`).
+    pub class_namespace: Vec<String>,
     /// Names known to be globals at compile time. Shared across every nested
     /// compiler of one module. Used to decide, for a bare assignment inside a
     /// function to a name that is neither a local nor an upvalue, whether to
@@ -219,6 +226,8 @@ impl Compiler {
             function_type,
             loop_context: None,
             class_context: None,
+            compiling_nested_class: false,
+            class_namespace: Vec::new(),
             known_globals: Rc::new(RefCell::new(HashSet::new())),
             base_globals: None,
             stack_height: 0,

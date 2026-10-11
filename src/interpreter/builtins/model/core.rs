@@ -411,12 +411,19 @@ pub(crate) fn sti_row_matches(class_name: &str, doc: &serde_json::Value) -> bool
 fn compute_base_collection_name(name: &str) -> String {
     let name = name.strip_suffix("Model").unwrap_or(name);
 
+    // A model of a bounded context (`Billing::Invoice`) gets its context as a
+    // prefix: `billing_invoices`.
     let mut snake = String::new();
-    for (i, c) in name.chars().enumerate() {
-        if c.is_uppercase() && i > 0 {
+    for (n, segment) in name.split("::").enumerate() {
+        if n > 0 {
             snake.push('_');
         }
-        snake.push(c.to_lowercase().next().unwrap());
+        for (i, c) in segment.chars().enumerate() {
+            if c.is_uppercase() && i > 0 {
+                snake.push('_');
+            }
+            snake.extend(c.to_lowercase());
+        }
     }
     crate::inflect::pluralize(&snake)
 }

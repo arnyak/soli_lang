@@ -237,6 +237,21 @@ pub fn parse_relation_options(
     Ok(options)
 }
 
+/// A relation declared in a bounded context names a model of that context
+/// by default: `belongs_to("customer")` on `Billing::Invoice` is
+/// `Billing::Customer` (`class_name:` reaches any other).
+fn in_owner_context(owner_class: &str, class_name: String) -> String {
+    match owner_class.rsplit_once("::") {
+        Some((namespace, _)) => format!("{namespace}::{class_name}"),
+        None => class_name,
+    }
+}
+
+/// `Billing::Invoice` → `Invoice`: what a foreign key is named after.
+fn short_class_name(class_name: &str) -> &str {
+    class_name.rsplit("::").next().unwrap_or(class_name)
+}
+
 /// Build a RelationDef applying naming conventions.
 ///
 /// - `has_many("posts")` → class `Post`, collection `posts`, fk `user_id`
@@ -257,10 +272,13 @@ pub fn build_relation(
         relation_type
     };
 
-    let class_name = options.class_name.clone().unwrap_or_else(|| classify(name));
+    let class_name = options
+        .class_name
+        .clone()
+        .unwrap_or_else(|| in_owner_context(owner_class, classify(name)));
 
-    let collection = if let Some(cn) = &options.class_name {
-        super::core::class_name_to_collection(cn)
+    let collection = if options.class_name.is_some() || class_name.contains("::") {
+        super::core::class_name_to_collection(&class_name)
     } else {
         // For has_many, name is already plural (e.g. "posts")
         // For belongs_to/has_one, name is singular → pluralize
@@ -278,14 +296,14 @@ pub fn build_relation(
             // owner — or after the `as:` name for polymorphic inverses.
             RelationType::HasMany | RelationType::HasOne => match &options.as_name {
                 Some(as_name) => format!("{}_id", as_name),
-                None => format!("{}_id", to_snake_case(owner_class)),
+                None => format!("{}_id", to_snake_case(short_class_name(owner_class))),
             },
             // belongs_to (plain or polymorphic): FK is on the owner model,
             // named after the relation
             RelationType::BelongsTo | RelationType::Polymorphic => format!("{}_id", name),
             // habtm uses build_habtm_relation; not built here
             RelationType::HasAndBelongsToMany => {
-                format!("{}_id", to_snake_case(owner_class))
+                format!("{}_id", to_snake_case(short_class_name(owner_class)))
             }
         }
     });
@@ -345,10 +363,13 @@ pub fn build_habtm_relation(
     name: &str,
     options: &RelationOptions,
 ) -> RelationDef {
-    let class_name = options.class_name.clone().unwrap_or_else(|| classify(name));
+    let class_name = options
+        .class_name
+        .clone()
+        .unwrap_or_else(|| in_owner_context(owner_class, classify(name)));
 
-    let collection = if let Some(cn) = &options.class_name {
-        super::core::class_name_to_collection(cn)
+    let collection = if options.class_name.is_some() || class_name.contains("::") {
+        super::core::class_name_to_collection(&class_name)
     } else {
         // habtm name is plural (e.g. "tags")
         name.to_string()
@@ -359,7 +380,7 @@ pub fn build_habtm_relation(
     let foreign_key = options
         .foreign_key
         .clone()
-        .unwrap_or_else(|| format!("{}_id", to_snake_case(owner_class)));
+        .unwrap_or_else(|| format!("{}_id", to_snake_case(short_class_name(owner_class))));
 
     let association_foreign_key = options
         .association_foreign_key

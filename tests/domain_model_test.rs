@@ -334,6 +334,7 @@ end
 end
 
 subscribe(OrderPaid, ReceiptJob)
+subscribe(OrderPaid, {"stream": "orders", "key": "number"})
 "#,
     );
     write(
@@ -451,4 +452,108 @@ fn a_served_app_publishes_events_after_the_commit() {
     let (status, body) = call(&server, "POST", &format!("/orders/{key}/stale"), Some("{}"));
     assert_eq!(status, 409, "{body}");
     assert!(body.contains("order changed since it was read"), "{body}");
+
+    // The stream subscription: one EventStreamJob, for the committed payment
+    // only, carrying the record for the ES topic.
+    drop(server);
+    let conn = rusqlite::Connection::open(dir.path().join("app.sqlite3")).unwrap();
+    let streamed: Vec<String> = conn
+        .prepare(
+            "SELECT json_extract(doc, '$.args') FROM _jobs \
+             WHERE json_extract(doc, '$.handler') = 'EventStreamJob'",
+        )
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(streamed.len(), 1, "{streamed:?}");
+    let args: serde_json::Value = serde_json::from_str(&streamed[0]).unwrap();
+    assert_eq!(args["topic"], "orders");
+    assert_eq!(args["key"], "A-1");
+    assert_eq!(args["event"]["type"], "OrderPaid");
+    assert_eq!(
+        args["event"]["data"],
+        serde_json::json!({"number": "A-1", "cents": 900})
+    );
+}
+
+/// Phase three: bounded contexts. `module Billing` spread over two files,
+/// another context with its own `Invoice`, each model in its own table, and
+/// a relation that stays inside its context.
+fn contexts_app(root: &Path) {
+    write(
+        root,
+        "config/routes.sl",
+        "get(\"/up\", \"contexts#up\")\npost(\"/run\", \"contexts#run\")\n",
+    );
+    write(
+        root,
+        "app/models/billing/invoice.sl",
+        "module Billing\n  class Invoice < Model\n    belongs_to(\"customer\")\n  end\nend\n",
+    );
+    write(
+        root,
+        "app/models/billing/customer.sl",
+        "module Billing\n  class Customer < Model\n    has_many(\"invoices\")\n  end\n\n  def self.label\n    \"billing\"\n  end\nend\n",
+    );
+    write(
+        root,
+        "app/models/shipping/invoice.sl",
+        "module Shipping\n  class Invoice < Model\n  end\nend\n",
+    );
+    write(
+        root,
+        "app/controllers/contexts_controller.sl",
+        r#"class ContextsController < Controller
+  # GET /up
+  def up(req)
+    "ok"
+  end
+
+  # POST /run
+  def run(req)
+    customer = Billing::Customer.create({"name": "Acme"})
+    Billing::Invoice.create({"number": "B-1", "customer_id": customer._key})
+    Shipping::Invoice.create({"number": "S-1"})
+    render_json({
+      "billing": Billing::Invoice.count,
+      "shipping": Shipping::Invoice.count,
+      "class": Billing::Invoice.all[0].class,
+      "label": Billing.label,
+      "first_shipping": Shipping::Invoice.all[0].number
+    })
+  end
+end
+"#,
+    );
+}
+
+#[test]
+fn bounded_contexts_keep_their_models_apart() {
+    let dir = tempfile::tempdir().unwrap();
+    contexts_app(dir.path());
+    let server = serve(dir.path());
+    let (status, body) = call(&server, "POST", "/run", Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["billing"], 1, "{body}");
+    assert_eq!(json["shipping"], 1, "{body}");
+    assert_eq!(json["class"], "Billing::Invoice", "{body}");
+    assert_eq!(json["label"], "billing", "{body}");
+    assert_eq!(json["first_shipping"], "S-1", "{body}");
+    drop(server);
+    let conn = rusqlite::Connection::open(dir.path().join("app.sqlite3")).unwrap();
+    let mut tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' ORDER BY name")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    tables.retain(|t| !t.starts_with("sqlite"));
+    assert_eq!(
+        tables,
+        vec!["billing_customers", "billing_invoices", "shipping_invoices"]
+    );
 }

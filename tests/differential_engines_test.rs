@@ -365,6 +365,40 @@ catch e
   print("refused")
 end"##,
     ),
+    (
+        // A class nested in a module: qualified name, `::` on both engines
+        // (the VM used to resolve it to the module), a reopened module.
+        "nested_classes_and_reopened_modules",
+        r##"module Commerce
+  class Product
+    name: String
+    price: Float
+    new(name: String, price: Float)
+      @name = name
+      @price = price
+    end
+    def label -> String
+      "#{@name}: #{@price}"
+    end
+  end
+end
+module Commerce
+  class Cart
+    def size
+      0
+    end
+  end
+  def self.version
+    2
+  end
+end
+print(Commerce::Product)
+print(new Commerce::Product("Book", 12.5).label)
+print(Commerce::Product.new("Mug", 3.0).label)
+print(Commerce::Cart.new().size, Commerce.version)
+print(Commerce::Product.new("Pen", 1.0).class)
+print(Commerce.Product.new("Dot", 2.0).label)"##,
+    ),
     // A typed last clause that matches runs its body and continues: the VM
     // used to fall into the no-match `Rethrow` after the body.
     (

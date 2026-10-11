@@ -859,6 +859,25 @@ fn register_event_builtins(env: &mut Environment) {
             crate::interpreter::events::subscribe(args)
         })),
     );
+    // The job a stream subscription enqueues: appends the event to its ES
+    // topic once the transaction that published it has committed.
+    let mut statics: HashMap<String, Rc<NativeFunction>> = HashMap::new();
+    statics.insert(
+        "perform".to_string(),
+        Rc::new(NativeFunction::new(
+            "EventStreamJob.perform",
+            Some(1),
+            crate::interpreter::events::perform_event_stream,
+        )),
+    );
+    env.define(
+        crate::interpreter::events::EVENT_STREAM_JOB.to_string(),
+        Value::Class(Rc::new(crate::interpreter::value::Class {
+            name: crate::interpreter::events::EVENT_STREAM_JOB.to_string(),
+            native_static_methods: statics,
+            ..Default::default()
+        })),
+    );
     env.define(
         "after_commit".to_string(),
         Value::NativeFunction(NativeFunction::new("after_commit", None, |_args| {

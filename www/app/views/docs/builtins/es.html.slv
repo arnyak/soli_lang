@@ -14,6 +14,7 @@
         <p class="text-xl text-gray-300 leading-8">
             The driver for <a href="https://es.solisoft.net" class="text-emerald-400 hover:underline">es</a>, a Kafka-shaped event log in one binary: topics with partitions, consumer groups, idempotent producers. Produce, consume and ping go over es's <strong class="text-white">binary protocol</strong> when <code class="text-emerald-400">ES_BINARY</code> names its listener &mdash; one long-lived connection per worker, raw bytes, no JSON &mdash; and over its HTTP API otherwise. Topics and consumer groups exist only on the HTTP API, and go there.
         </p>
+        <p class="text-gray-400 mt-4">To send domain events to a topic, subscribe a stream rather than calling <code class="text-emerald-400">ES.emit</code> yourself: <code class="text-emerald-400">subscribe(OrderPaid, {"stream": "billing", "key": "number"})</code> appends each committed event through the job outbox &mdash; see <a href="/docs/database/domain-events#streams" class="text-emerald-400 hover:underline">Streaming to ES</a>.</p>
     </div>
 
     <section id="section-configuration" class="scroll-mt-20 mb-12">

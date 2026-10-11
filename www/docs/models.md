@@ -1025,6 +1025,49 @@ A subscription to a class also receives its subclasses' events
 A block handler must come from an application file; `subscribe` with a block
 in a standalone script runs that script on the tree-walker.
 
+**Streaming to ES.** `subscribe(OrderPaid, {"stream": "billing", "key": "number"})`
+appends each event to a topic of an [ES](/docs/builtins/es)
+broker (`ES_BROKER`), for other services to consume. The record is
+`{"type": "OrderPaid", "data": {…the event's fields}, "occurred_at": "…"}`,
+keyed by the named field (one partition per order, here). It goes through the
+outbox: publishing enqueues the built-in `EventStreamJob` in the transaction,
+and the job appends the record once the data is committed, with the job
+queue's retries — so a stream receives every committed event, at least once,
+and never one that was rolled back.
+
+## Bounded Contexts
+
+Models can live in modules, one per part of the domain — `Billing`,
+`Shipping` — each with its own names. A class nested in a module is
+`Billing::Invoice`, its collection is `billing_invoices`, and a module may be
+declared in several files:
+
+```soli
+# app/models/billing/invoice.sl
+module Billing
+  class Invoice < Model
+    belongs_to("customer")          # Billing::Customer
+  end
+end
+
+# app/models/billing/customer.sl
+module Billing
+  class Customer < Model
+    has_many("invoices")
+  end
+end
+
+# app/models/shipping/invoice.sl
+module Shipping
+  class Invoice < Model
+  end
+end
+```
+
+Relations default to models of the same context; `class_name:` names any
+other (`belongs_to("user", {"class_name": "User"})`). Two files that declare
+the same qualified class stop the boot, as two top-level classes do.
+
 ## Optimistic Locking
 
 Two people edit the same record: both load version 3, the first saves, and
