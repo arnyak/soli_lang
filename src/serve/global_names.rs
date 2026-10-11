@@ -55,10 +55,15 @@ pub struct Duplicate {
 impl Duplicate {
     /// The explanation, with both places relative to `root`.
     pub fn message(&self, root: &Path) -> String {
+        // `/` on every OS: on Windows a joined path reads `app/models\post.sl`.
         let at = |d: &Declaration| {
             format!(
                 "{}:{} ({} {})",
-                d.file.strip_prefix(root).unwrap_or(&d.file).display(),
+                d.file
+                    .strip_prefix(root)
+                    .unwrap_or(&d.file)
+                    .to_string_lossy()
+                    .replace('\\', "/"),
                 d.line,
                 d.kind,
                 d.name
