@@ -122,7 +122,7 @@ SOLIDB_USERNAME = "app"</code></pre>
         <pre data-filename="Terminal"><code class="language-bash text-sm">npx wrangler secret put SOLIDB_PASSWORD</code></pre>
     </div>
     <p class="text-gray-400 mb-12">
-        The runtime also sets <code class="text-amber-400">SOLI_RUNTIME</code> (<code>"cloudflare-workers"</code>) and <code class="text-amber-400">SOLI_VERSION</code>, unless the Worker does. Request headers carry what Cloudflare knows about the visitor: <code class="text-amber-400">cf-connecting-ip</code> (also the request's peer IP), <code class="text-amber-400">cf-ipcountry</code>, and <code class="text-amber-400">cf-colo</code> &mdash; the datacenter that ran the request, added by <code>worker.js</code> from <code>request.cf.colo</code>.
+        The runtime also sets <code class="text-amber-400">SOLI_RUNTIME</code> (<code>"cloudflare-workers"</code>) and <code class="text-amber-400">SOLI_VERSION</code>, unless the Worker does. Request headers carry what Cloudflare knows about the visitor: <code class="text-amber-400">cf-connecting-ip</code> (also the request's peer IP), <code class="text-amber-400">cf-ipcountry</code>, and <code class="text-amber-400">cf-colo</code> &mdash; the datacenter that ran the request, added by <code>worker.js</code> from <code>request.cf.colo</code>. When the edge sent no <code class="text-amber-400">cf-ipcountry</code> (IP geolocation off on the zone, or <code>wrangler dev</code>, which fills <code>request.cf</code> but adds no <code>cf-*</code> header), <code>worker.js</code> adds it from <code>request.cf.country</code>.
     </p>
 
     <h2 id="deploy" class="text-3xl font-bold text-white mb-4 scroll-mt-24">Deploy</h2>

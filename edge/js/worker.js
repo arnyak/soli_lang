@@ -154,6 +154,11 @@ export default {
     const headers = [...request.headers];
     // Where Cloudflare ran this request: request.cf, which is not a header.
     if (request.cf?.colo) headers.push(["cf-colo", request.cf.colo]);
+    // The edge adds cf-ipcountry (when the zone's IP geolocation is on);
+    // wrangler dev does not, but fills request.cf.country.
+    if (request.cf?.country && !request.headers.has("cf-ipcountry")) {
+      headers.push(["cf-ipcountry", request.cf.country]);
+    }
     const body = ["GET", "HEAD"].includes(request.method)
       ? new Uint8Array(0)
       : new Uint8Array(await request.arrayBuffer());

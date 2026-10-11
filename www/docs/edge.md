@@ -172,7 +172,9 @@ The runtime also sets, unless the Worker does:
 Request headers carry what Cloudflare knows about the visitor:
 `cf-connecting-ip` (also the request's peer IP), `cf-ipcountry`, and
 `cf-colo` — the datacenter that ran the request, which `worker.js` adds from
-`request.cf.colo`.
+`request.cf.colo`. When the edge sent no `cf-ipcountry` (IP geolocation off on
+the zone, or `wrangler dev`, which fills `request.cf` but adds no `cf-*`
+header), `worker.js` adds it from `request.cf.country`.
 
 ## Deploy
 
