@@ -201,7 +201,8 @@ Introspection uses `information_schema`. Generated keys (`BIGSERIAL`,
 - **No graph, vector, fulltext, geo, columnar, timeseries, or raw SDBQL.** Those
   stay on SoliDB. Use `Model.find_by_sql` for SQL the portable surface cannot
   express.
-- **`grouped {}` read-coalescing is SoliDB-only.**
+- **`grouped {}` coalesces reads on SoliDB and Cloudflare D1 only.** Here the
+  reads inside it run one by one, with the same results.
 - **Composite primary keys** are refused at boot on column-aware models.
 - **`encrypts` and STI** work in column mode: encrypted fields must be text
   columns; STI subclasses need a string `type` column.

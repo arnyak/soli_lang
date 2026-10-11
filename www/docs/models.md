@@ -24,7 +24,8 @@ rather than returning wrong rows.
 | A raw string `.where` chained onto a hash `.where` | ✓ | ✗ — refused, not silently dropped |
 | `.join` (relation existence filter), `.having` | ✓ | ✓ on document tables |
 | `.includes` with `through:` | ✓ (accessor only) | ✓ on document tables (three batched queries) |
-| Graph/edge models, vector search, timeseries, columnar, `grouped {}` | ✓ | ✗ |
+| Graph/edge models, vector search, timeseries, columnar | ✓ | ✗ |
+| `grouped {}` read coalescing | ✓ (one combined statement) | ✓ on Cloudflare D1 (one `batch()`); Postgres, MySQL and SQLite run the reads one by one |
 | Encrypted attributes (`encrypts`), STI, counter caches | ✓ | ✓ (column mode: `encrypts` on text columns; STI needs a string `type` column) |
 
 On a SQL adapter, mixing the two `.where` forms is an error rather than a
@@ -2717,6 +2718,29 @@ Read queries are batched: `all`, `where(...).all` / `.first` / `.count` /
 `first_by`. **Writes are not** — `create`, `save`, `update`, `delete` run
 immediately even inside the block (use `transaction` for atomic writes).
 
+### On Cloudflare D1
+
+On a D1 connection (`soli edge build`) the reads inside the block go to D1 in
+one [`batch()`](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch)
+— one round trip from the Worker for the whole block, where each read used to
+cost its own:
+
+```soli
+grouped(fn() {
+  per_colo = CheckIn.group_by("colo").all
+  @latest  = CheckIn.order("at", "desc").limit(10).all
+})
+# one round trip to D1 for both
+```
+
+The same reads are coalesced as on SoliDB, `find` / `find_by` / `first_by`
+included, and the results are the ones they get one by one. A read the batch
+cannot answer in advance — one that needs another read's rows, or a table's
+first read on a fresh isolate, which checks that the table exists — runs on its
+own after the batch. If D1 refuses the batch (a statement in it fails), every
+read runs on its own and reports its own error. Postgres, MySQL and SQLite run
+the reads of a `grouped` block one by one.
+
 ### Reading a result inside the block (auto-flush)
 
 If you read one of the deferred results *before* the block ends, the queries
@@ -2739,8 +2763,9 @@ results after the block.
 
 - `find` on a missing id still raises `RecordNotFound` (→ 404) — the error
   surfaces when the result is read or the block ends.
-- A combined query is all-or-nothing: if it fails, every read in the batch
-  fails together.
+- On SoliDB a combined query is all-or-nothing: if it fails, every read in the
+  batch fails together. On D1 a refused batch falls back to one statement per
+  read.
 - In interactive **`--dev`** the reads are *not* coalesced — each runs as its own
   query so the dev query log stays readable (you see the natural statements
   instead of one combined `LET … RETURN […]`). Coalescing is active in

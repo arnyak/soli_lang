@@ -13,7 +13,7 @@
             <strong class="text-white">Backends.</strong> Soft delete, scopes, batch operations, and
             <code>Model.transaction</code> work on <strong class="text-white">SoliDB and every SQL adapter</strong>
             (on SQL a transaction holds one pool connection for the block; SQLite is always serializable).
-            Raw SDBQL queries and <code>grouped {}</code> coalescing are SoliDB-only. See
+            Raw SDBQL queries are SoliDB-only; <code>grouped {}</code> coalesces reads on SoliDB and Cloudflare D1. See
             <a href="/docs/database/multi-database" class="text-amber-400 hover:underline">Multiple Databases</a>.</p>
     </div>
     <h2 id="soft-delete" class="text-2xl font-bold text-white mb-6">Soft Delete</h2>

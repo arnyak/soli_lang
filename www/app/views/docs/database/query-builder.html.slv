@@ -448,6 +448,9 @@ grouped(fn() {
     <h3 class="text-xl font-bold text-white mb-4">What gets coalesced</h3>
     <p class="text-gray-400 mb-6">Read queries are batched: <code>all</code>, <code>where(...).all</code> / <code>.first</code> / <code>.count</code> / <code>.exists</code>, the aggregates (<code>sum</code> / <code>avg</code> / <code>min</code> / <code>max</code>), <code>find</code>, <code>find_by</code>, and <code>first_by</code>. <strong>Writes are not</strong> — <code>create</code>, <code>save</code>, <code>update</code>, <code>delete</code> run immediately even inside the block (use <code>transaction</code> for atomic writes).</p>
 
+    <h3 class="text-xl font-bold text-white mb-4">On Cloudflare D1</h3>
+    <p class="text-gray-400 mb-6">On a D1 connection (<code>soli edge build</code>) the reads inside the block go to D1 in one <a href="https://developers.cloudflare.com/d1/worker-api/d1-database/#batch" class="text-amber-400 hover:underline"><code>batch()</code></a> &mdash; one round trip from the Worker for the whole block, where each read used to cost its own. The same reads are coalesced as on SoliDB, <code>find</code> / <code>find_by</code> / <code>first_by</code> included, and the results are the ones they get one by one. A read the batch cannot answer in advance &mdash; one that needs another read's rows, or a table's first read on a fresh isolate, which checks that the table exists &mdash; runs on its own after the batch. If D1 refuses the batch (a statement in it fails), every read runs on its own and reports its own error. Postgres, MySQL and SQLite run the reads of a <code>grouped</code> block one by one.</p>
+
     <h3 class="text-xl font-bold text-white mb-4">Reading a result inside the block (auto-flush)</h3>
     <p class="text-gray-400 mb-6">If you read one of the deferred results <em>before</em> the block ends, the queries collected so far fire immediately (an "auto-flush"), then collection resumes. This always returns correct data; it just means more than one round-trip when you interleave reads. For maximum coalescing, do the reads first and use the results after the block.</p>
 
@@ -455,7 +458,7 @@ grouped(fn() {
         <h4 class="text-lg font-semibold text-blue-400 mb-2">Notes</h4>
         <ul class="text-blue-200/80 text-sm space-y-2">
             <li><code>find</code> on a missing id still raises <code>RecordNotFound</code> (&rarr; 404) — the error surfaces when the result is read or the block ends.</li>
-            <li>A combined query is all-or-nothing: if it fails, every read in the batch fails together.</li>
+            <li>On SoliDB a combined query is all-or-nothing: if it fails, every read in the batch fails together. On D1 a refused batch falls back to one statement per read.</li>
             <li>In interactive <code>--dev</code> the reads are <em>not</em> coalesced — each runs as its own query so the dev query log stays readable instead of showing one combined <code>LET … RETURN […]</code>. Coalescing is active in production, where the single round-trip matters.</li>
             <li><strong><code>soli test</code> coalesces.</strong> The test server runs with <code>--dev</code> so the query log is populated, but specs deliberately exercise the <em>production</em> shape — otherwise the coalescing path would go untested and <code>assert_query_count</code> would measure dev's un-coalesced number. A grouped action reports <strong>one</strong> query in a spec, not one per read.</li>
         </ul>

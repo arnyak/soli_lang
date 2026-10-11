@@ -407,7 +407,7 @@ For a **new** schema, write a migration with a column hash: you get real columns
 | HABTM / through spanning connections | **Error** |
 | Storing a foreign key string/id across DBs | Allowed; no integrity guarantees |
 | `Model.transaction` | Begins on the receiving model's connection (SoliDB or SQL); covers that connection only — writes to other connections run outside the tx (SoliDB) or are refused (SQL model inside a SoliDB tx) |
-| `grouped {}` coalescing | Same SoliDB connection only |
+| `grouped {}` coalescing | Same SoliDB connection; on D1, one `batch()` per binding. Reads on other connections run one by one |
 
 Do not expect distributed joins or two-phase commit. Place related aggregates on the **same** connection when you need eager loads.
 

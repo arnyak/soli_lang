@@ -23,30 +23,67 @@ export const soli_yield = new WebAssembly.Suspending(
 // a little-endian u32 length, then the JSON response
 // `{ok, columns, rows, changes}` or `{ok: false, error}`.
 export const soli_d1 = new WebAssembly.Suspending(async (ptr, len) => {
-  const { wasm, env } = host;
   let response;
   try {
-    const request = JSON.parse(
-      new TextDecoder().decode(new Uint8Array(wasm.memory.buffer, ptr, len)),
-    );
-    const db = env[request.binding];
-    if (!db || typeof db.prepare !== "function") {
-      throw new Error(
-        `no D1 binding named ${request.binding}: add [[d1_databases]] binding = "${request.binding}" to wrangler.toml`,
-      );
-    }
+    const request = readRequest(ptr, len);
+    const db = d1Binding(request.binding);
     const result = await db.prepare(request.sql).bind(...request.params).all();
-    const records = result.results ?? [];
-    const columns = records.length ? Object.keys(records[0]) : [];
-    response = {
-      ok: true,
-      columns,
-      rows: records.map((record) => columns.map((c) => cell(record[c]))),
-      changes: result.meta?.changes ?? 0,
-    };
+    response = { ok: true, ...d1Rows(result) };
   } catch (error) {
     response = { ok: false, error: String(error?.message ?? error) };
   }
+  return writeResponse(response);
+});
+
+// Several D1 statements in one round trip: `{binding, statements: [{sql,
+// params}]}` through D1's batch(), answered `{ok, results: [{columns, rows,
+// changes}]}`. D1 runs a batch as one transaction; a failing statement fails
+// it, which comes back as `{ok: false, error}`.
+export const soli_d1_batch = new WebAssembly.Suspending(async (ptr, len) => {
+  let response;
+  try {
+    const request = readRequest(ptr, len);
+    const db = d1Binding(request.binding);
+    const results = await db.batch(
+      request.statements.map((s) => db.prepare(s.sql).bind(...s.params)),
+    );
+    response = { ok: true, results: results.map(d1Rows) };
+  } catch (error) {
+    response = { ok: false, error: String(error?.message ?? error) };
+  }
+  return writeResponse(response);
+});
+
+function readRequest(ptr, len) {
+  return JSON.parse(
+    new TextDecoder().decode(new Uint8Array(host.wasm.memory.buffer, ptr, len)),
+  );
+}
+
+function d1Binding(name) {
+  const db = host.env[name];
+  if (!db || typeof db.prepare !== "function") {
+    throw new Error(
+      `no D1 binding named ${name}: add [[d1_databases]] binding = "${name}" to wrangler.toml`,
+    );
+  }
+  return db;
+}
+
+// D1's `.all()` result, flattened to positional rows.
+function d1Rows(result) {
+  const records = result.results ?? [];
+  const columns = records.length ? Object.keys(records[0]) : [];
+  return {
+    columns,
+    rows: records.map((record) => columns.map((c) => cell(record[c]))),
+    changes: result.meta?.changes ?? 0,
+  };
+}
+
+// A buffer from soli_alloc: a little-endian u32 length, then the JSON.
+function writeResponse(response) {
+  const { wasm } = host;
   // Allocate only now: soli_alloc may grow memory and detach older views.
   const bytes = new TextEncoder().encode(JSON.stringify(response));
   const out = wasm.soli_alloc(4 + bytes.length);
@@ -54,7 +91,7 @@ export const soli_d1 = new WebAssembly.Suspending(async (ptr, len) => {
   view.setUint32(out, bytes.length, true);
   new Uint8Array(wasm.memory.buffer, out + 4, bytes.length).set(bytes);
   return out;
-});
+}
 
 // D1 hands back strings, numbers, null and ArrayBuffers; JSON has no bytes.
 function cell(value) {

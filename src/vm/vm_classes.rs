@@ -245,7 +245,8 @@ impl Vm {
             "each" | "map" | "filter" | "reduce" | "find" | "any?" | "all?" | "sort_by"
                 if args.iter().any(Value::is_callable) =>
             {
-                let rows = crate::interpreter::builtins::model::execute_query_builder(&qb.borrow());
+                let rows = crate::interpreter::builtins::model::execute_query_builder(&qb.borrow())
+                    .force_deferred();
                 if let Value::Array(arr) = &rows {
                     return self.vm_call_array_method(arr, name, &args, span);
                 }

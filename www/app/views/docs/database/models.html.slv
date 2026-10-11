@@ -19,7 +19,7 @@
             (<code>postgres</code>, <code>mysql</code>, <code>sqlite</code>) run the portable part:
             CRUD, validations, callbacks, hash <code>.where</code>, aggregates, <code>group_by</code>,
             batched <code>.includes</code>, soft delete, transactions, <code>encrypts</code>, and STI.
-            Raw SDBQL, graph, vector, timeseries, columnar, and <code>grouped {}</code> are SoliDB-only,
+            Raw SDBQL, graph, vector, timeseries and columnar are SoliDB-only (<code>grouped {}</code> coalesces on SoliDB and Cloudflare D1),
             and each raises a message naming the feature rather than returning wrong rows &mdash; including a
             raw string <code>.where</code> chained onto a hash <code>.where</code>, which is refused with the hash
             equivalent named rather than silently dropping the raw half. See

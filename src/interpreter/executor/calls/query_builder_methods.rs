@@ -117,7 +117,8 @@ impl Interpreter {
             | "shuffle" | "take" | "drop" | "zip" | "to_string" | "to_json" | "is_a?" | "to_a"
             | "to_array" => {
                 let materialized =
-                    crate::interpreter::builtins::model::execute_query_builder(&qb.borrow());
+                    crate::interpreter::builtins::model::execute_query_builder(&qb.borrow())
+                        .force_deferred();
                 let method = Rc::new(crate::interpreter::value::ValueMethod {
                     receiver: Box::new(materialized),
                     method_name: method_name.to_string(),
@@ -1158,7 +1159,8 @@ persisted record (e.g. user.posts.create({...})) — use Model.create for plain 
             // Grouped mode: .first returns the first group row (the whole
             // result for ungrouped multi-aggregates, which yield one row).
             let rows = crate::interpreter::builtins::model::execute_query_builder_grouped(&qb_ref)
-                .map_err(|e| RuntimeError::General { message: e, span })?;
+                .map_err(|e| RuntimeError::General { message: e, span })?
+                .force_deferred();
             if let Value::Array(arr) = &rows {
                 let first = arr.borrow().first().cloned();
                 return Ok(first.unwrap_or(Value::Null));
@@ -1280,8 +1282,11 @@ persisted record (e.g. user.posts.create({...})) — use Model.create for plain 
             _ => 25,
         };
 
+        // Forced: inside `grouped` the count comes back deferred, and the
+        // page arithmetic needs the number.
         let total_val =
-            crate::interpreter::builtins::model::execute_query_builder_count(&qb.borrow());
+            crate::interpreter::builtins::model::execute_query_builder_count(&qb.borrow())
+                .force_deferred();
         let total = match total_val {
             Value::Int(n) => n as usize,
             _ => 0,

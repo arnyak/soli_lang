@@ -228,7 +228,9 @@ connection is `adapter = "d1"`, `url = "d1://BINDING"`.
 It is the SQLite adapter's document model — a table per model with a `_key`
 and a JSON `doc` column, created on first write — and the SQLite adapter's
 SQL, sent to the binding with `prepare(…).bind(…).all()`. Each statement is a
-round trip, so writes use `RETURNING doc` rather than reading the row back.
+round trip, so writes use `RETURNING doc` rather than reading the row back, and
+the reads inside a [`grouped(fn() { … })`](models.md#coalescing-reads-grouped)
+block go to D1 together in one `batch()`: one round trip for the block.
 What D1 does not offer:
 
 - **Transactions.** D1 runs batches, not interactive transactions:

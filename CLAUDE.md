@@ -409,7 +409,7 @@ grouped(fn() {
 # one round-trip; after the block the variables are ordinary values
 ```
 
-Batched: `all`, `.first`, `.count`, `.exists`, the aggregates, `find`, `find_by`, `first_by`. **Writes are not** — `create`/`save`/`update`/`delete` run immediately even inside the block (use `transaction` for atomic writes). Don't read a deferred result *inside* the block: that forces an auto-flush, which is still correct but costs the round-trip you were avoiding — keep `.present?` / `.length` tests after the block. Under `--dev` the reads are deliberately not coalesced so the dev query log stays readable. Full reference: `www/docs/models.md` → "Coalescing Reads".
+Batched: `all`, `.first`, `.count`, `.exists`, the aggregates, `find`, `find_by`, `first_by`. **Writes are not** — `create`/`save`/`update`/`delete` run immediately even inside the block (use `transaction` for atomic writes). Don't read a deferred result *inside* the block: that forces an auto-flush, which is still correct but costs the round-trip you were avoiding — keep `.present?` / `.length` tests after the block. Under `--dev` the reads are deliberately not coalesced so the dev query log stays readable. On Cloudflare D1 the block's reads go in one D1 `batch()` instead (`batch::defer_on_d1` + `db::d1::coalesce`: the reads run once to note their SELECTs, then again answered from the batch); Postgres, MySQL and SQLite run them one by one. Full reference: `www/docs/models.md` → "Coalescing Reads".
 
 **View** (ERB templates):
 ```erb

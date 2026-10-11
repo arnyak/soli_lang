@@ -257,7 +257,7 @@ end</code></pre>
         <li><strong class="text-white">No timezone-aware timestamp.</strong> <code class="text-cyan-400">datetime</code> / <code class="text-cyan-400">timestamp</code> values are UTC.</li>
         <li><strong class="text-white">A Unix socket is never encrypted.</strong> <code class="text-cyan-400">ssl-mode=REQUIRED</code> and up therefore force TCP; a socket-only server is reachable in cleartext modes only.</li>
         <li><strong class="text-white">No graph, vector, fulltext, geo, columnar, timeseries, or raw SDBQL.</strong> Those stay on SoliDB. Use <code class="text-cyan-400">Model.find_by_sql</code> for SQL the portable surface cannot express.</li>
-        <li><strong class="text-white"><code>grouped {}</code> read-coalescing is SoliDB-only.</strong></li>
+        <li><strong class="text-white"><code>grouped {}</code> coalesces reads on SoliDB and Cloudflare D1 only.</strong> Here the reads inside it run one by one, with the same results.</li>
         <li><strong class="text-white">Composite primary keys</strong> are refused at boot on column-aware models.</li>
         <li><strong class="text-white"><code>encrypts</code> and STI</strong> work in column mode: encrypted fields must be text columns; STI subclasses need a string <code>type</code> column.</li>
         <li>A reserved name (<code class="text-cyan-400">_migrations</code>, <code class="text-cyan-400">_jobs</code>, <code class="text-cyan-400">_cron_jobs</code>) cannot be created, dropped, or renamed by a migration.</li>

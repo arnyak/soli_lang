@@ -17,6 +17,10 @@
 //! parenthesised subquery, a leading top-level `RETURN ` is stripped so the
 //! body is a valid subquery expression — see [`build_combined_query`].
 //!
+//! D1 takes SQL, not SDBQL, so a read on a D1 connection is deferred whole
+//! instead ([`defer_on_d1`]): the flush re-runs those reads under
+//! [`crate::db::d1::coalesce`], which sends their statements in one `batch()`.
+//!
 //! A flush happens at block end (see the `grouped` interceptor in
 //! `executor/calls/function.rs`) or the first time a deferred result is read
 //! inside the block — the "auto-flush" behaviour. Auto-flush is driven by the
@@ -44,8 +48,16 @@ struct PendingQuery {
     timeout_secs: Option<f64>,
 }
 
+/// A read on a D1 connection, kept whole until the flush.
+struct PendingD1Read {
+    connection: String,
+    run: Box<dyn Fn() -> Result<Value, String>>,
+    cell: Rc<RefCell<DeferredCell>>,
+}
+
 struct BatchState {
     pending: Vec<PendingQuery>,
+    d1_reads: Vec<PendingD1Read>,
 }
 
 thread_local! {
@@ -59,6 +71,10 @@ thread_local! {
     /// bar needs the distinction: reads the author already grouped must not be
     /// reported as coalescing opportunities.
     static GROUPED_DEPTH: Cell<usize> = const { Cell::new(0) };
+
+    /// Set while deferred D1 reads run at flush time, so they run instead of
+    /// deferring themselves again.
+    static FLUSHING_D1: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Whether a `grouped {}` batch is currently collecting queries.
@@ -145,6 +161,7 @@ pub fn begin() -> bool {
         } else {
             *slot = Some(BatchState {
                 pending: Vec::new(),
+                d1_reads: Vec::new(),
             });
             true
         }
@@ -181,6 +198,36 @@ pub fn register(
     Value::Deferred(cell)
 }
 
+/// Defer `run`, a read, when a batch is collecting and `connection` (the
+/// active one when `None`) is on D1; `None` means run it now. The read runs at
+/// flush time on that connection, together with the block's other D1 reads.
+pub fn defer_on_d1(
+    connection: Option<&str>,
+    run: impl Fn() -> Result<Value, String> + 'static,
+) -> Option<Value> {
+    if !is_active() || FLUSHING_D1.with(Cell::get) {
+        return None;
+    }
+    let connection = connection
+        .map(str::to_string)
+        .unwrap_or_else(crate::db::active_connection_name);
+    let adapter = crate::db::with_connection(&connection, crate::db::active_adapter);
+    if adapter != Ok(crate::db::Adapter::D1) {
+        return None;
+    }
+    let cell = Rc::new(RefCell::new(DeferredCell::default()));
+    BATCH.with(|b| {
+        if let Some(state) = b.borrow_mut().as_mut() {
+            state.d1_reads.push(PendingD1Read {
+                connection,
+                run: Box::new(run),
+                cell: cell.clone(),
+            });
+        }
+    });
+    Some(Value::Deferred(cell))
+}
+
 /// Resolve a deferred cell, flushing the pending batch first if needed.
 /// Propagates a flush/transform error (e.g. `find`'s `RecordNotFound`).
 pub fn force(cell: &Rc<RefCell<DeferredCell>>) -> Result<Value, String> {
@@ -215,10 +262,50 @@ fn batch_timeout(pending: &[PendingQuery]) -> Option<f64> {
 }
 
 fn flush_inner() -> Result<(), String> {
-    let pending: Vec<PendingQuery> = BATCH.with(|b| match b.borrow_mut().as_mut() {
-        Some(state) => std::mem::take(&mut state.pending),
-        None => Vec::new(),
+    let (pending, d1_reads) = BATCH.with(|b| match b.borrow_mut().as_mut() {
+        Some(state) => (
+            std::mem::take(&mut state.pending),
+            std::mem::take(&mut state.d1_reads),
+        ),
+        None => (Vec::new(), Vec::new()),
     });
+    let d1 = flush_d1(d1_reads);
+    flush_solidb(pending).and(d1)
+}
+
+/// Run the deferred D1 reads, their statements coalesced, and fill their
+/// cells. Every read gets its value; the first error is returned.
+fn flush_d1(reads: Vec<PendingD1Read>) -> Result<(), String> {
+    if reads.is_empty() {
+        return Ok(());
+    }
+    struct Done;
+    impl Drop for Done {
+        fn drop(&mut self) {
+            FLUSHING_D1.with(|f| f.set(false));
+        }
+    }
+    FLUSHING_D1.with(|f| f.set(true));
+    let _done = Done;
+    let results: Vec<Result<Value, String>> = crate::db::d1::coalesce(|| {
+        reads
+            .iter()
+            .map(|read| crate::db::with_connection(&read.connection, || (read.run)()))
+            .collect()
+    });
+    let mut first_error = None;
+    for (read, result) in reads.iter().zip(results) {
+        match result {
+            Ok(value) => read.cell.borrow_mut().resolved = Some(value),
+            Err(e) => {
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
+fn flush_solidb(pending: Vec<PendingQuery>) -> Result<(), String> {
     if pending.is_empty() {
         return Ok(());
     }

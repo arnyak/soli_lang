@@ -8,13 +8,18 @@ class CheckInsController < Controller
       "answers, with the code that does it."
     @runtime = RuntimeInfo.of(req)
     started = clock
-    # Two statements, two round trips to D1: the total is summed from the
-    # per-datacenter counts rather than asked for separately.
-    per_colo = CheckIn.group_by("colo").all.sort_by { |row| -row["n"] }
+    # Two statements, one round trip: `grouped` sends them to D1 in a single
+    # batch. The total is summed from the per-datacenter counts rather than
+    # asked for separately.
+    per_colo = []
+    grouped(fn() {
+      per_colo = CheckIn.group_by("colo").all
+      @latest = CheckIn.order("at", "desc").limit(10).all
+    })
+    per_colo = per_colo.sort_by { |row| -row["n"] }
     @total = per_colo.reduce(fn(sum, row) sum + row["n"], 0)
     @colos = per_colo.length
     @by_colo = per_colo.take(12)
-    @latest = CheckIn.order("at", "desc").limit(10).all
     @db_ms = ((clock - started) * 1000).round(1)
     @checked_in = params["checked_in"] == "1"
     @busy = params["busy"] == "1"

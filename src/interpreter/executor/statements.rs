@@ -466,6 +466,7 @@ impl Interpreter {
         let iter_value = match iter_value {
             Value::QueryBuilder(qb) => {
                 crate::interpreter::builtins::model::execute_query_builder(&qb.borrow())
+                    .force_deferred()
             }
             // A read inside `grouped(fn() { ... })` hands back a Deferred
             // placeholder. Resolve it here (flushing the batch if it is still

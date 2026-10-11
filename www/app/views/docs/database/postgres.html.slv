@@ -255,7 +255,7 @@ end</code></pre>
     <h2 id="caveats" class="text-2xl font-bold text-white mb-6 scroll-mt-24">Honest limits</h2>
     <ul class="list-disc list-inside text-gray-400 space-y-2 text-sm mb-12">
         <li><strong class="text-white">No graph, vector, fulltext, geo, columnar, timeseries, or raw SDBQL.</strong> Those stay on SoliDB. Use <code class="text-cyan-400">Model.find_by_sql</code> for SQL the portable surface cannot express.</li>
-        <li><strong class="text-white"><code>grouped {}</code> read-coalescing is SoliDB-only.</strong></li>
+        <li><strong class="text-white"><code>grouped {}</code> coalesces reads on SoliDB and Cloudflare D1 only.</strong> Here the reads inside it run one by one, with the same results.</li>
         <li><strong class="text-white">Composite primary keys</strong> are refused at boot on column-aware models.</li>
         <li><strong class="text-white"><code>encrypts</code> and STI</strong> work in column mode: encrypted fields must be text columns; STI subclasses need a string <code>type</code> column.</li>
     </ul>

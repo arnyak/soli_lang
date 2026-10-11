@@ -7,10 +7,11 @@
 #![cfg(feature = "sqlite")]
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rusqlite::types::{Value as SqlValue, ValueRef};
-use solilang::db::d1::{set_executor, D1Executor, D1Rows};
+use solilang::db::d1::{set_executor, D1Executor, D1Rows, D1Statement};
 use solilang::db::registry::registry_test_lock;
 use solilang::db::{
     clear_registry_override, set_registry_for_tests, Adapter, ConnectionRegistry, ConnectionSpec,
@@ -20,10 +21,48 @@ use solilang::db::{
 struct SqliteAsD1 {
     conn: Mutex<rusqlite::Connection>,
     seen: Mutex<Vec<(String, String)>>,
+    /// One entry per round trip: `run` is 1, a `batch()` its statement count.
+    trips: Mutex<Vec<usize>>,
+    /// Answer every `batch()` with an error, as D1 does when one statement fails.
+    refuse_batches: AtomicBool,
+}
+
+impl SqliteAsD1 {
+    fn new() -> Self {
+        Self {
+            conn: Mutex::new(rusqlite::Connection::open_in_memory().unwrap()),
+            seen: Mutex::new(Vec::new()),
+            trips: Mutex::new(Vec::new()),
+            refuse_batches: AtomicBool::new(false),
+        }
+    }
 }
 
 impl D1Executor for SqliteAsD1 {
     fn run(
+        &self,
+        binding: &str,
+        sql: &str,
+        params: &[serde_json::Value],
+    ) -> Result<D1Rows, String> {
+        self.trips.lock().unwrap().push(1);
+        self.statement(binding, sql, params)
+    }
+
+    fn batch(&self, binding: &str, statements: &[D1Statement]) -> Result<Vec<D1Rows>, String> {
+        self.trips.lock().unwrap().push(statements.len());
+        if self.refuse_batches.load(Ordering::SeqCst) {
+            return Err("D1_ERROR: the batch was refused".to_string());
+        }
+        statements
+            .iter()
+            .map(|s| self.statement(binding, &s.sql, &s.params))
+            .collect()
+    }
+}
+
+impl SqliteAsD1 {
+    fn statement(
         &self,
         binding: &str,
         sql: &str,
@@ -114,10 +153,7 @@ fn models_work_on_d1() {
     let _lock = registry_test_lock()
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let d1 = Arc::new(SqliteAsD1 {
-        conn: Mutex::new(rusqlite::Connection::open_in_memory().unwrap()),
-        seen: Mutex::new(Vec::new()),
-    });
+    let d1 = Arc::new(SqliteAsD1::new());
     set_executor(d1.clone());
     set_registry_for_tests(d1_registry("d1://NOTES_DB"));
 
@@ -200,12 +236,133 @@ fn transactions_are_refused_with_a_reason() {
     let _lock = registry_test_lock()
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    set_executor(Arc::new(SqliteAsD1 {
-        conn: Mutex::new(rusqlite::Connection::open_in_memory().unwrap()),
-        seen: Mutex::new(Vec::new()),
-    }));
+    set_executor(Arc::new(SqliteAsD1::new()));
     set_registry_for_tests(d1_registry("d1://DB"));
     let err = solilang::db::sql::begin_transaction(None).unwrap_err();
     clear_registry_override();
     assert!(err.contains("no interactive transactions"), "{err}");
+}
+
+const GROUPED_MODELS: &str = r##"
+class Fruit < Model
+end
+
+class Crate < Model
+end
+
+def check(label, got, want)
+  throw "#{label}: got #{got}, want #{want}" unless got == want
+end
+"##;
+
+const GROUPED_READS: &str = r##"
+apple = Fruit.find_by("title", "apple")
+listed = nil
+total = nil
+top = nil
+by_color = nil
+found = nil
+cherry = nil
+crates = nil
+grouped(fn() {
+  listed = Fruit.order("title", "asc").all
+  total = Fruit.count
+  top = Fruit.order("views", "desc").first
+  by_color = Fruit.group_by("color").all
+  found = Fruit.find(apple._key)
+  cherry = Fruit.find_by("title", "cherry")
+  crates = Crate.count
+})
+check("all", listed.map { |f| f.title }.join(","), "apple,banana,cherry")
+check("count", total, 3)
+check("first", top.title, "banana")
+check("group_by", by_color.length, 2)
+check("find", found.title, "apple")
+check("find_by", cherry.views, 7)
+check("other model", crates, 1)
+"##;
+
+/// Seed two tables and remember them, so the block's reads need no table check.
+fn seed_fruit(d1: &SqliteAsD1) {
+    let seed = format!(
+        "{GROUPED_MODELS}\n{}",
+        r##"
+Fruit.create({"title": "apple", "views": 3, "color": "red"})
+Fruit.create({"title": "banana", "views": 10, "color": "yellow"})
+Fruit.create({"title": "cherry", "views": 7, "color": "red"})
+Crate.create({"label": "a"})
+check("seeded", Fruit.count + Crate.count, 4)
+"##
+    );
+    run(&seed).expect("seeding failed");
+    d1.trips.lock().unwrap().clear();
+}
+
+#[test]
+fn reads_in_a_grouped_block_reach_d1_in_one_batch() {
+    let _lock = registry_test_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let d1 = Arc::new(SqliteAsD1::new());
+    set_executor(d1.clone());
+    set_registry_for_tests(d1_registry("d1://DB"));
+    seed_fruit(&d1);
+
+    let result = run(&format!("{GROUPED_MODELS}\n{GROUPED_READS}"));
+    let trips = d1.trips.lock().unwrap().clone();
+    clear_registry_override();
+    result.expect("the grouped reads failed against D1");
+    // The find_by before the block, then the seven reads in one batch.
+    assert_eq!(trips, vec![1, 7], "round trips: {trips:?}");
+}
+
+#[test]
+fn a_refused_batch_falls_back_to_one_statement_each() {
+    let _lock = registry_test_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let d1 = Arc::new(SqliteAsD1::new());
+    set_executor(d1.clone());
+    set_registry_for_tests(d1_registry("d1://DB"));
+    seed_fruit(&d1);
+    d1.refuse_batches.store(true, Ordering::SeqCst);
+
+    let result = run(&format!("{GROUPED_MODELS}\n{GROUPED_READS}"));
+    let trips = d1.trips.lock().unwrap().clone();
+    clear_registry_override();
+    // Same answers: every read ran on its own after D1 refused the batch.
+    result.expect("the grouped reads failed after a refused batch");
+    assert_eq!(trips, vec![1, 7, 1, 1, 1, 1, 1, 1, 1], "round trips: {trips:?}");
+}
+
+#[test]
+fn a_read_that_needs_another_inside_the_block_still_gets_its_rows() {
+    let _lock = registry_test_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let d1 = Arc::new(SqliteAsD1::new());
+    set_executor(d1.clone());
+    set_registry_for_tests(d1_registry("d1://DB"));
+    seed_fruit(&d1);
+
+    let result = run(&format!(
+        "{GROUPED_MODELS}\n{}",
+        r##"
+again = nil
+total = nil
+grouped(fn() {
+  total = Fruit.count
+  apple = Fruit.find_by("title", "apple")
+  # Reading `apple` here flushes what is pending, then this read runs.
+  again = Fruit.find(apple._key)
+})
+check("dependent find", again.title, "apple")
+check("count", total, 3)
+"##
+    ));
+    let trips = d1.trips.lock().unwrap().clone();
+    clear_registry_override();
+    result.expect("the dependent read failed");
+    // count + find_by in one batch, then the find on its own.
+    assert_eq!(trips, vec![2, 1], "round trips: {trips:?}");
 }

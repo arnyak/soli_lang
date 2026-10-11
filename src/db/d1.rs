@@ -36,11 +36,29 @@ pub struct D1Rows {
     pub changes: u64,
 }
 
+/// One statement of a batch, as [`D1Executor::run`] takes it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct D1Statement {
+    pub sql: String,
+    pub params: Vec<serde_json::Value>,
+}
+
 /// How a statement reaches D1. `params` are what D1's `bind()` takes: strings,
 /// numbers and null.
 pub trait D1Executor: Send + Sync {
     fn run(&self, binding: &str, sql: &str, params: &[serde_json::Value])
         -> Result<D1Rows, String>;
+
+    /// Run `statements` in one round trip — D1's `batch()` — with one result
+    /// each, in order. D1 runs a batch as one transaction, so a statement that
+    /// fails fails the batch: that is the `Err`. The default runs them one by
+    /// one, which is what an executor without batches can do.
+    fn batch(&self, binding: &str, statements: &[D1Statement]) -> Result<Vec<D1Rows>, String> {
+        statements
+            .iter()
+            .map(|s| self.run(binding, &s.sql, &s.params))
+            .collect()
+    }
 }
 
 static EXECUTOR: RwLock<Option<Arc<dyn D1Executor>>> = RwLock::new(None);
@@ -97,13 +115,136 @@ fn bind_value(bind: &SqlBind) -> serde_json::Value {
     }
 }
 
-/// Run one statement on the active connection's binding.
+/// Run one statement on the active connection's binding — or, while reads are
+/// being coalesced, note it or answer it from the batch (see [`coalesce`]).
 fn exec(context: &str, sql: &str, params: &[SqlBind]) -> Result<D1Rows, String> {
-    let _trace = super::trace::start(sql, params);
     let bound: Vec<serde_json::Value> = params.iter().map(bind_value).collect();
+    let binding = binding()?;
+    if let Some(rows) = COALESCING.with(|c| c.borrow_mut().answer(&binding, sql, &bound)) {
+        return Ok(rows);
+    }
+    let _trace = super::trace::start(sql, params);
     executor()?
-        .run(&binding()?, sql, &bound)
+        .run(&binding, sql, &bound)
         .map_err(|e| format!("d1 {context}: {e}"))
+}
+
+// ---------- coalesced reads ----------
+
+/// Where [`coalesce`] is: noting the statements reads send, or answering them
+/// from the batch that ran them.
+enum Coalescing {
+    Off,
+    Record(Vec<(String, D1Statement)>),
+    Replay(Vec<(String, D1Statement, D1Rows)>),
+}
+
+impl Coalescing {
+    /// What `exec` answers instead of asking D1, if anything. Recording notes a
+    /// SELECT and answers empty, and answers anything else without running it:
+    /// that pass's results are thrown away. Replaying hands out each batched
+    /// result once; a statement the batch did not run goes to D1.
+    fn answer(&mut self, binding: &str, sql: &str, params: &[serde_json::Value]) -> Option<D1Rows> {
+        match self {
+            Coalescing::Off => None,
+            Coalescing::Record(seen) => {
+                let is_read = sql
+                    .trim_start()
+                    .get(..6)
+                    .is_some_and(|word| word.eq_ignore_ascii_case("select"));
+                if is_read {
+                    seen.push((
+                        binding.to_string(),
+                        D1Statement {
+                            sql: sql.to_string(),
+                            params: params.to_vec(),
+                        },
+                    ));
+                }
+                Some(D1Rows::default())
+            }
+            Coalescing::Replay(answers) => answers
+                .iter()
+                .position(|(b, s, _)| b == binding && s.sql == sql && s.params == params)
+                .map(|i| answers.remove(i).2),
+        }
+    }
+}
+
+thread_local! {
+    static COALESCING: std::cell::RefCell<Coalescing> = const { std::cell::RefCell::new(Coalescing::Off) };
+}
+
+/// Back to sending each statement, however `coalesce` left.
+struct CoalescingOff;
+
+impl Drop for CoalescingOff {
+    fn drop(&mut self) {
+        COALESCING.with(|c| *c.borrow_mut() = Coalescing::Off);
+    }
+}
+
+/// Run `reads` with their statements sent to D1 together: one round trip for
+/// a `grouped` block instead of one per read.
+///
+/// `reads` runs twice. The first pass only notes the SELECTs it would send
+/// (each answered empty, the results discarded); those go to D1 in one
+/// `batch()` per binding; the second pass runs for real and each statement is
+/// answered from the batch. Anything the batch did not run — a read that
+/// depends on another's rows, a table check on a cold isolate — goes to D1 as
+/// it would have, so the results are the ones the reads would get alone. A
+/// batch D1 refuses runs nothing: every statement then goes on its own and
+/// reports its own error.
+pub fn coalesce<T>(reads: impl Fn() -> T) -> T {
+    let _off = CoalescingOff;
+    COALESCING.with(|c| *c.borrow_mut() = Coalescing::Record(Vec::new()));
+    let _ = reads();
+    let recorded =
+        COALESCING.with(
+            |c| match std::mem::replace(&mut *c.borrow_mut(), Coalescing::Off) {
+                Coalescing::Record(seen) => seen,
+                _ => Vec::new(),
+            },
+        );
+    let answers = run_batched(recorded);
+    COALESCING.with(|c| *c.borrow_mut() = Coalescing::Replay(answers));
+    reads()
+}
+
+/// Send the noted statements, one `batch()` per binding. One statement alone
+/// is not worth a batch: it runs on its own in the second pass.
+fn run_batched(recorded: Vec<(String, D1Statement)>) -> Vec<(String, D1Statement, D1Rows)> {
+    if recorded.len() < 2 {
+        return Vec::new();
+    }
+    let Ok(executor) = executor() else {
+        return Vec::new();
+    };
+    let mut by_binding: Vec<(String, Vec<D1Statement>)> = Vec::new();
+    for (binding, statement) in recorded {
+        match by_binding.iter_mut().find(|(b, _)| *b == binding) {
+            Some((_, statements)) => statements.push(statement),
+            None => by_binding.push((binding, vec![statement])),
+        }
+    }
+    let mut answers = Vec::new();
+    for (binding, statements) in by_binding {
+        let listing = statements
+            .iter()
+            .map(|s| s.sql.as_str())
+            .collect::<Vec<_>>()
+            .join(";\n");
+        let _trace = super::trace::start_plain(&listing);
+        if let Ok(results) = executor.batch(&binding, &statements) {
+            answers.extend(
+                statements
+                    .into_iter()
+                    .zip(results)
+                    .map(|(statement, rows)| (binding.clone(), statement, rows)),
+            );
+        }
+    }
+    answers
 }
 
 /// Run a script statement by statement: `prepare` takes one at a time, and
@@ -763,9 +904,49 @@ mod host {
         /// allocated with `soli_alloc`: a little-endian `u32` length, then that
         /// many bytes of JSON response. Ownership passes back to Rust.
         fn soli_d1(ptr: *const u8, len: usize) -> *mut u8;
+        /// The same for `{binding, statements: [{sql, params}]}`, answered
+        /// `{ok, results: [{columns, rows, changes}]}` from D1's `batch()`.
+        fn soli_d1_batch(ptr: *const u8, len: usize) -> *mut u8;
     }
 
     pub(super) struct Binding;
+
+    /// Hand `request` to a host import; its JSON answer, `ok` checked.
+    fn call(
+        import: unsafe extern "C" fn(*const u8, usize) -> *mut u8,
+        request: &str,
+    ) -> Result<serde_json::Value, String> {
+        // SAFETY: the host reads `len` bytes at `ptr` and returns a buffer
+        // from `soli_alloc(4 + n)`, whose first 4 bytes are `n`.
+        let response = unsafe {
+            let out = import(request.as_ptr(), request.len());
+            if out.is_null() {
+                return Err("the host returned no response".to_string());
+            }
+            let mut len = [0u8; 4];
+            std::ptr::copy_nonoverlapping(out, len.as_mut_ptr(), 4);
+            let total = 4 + u32::from_le_bytes(len) as usize;
+            let buffer = Vec::from_raw_parts(out, total, total);
+            buffer[4..].to_vec()
+        };
+        let json: serde_json::Value = serde_json::from_slice(&response)
+            .map_err(|e| format!("malformed response from the host: {e}"))?;
+        if json["ok"].as_bool() != Some(true) {
+            return Err(json["error"]
+                .as_str()
+                .unwrap_or("unknown D1 error")
+                .to_string());
+        }
+        Ok(json)
+    }
+
+    fn rows_of(json: &serde_json::Value) -> D1Rows {
+        D1Rows {
+            columns: serde_json::from_value(json["columns"].clone()).unwrap_or_default(),
+            rows: serde_json::from_value(json["rows"].clone()).unwrap_or_default(),
+            changes: json["changes"].as_u64().unwrap_or(0),
+        }
+    }
 
     impl D1Executor for Binding {
         fn run(
@@ -776,32 +957,30 @@ mod host {
         ) -> Result<D1Rows, String> {
             let request =
                 serde_json::json!({ "binding": binding, "sql": sql, "params": params }).to_string();
-            // SAFETY: the host reads `len` bytes at `ptr` and returns a buffer
-            // from `soli_alloc(4 + n)`, whose first 4 bytes are `n`.
-            let response = unsafe {
-                let out = soli_d1(request.as_ptr(), request.len());
-                if out.is_null() {
-                    return Err("the host returned no response".to_string());
-                }
-                let mut len = [0u8; 4];
-                std::ptr::copy_nonoverlapping(out, len.as_mut_ptr(), 4);
-                let total = 4 + u32::from_le_bytes(len) as usize;
-                let buffer = Vec::from_raw_parts(out, total, total);
-                buffer[4..].to_vec()
-            };
-            let json: serde_json::Value = serde_json::from_slice(&response)
-                .map_err(|e| format!("malformed response from the host: {e}"))?;
-            if json["ok"].as_bool() != Some(true) {
-                return Err(json["error"]
-                    .as_str()
-                    .unwrap_or("unknown D1 error")
-                    .to_string());
+            Ok(rows_of(&call(soli_d1, &request)?))
+        }
+
+        fn batch(
+            &self,
+            binding: &str,
+            statements: &[super::D1Statement],
+        ) -> Result<Vec<D1Rows>, String> {
+            let statements: Vec<serde_json::Value> = statements
+                .iter()
+                .map(|s| serde_json::json!({ "sql": s.sql, "params": s.params }))
+                .collect();
+            let request =
+                serde_json::json!({ "binding": binding, "statements": statements }).to_string();
+            let json = call(soli_d1_batch, &request)?;
+            let results = json["results"].as_array().cloned().unwrap_or_default();
+            if results.len() != statements.len() {
+                return Err(format!(
+                    "the host answered {} results for {} statements",
+                    results.len(),
+                    statements.len()
+                ));
             }
-            Ok(D1Rows {
-                columns: serde_json::from_value(json["columns"].clone()).unwrap_or_default(),
-                rows: serde_json::from_value(json["rows"].clone()).unwrap_or_default(),
-                changes: json["changes"].as_u64().unwrap_or(0),
-            })
+            Ok(results.iter().map(rows_of).collect())
         }
     }
 }

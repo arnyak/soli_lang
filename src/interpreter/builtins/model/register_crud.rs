@@ -236,7 +236,7 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
     );
 
     // Model.find(id) - Get by ID, returns a class instance
-    use super::crud::{exec_get, json_doc_to_instance};
+    use super::crud::json_doc_to_instance;
     native_static_methods.insert(
         "find".to_string(),
         Rc::new(NativeFunction::new("Model.find", Some(2), |args| {
@@ -294,24 +294,21 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                 ));
             }
 
-            match exec_get(&collection, &id) {
-                // STI: a subclass find only matches rows of its own
-                // hierarchy — a base-class row raises RecordNotFound
-                // exactly like a missing key (Rails semantics).
-                Ok(doc) if sti_row_matches(&class.name, &doc) => {
-                    Ok(json_doc_to_instance(&class, &doc))
+            // In a `grouped` block on D1: run at flush time, in one batch
+            // with the block's other reads.
+            if super::batch::is_active() {
+                let (class2, collection2, id2) = (class.clone(), collection.clone(), id.clone());
+                let connection = super::registry::get_connection_for_collection(&collection);
+                if let Some(deferred) =
+                    super::batch::defer_on_d1(connection.as_deref(), move || {
+                        find_by_key(&class2, &collection2, &id2)
+                    })
+                {
+                    return Ok(deferred);
                 }
-                // Not found → raise with the RecordNotFound marker so the
-                // HTTP request handler converts it into a 404 response.
-                // Callers that want the "or null" shape should use
-                // find_by / first_by, or wrap in try/catch.
-                _ => Err(format!(
-                    "{}{} with id '{}' not found",
-                    crate::error::RuntimeError::RECORD_NOT_FOUND_MARKER,
-                    class.name,
-                    id
-                )),
             }
+
+            find_by_key(&class, &collection, &id)
         })),
     );
 
@@ -624,7 +621,8 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                 if super::crud::collection_is_sql(&collection) {
                     let qb =
                         QueryBuilder::new_with_class(class.name.clone(), collection, class.clone());
-                    let rows = super::query::execute_query_builder(&qb);
+                    // Forced: inside `grouped` on D1 the read comes back deferred.
+                    let rows = super::query::execute_query_builder(&qb).force_deferred();
                     // Mirror SoliDB all_json: return a JSON array string.
                     return Ok(match rows {
                         Value::Array(arr) => {
@@ -800,6 +798,33 @@ fn create_key_option(options: Option<&Value>) -> Result<Option<String>, String> 
         }
     }
     Ok(key)
+}
+
+/// `Model.find(id)` outside the coalesced SoliDB path: the record, or the
+/// RecordNotFound error the request handler turns into a 404.
+fn find_by_key(
+    class: &Rc<crate::interpreter::value::Class>,
+    collection: &str,
+    id: &str,
+) -> Result<Value, String> {
+    match super::crud::exec_get(collection, id) {
+        // STI: a subclass find only matches rows of its own hierarchy — a
+        // base-class row raises RecordNotFound exactly like a missing key
+        // (Rails semantics).
+        Ok(doc) if sti_row_matches(&class.name, &doc) => {
+            Ok(super::crud::json_doc_to_instance(class, &doc))
+        }
+        // Not found → raise with the RecordNotFound marker so the HTTP
+        // request handler converts it into a 404 response. Callers that
+        // want the "or null" shape should use find_by / first_by, or wrap
+        // in try/catch.
+        _ => Err(format!(
+            "{}{} with id '{}' not found",
+            crate::error::RuntimeError::RECORD_NOT_FOUND_MARKER,
+            class.name,
+            id
+        )),
+    }
 }
 
 #[cfg(test)]

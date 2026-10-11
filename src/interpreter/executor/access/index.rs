@@ -25,6 +25,7 @@ impl Interpreter {
         let obj_val = match obj_val {
             Value::QueryBuilder(qb) => {
                 crate::interpreter::builtins::model::execute_query_builder(&qb.borrow())
+                    .force_deferred()
             }
             other => other,
         };

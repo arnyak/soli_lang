@@ -238,6 +238,18 @@ pub(crate) fn find_first_by_fields(
     // swallows an error into nil) — express the lookup as a portable
     // eq-filter query instead.
     if super::crud::collection_is_sql(&collection) {
+        // In a `grouped` block on D1: run at flush time, in one batch with
+        // the block's other reads.
+        if super::batch::is_active() {
+            let (class2, collection2, fields2) =
+                (class.clone(), collection.clone(), fields.to_vec());
+            let connection = super::registry::get_connection_for_collection(&collection);
+            if let Some(deferred) = super::batch::defer_on_d1(connection.as_deref(), move || {
+                sql_find_first_by(&class2, &collection2, &fields2, order_by_key)
+            }) {
+                return Ok(deferred);
+            }
+        }
         return super::registry::run_on_collection_connection(&collection, || {
             sql_find_first_by(class, &collection, fields, order_by_key)
         });

@@ -55,10 +55,14 @@ end
 
 # GET /d1
 def index(req)
-  per_colo = CheckIn.group_by("colo").all.sort_by { |row| -row["n"] }
+  per_colo = []
+  grouped(fn() {
+    per_colo = CheckIn.group_by("colo").all
+    @latest = CheckIn.order("at", "desc").limit(10).all
+  })
+  per_colo = per_colo.sort_by { |row| -row["n"] }
   @total = per_colo.reduce(fn(sum, row) sum + row["n"], 0)
   @by_colo = per_colo.take(12)
-  @latest = CheckIn.order("at", "desc").limit(10).all
 end
 
 # POST /d1/check-in
@@ -74,5 +78,6 @@ database_id = "…"
 [vars]
 SOLI_DB_ADAPTER = "d1"</code></pre>
 <p>Each statement is a round trip from the Worker to D1, and the interpreter's stack
-is suspended while it waits (JavaScript Promise Integration). See the
+is suspended while it waits (JavaScript Promise Integration). <code>grouped</code>
+sends the reads inside it as one D1 batch: one round trip for the page. See the
 <a href="/guide">guide</a> to set it up.</p>

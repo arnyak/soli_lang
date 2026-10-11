@@ -495,8 +495,11 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
             // that as `0` reported `total: 0, total_pages: 1` plus an
             // error-string `records` payload — a silent success for a
             // missing table. Raise so `try`/`catch` can see it.
-            let total = match raise_if_error_value(super::query::execute_query_builder_count(&qb))?
-            {
+            // Forced: inside `grouped` the count comes back deferred, and the
+            // page arithmetic needs the number.
+            let total = match raise_if_error_value(
+                super::query::execute_query_builder_count(&qb).force_deferred(),
+            )? {
                 Value::Int(n) => n as usize,
                 _ => 0,
             };

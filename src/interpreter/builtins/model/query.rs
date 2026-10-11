@@ -1032,6 +1032,18 @@ impl QueryBuilder {
 
 /// Execute a QueryBuilder and return results (as instances if class is available).
 pub fn execute_query_builder(qb: &QueryBuilder) -> Value {
+    // In a `grouped` block on D1: run at flush time, in one batch with the
+    // block's other reads.
+    if super::batch::is_active() {
+        let q = qb.clone();
+        if let Some(deferred) =
+            super::batch::defer_on_d1(qb.connection_name.as_deref(), move || {
+                Ok(execute_query_builder(&q))
+            })
+        {
+            return deferred;
+        }
+    }
     // Raise/lower the DB request timeout for this query only when
     // `.timeout(secs)` asked for it; reverted when the guard drops.
     let _db_timeout = super::crud::scoped_db_timeout(qb.timeout_secs);
@@ -2401,6 +2413,18 @@ fn execute_similar_pushdown(
 
 /// Execute a QueryBuilder for first result only (as instance if class is available).
 pub fn execute_query_builder_first(qb: &QueryBuilder) -> Value {
+    // In a `grouped` block on D1: run at flush time, in one batch with the
+    // block's other reads.
+    if super::batch::is_active() {
+        let q = qb.clone();
+        if let Some(deferred) =
+            super::batch::defer_on_d1(qb.connection_name.as_deref(), move || {
+                Ok(execute_query_builder_first(&q))
+            })
+        {
+            return deferred;
+        }
+    }
     // Raise/lower the DB request timeout for this query only when
     // `.timeout(secs)` asked for it; reverted when the guard drops.
     let _db_timeout = super::crud::scoped_db_timeout(qb.timeout_secs);
@@ -2456,6 +2480,18 @@ fn execute_query_builder_first_inner(qb: &QueryBuilder) -> Value {
 pub fn execute_query_builder_count(qb: &QueryBuilder) -> Value {
     if qb.never_matches {
         return Value::Int(0);
+    }
+    // In a `grouped` block on D1: run at flush time, in one batch with the
+    // block's other reads.
+    if super::batch::is_active() {
+        let q = qb.clone();
+        if let Some(deferred) =
+            super::batch::defer_on_d1(qb.connection_name.as_deref(), move || {
+                Ok(execute_query_builder_count(&q))
+            })
+        {
+            return deferred;
+        }
     }
     // Raise/lower the DB request timeout for this query only when
     // `.timeout(secs)` asked for it; reverted when the guard drops.
@@ -2714,6 +2750,18 @@ pub fn execute_query_builder_exists(qb: &QueryBuilder) -> Value {
     if qb.never_matches {
         return Value::Bool(false);
     }
+    // In a `grouped` block on D1: run at flush time, in one batch with the
+    // block's other reads.
+    if super::batch::is_active() {
+        let q = qb.clone();
+        if let Some(deferred) =
+            super::batch::defer_on_d1(qb.connection_name.as_deref(), move || {
+                Ok(execute_query_builder_exists(&q))
+            })
+        {
+            return deferred;
+        }
+    }
     // Raise/lower the DB request timeout for this query only when
     // `.timeout(secs)` asked for it; reverted when the guard drops.
     let _db_timeout = super::crud::scoped_db_timeout(qb.timeout_secs);
@@ -2908,6 +2956,18 @@ pub fn execute_query_builder_aggregate(
     func: AggregationFunc,
     field: &str,
 ) -> Value {
+    // In a `grouped` block on D1: run at flush time, in one batch with the
+    // block's other reads.
+    if super::batch::is_active() {
+        let (q, f, fld) = (qb.clone(), func.clone(), field.to_string());
+        if let Some(deferred) =
+            super::batch::defer_on_d1(qb.connection_name.as_deref(), move || {
+                Ok(execute_query_builder_aggregate(&q, f.clone(), &fld))
+            })
+        {
+            return deferred;
+        }
+    }
     // Raise/lower the DB request timeout for this query only when
     // `.timeout(secs)` asked for it; reverted when the guard drops.
     let _db_timeout = super::crud::scoped_db_timeout(qb.timeout_secs);
@@ -2954,6 +3014,23 @@ pub fn execute_query_builder_group_by(
     func: AggregationFunc,
     agg_field: &str,
 ) -> Value {
+    // In a `grouped` block on D1: run at flush time, in one batch with the
+    // block's other reads.
+    if super::batch::is_active() {
+        let (q, g, f, a) = (
+            qb.clone(),
+            group_field.to_string(),
+            func.clone(),
+            agg_field.to_string(),
+        );
+        if let Some(deferred) =
+            super::batch::defer_on_d1(qb.connection_name.as_deref(), move || {
+                Ok(execute_query_builder_group_by(&q, &g, f.clone(), &a))
+            })
+        {
+            return deferred;
+        }
+    }
     // Raise/lower the DB request timeout for this query only when
     // `.timeout(secs)` asked for it; reverted when the guard drops.
     let _db_timeout = super::crud::scoped_db_timeout(qb.timeout_secs);
@@ -3390,6 +3467,18 @@ impl QueryBuilder {
 /// Execute a grouped (group_fields/aggregate_specs) QueryBuilder. Returns
 /// raw hash rows — one per group, keyed by group fields + aliases.
 pub fn execute_query_builder_grouped(qb: &QueryBuilder) -> Result<Value, String> {
+    // In a `grouped` block on D1: run at flush time, in one batch with the
+    // block's other reads.
+    if super::batch::is_active() {
+        let q = qb.clone();
+        if let Some(deferred) =
+            super::batch::defer_on_d1(qb.connection_name.as_deref(), move || {
+                execute_query_builder_grouped(&q)
+            })
+        {
+            return Ok(deferred);
+        }
+    }
     // Raise/lower the DB request timeout for this query only when
     // `.timeout(secs)` asked for it; reverted when the guard drops.
     let _db_timeout = super::crud::scoped_db_timeout(qb.timeout_secs);
