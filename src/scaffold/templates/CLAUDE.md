@@ -168,7 +168,7 @@ the code you are writing — they are properties of the runtime.
 | `update(attrs)` / `save(attrs)` **skip callbacks** | Normalisation is lost on every update | Assign fields explicitly, then `save()` |
 | `_errors` is `nil` after a successful `create` but `[]` after a successful `save` | `if record._errors` is true after an update (`[]` is truthy) | Test `_errors.length > 0` |
 | `Model.delete_all` **without a scope** does not empty the collection | A spec that relies on it tests the wrong state and still passes | Loop and `delete()`, or scope it: `Model.where(...).delete_all` |
-| Free functions of the **same name in two files shadow each other** | Four copies of one helper, only one ever runs, chosen by load order | Put shared helpers on a base controller or a model, not in free functions |
+| Two files declaring the **same top-level name** (a `def`, a `class`) | `soli serve` refuses to boot, naming both files (`soli lint`: `smell/duplicate-global`) — on older soli, one copy silently replaced the other | Put shared helpers on a base controller or a model, not in free functions |
 | Model classes are **not resolvable from `.slv` templates** | `Cart.total_of(...)` in a view raises and the page 500s | Compute in the controller, hand the view a plain value |
 | `setenv` was removed (SEC-033) | A spec cannot flip a mode read from the environment | Split the env read from the work — a named method the spec can call directly |
 | `.pluck(field)` returns a QueryBuilder, not an array | It lands in a bind variable and the query fails | `.all.map { \|row\| row.field }` |
@@ -735,16 +735,14 @@ of them.
 
 ### Trap 1 — free functions share ONE global namespace
 
-A top-level `def` is not file-scoped. Two files declaring `_first_error` do not
-get one each: **one silently wins**, chosen by load order, and the other file's
-copy is dead code that reads like protection. Worse, a file can call a free
-function defined in a *different* file and work — until that file moves.
-
-```bash
-# Must print nothing. If it prints a name, one of the copies is already dead.
-grep -rn "^def [a-z_]" app/ --include=*.sl \
-  | sed 's/:def /|/' | awk -F'|' '{split($2,a,"("); print a[1]}' | sort | uniq -d
-```
+A top-level `def` (or `class`, `module`) is not file-scoped. Two files
+declaring `_first_error` do not get one each: the second *replaces* the first.
+`soli serve` therefore refuses to boot an app where two files declare the same
+top-level name, with both locations in the message, and `soli lint` reports it
+as `smell/duplicate-global` — run it before you add a name. (Top-level `def`s
+in `app/controllers` are exempt: a function-style controller's actions are
+captured file by file.) Worse, a file can call a free function defined in a
+*different* file and work — until that file moves.
 
 So **shared logic lives on a class** — a base controller, a model, or a
 service — never in a free function. Keep free functions for what is genuinely
@@ -849,6 +847,7 @@ Key rules:
 - `naming/snake-case`, `naming/pascal-case`
 - `style/empty-block`, `style/line-length` (≤120 chars)
 - `style/redundant-model-import` — don't `import "../models/*.sl"` inside `app/controllers/`; models are auto-loaded
+- `smell/duplicate-global` — two files declaring the same top-level class, module, `def` or `const` (the boot refuses it too)
 - `smell/unreachable-code`, `smell/empty-catch`, `smell/duplicate-methods`, `smell/dangerous-server-builtin` (flags `db_query_raw` / `Trusted.*` / `System.shell` / backticks in `app/controllers/`, `app/middleware/`, `app/views/`)
 - `smell/deep-nesting` (≤4 levels)
 - `smell/undefined-local` — reads of a name never assigned in scope (catches typos)

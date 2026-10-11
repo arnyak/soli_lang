@@ -56,6 +56,7 @@ class MyClass end
 | `smell/unreachable-code` | code after `return` |
 | `smell/empty-catch` | a `catch` that swallows the error silently |
 | `smell/duplicate-methods` | two methods of one class sharing a name |
+| `smell/duplicate-global` | two files of an app declaring the same top-level class, module, `def` or `const`: the one loaded last would replace the other, so `soli serve` refuses to boot on it too. Controllers' top-level `def`s (function-style actions) are exempt |
 | `smell/deep-nesting` | more than four levels |
 | `smell/undefined-local` | a bare name never assigned in this scope |
 | `smell/dangerous-server-builtin` | an injection sink reached from a request layer |

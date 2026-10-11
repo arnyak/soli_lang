@@ -34,6 +34,7 @@ mod file_watcher;
 pub mod files;
 mod finalize;
 mod framework_assets;
+pub mod global_names;
 pub mod live_reload;
 #[cfg(not(target_arch = "wasm32"))]
 mod live_reload_ws; // WebSocket-based live reload
@@ -784,6 +785,13 @@ pub fn serve_folder_with_options_and_hooks(
     // subclass Mailer (app/mailers/*.sl) loads.
     crate::interpreter::builtins::mailer::ensure_prelude(&mut interpreter);
     boot_trace("interpreter created");
+
+    // Two files declaring one top-level name: the one loaded last would
+    // silently replace the other (see `global_names`). Refuse to boot instead.
+    global_names::check_app(folder).map_err(|message| RuntimeError::General {
+        message,
+        span: Span::default(),
+    })?;
 
     // Load models first (shared code)
     let models_dir = app_dir.join("models");
@@ -1947,6 +1955,23 @@ fn worker_loop(
         // never fires in production; the LRU is 64 entries, trivial to rebuild.
         if scan_versions {
             crate::template::response_cache::clear_cache();
+        }
+
+        // An edit that declares a name another file already declares: the
+        // reload below would let one silently replace the other. Said once
+        // (worker 0), as a warning — the next boot refuses it.
+        if worker_id == 0
+            && (current_controllers != last_controllers_version
+                || current_middleware != last_middleware_version
+                || current_helpers != last_helpers_version
+                || current_models != last_models_version
+                || current_jobs != last_jobs_version)
+        {
+            if let Some(root) = routes_file.parent().and_then(Path::parent) {
+                for duplicate in global_names::find_in_app(root) {
+                    eprintln!("\x1b[33m[warning]\x1b[0m {}", duplicate.message(root));
+                }
+            }
         }
 
         if current_controllers != last_controllers_version {

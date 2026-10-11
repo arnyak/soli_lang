@@ -1240,6 +1240,24 @@ pub fn run_lint(paths: &[String]) {
     let mut total_issues = 0;
     let mut files_with_issues = 0;
 
+    // Names two files declare: the one loaded last replaces the other. A
+    // project-wide question, so asked once per application directory given.
+    for target in targets.iter().filter(|t| t.join("app").is_dir()) {
+        let found = solilang::serve::global_names::find_in_app(target);
+        if !found.is_empty() {
+            files_with_issues += found.len();
+        }
+        for duplicate in &found {
+            println!(
+                "{}:{}:1 - [smell/duplicate-global] {}",
+                duplicate.again.file.display(),
+                duplicate.again.line,
+                duplicate.message(target)
+            );
+        }
+        total_issues += found.len();
+    }
+
     for file in &files {
         let source = match fs::read_to_string(file) {
             Ok(s) => s,

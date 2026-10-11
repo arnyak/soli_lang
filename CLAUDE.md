@@ -346,6 +346,7 @@ soli lint path/to/file.sl   # Lint specific file
 - `smell/unreachable-code` - no code after return
 - `smell/empty-catch` - catch blocks shouldn't be empty
 - `smell/duplicate-methods` - no duplicate methods
+- `smell/duplicate-global` - two files of an app declaring the same top-level class, module, `def` or `const` (the later one replaces the earlier); `soli serve` refuses to boot on it. Controllers' top-level `def`s (function-style actions) are exempt
 - `smell/deep-nesting` - nesting ≤4 levels
 - `smell/undefined-local` - reads of a bare name never assigned in the function scope (catches typos that bypass `let` because `let` is optional)
 - `smell/closure-cycle` - a closure assigned onto `this` (`this.x = fn…`, `@x = |y| …`, `this.h["k"] = fn…`) captures the env holding `this`, so instance and closure never free; store a method name or pass the closure per call

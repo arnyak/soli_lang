@@ -29,6 +29,11 @@
             <li><strong class="text-white">An app&rsquo;s own <code class="text-cyan-400">wrangler.toml</code> is its deploy config.</strong> When the app folder has a <code class="text-cyan-400">wrangler.toml</code> next to <code class="text-cyan-400">app/</code>, <code class="text-cyan-400">soli edge build</code> copies it into the Worker folder on every build, so the Worker&rsquo;s name, account, routes and bindings can be committed with the app instead of living in a build directory. <a href="/docs/development-tools/edge#package" class="text-cyan-400 hover:underline">soli edge build</a></li>
         </ul>
 
+        <h3 id="unreleased-language" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Language</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Two files declaring the same top-level name stop the boot.</strong> A second <code class="text-cyan-400">class</code>, <code class="text-cyan-400">module</code> or <code class="text-cyan-400">def</code> of the same name in another file used to replace the first in silence. <code class="text-cyan-400">soli serve</code> now refuses to boot with both locations named, <code class="text-cyan-400">--dev</code> warns on the edit, and <code class="text-cyan-400">soli lint</code> reports <code class="text-cyan-400">smell/duplicate-global</code>. Controllers' top-level <code class="text-cyan-400">def</code>s (function-style actions) are exempt.</li>
+        </ul>
+
         <h3 id="unreleased-edge" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Edge</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">SQLite in Durable Objects: a database per tenant on Workers.</strong> <code class="text-cyan-400">url = "do://SITES/{tenant}"</code> with the D1 adapter gives every site its own SQLite database in a Durable Object, created by naming it &mdash; nothing to declare per site, no redeploy when one is added. Every Worker carries <code class="text-cyan-400">SoliSqlObject</code>; bind it in <code class="text-cyan-400">wrangler.toml</code> and models and <code class="text-cyan-400">grouped</code> work unchanged. <a href="/docs/development-tools/edge#durable-objects" class="text-cyan-400 hover:underline">Guide</a>.</li>
