@@ -1236,3 +1236,11 @@ fn after_commit_keeps_its_bare_block_form() {
     assert_fmt("after_commit { print(1) }\n", src);
     assert_idempotent(src);
 }
+
+#[test]
+fn a_value_field_list_round_trips() {
+    let src = "class Quote < Model\n  value_field :lines, [Line]\nend\n";
+    let out = format_source(src).expect("format failed");
+    assert!(out.contains("[Line]"), "{out}");
+    assert_idempotent(src);
+}

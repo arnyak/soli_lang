@@ -385,6 +385,14 @@ fn fnv_hash_key(h: &mut u64, k: &crate::interpreter::value::HashKey) {
                 *h = h.wrapping_mul(FNV_PRIME);
             }
         }
+        HashKey::ValueObject(key) => {
+            *h ^= 6u8 as u64;
+            *h = h.wrapping_mul(FNV_PRIME);
+            for &b in key.class.as_bytes().iter().chain(key.fields.as_bytes()) {
+                *h ^= b as u64;
+                *h = h.wrapping_mul(FNV_PRIME);
+            }
+        }
     }
 }
 

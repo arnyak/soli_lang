@@ -5423,7 +5423,9 @@ The driver for [es](https://es.solisoft.net), a Kafka-shaped event log in one bi
 
 To send domain events to a topic, subscribe a stream rather than calling
 `ES.emit` yourself: `subscribe(OrderPaid, {"stream": "billing", "key": "number"})`
-appends each committed event through the job outbox — see
+appends each committed event through the job outbox, and
+`EventStream.consume(topic, {"group": …})` publishes another service's events
+to this application's subscribers — see
 [Domain events → Streaming to ES](/docs/database/domain-events#streams).
 
 **Configuration** (per application, like `KV`):

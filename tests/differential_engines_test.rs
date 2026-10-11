@@ -454,6 +454,28 @@ module M
 end
 print(M::F.build.class)"##,
     ),
+    (
+        // A value object keys a hash by value.
+        "value_objects_as_hash_keys",
+        r##"class Amount < ValueObject
+  cents: Int
+  currency: String = "EUR"
+end
+h = {}
+h[Amount.new(500)] = "five"
+h[Amount.new(700, "USD")] = "seven"
+print(h[Amount.new(500, "EUR")])
+print(h.has_key(Amount.new(700, "USD")), h.has_key(Amount.new(1)))
+print(h.keys[0], h.keys[0] == Amount.new(500))
+h[Amount.new(500)] = "replaced"
+print(h.length, h[Amount.new(500)])
+tally = {}
+[Amount.new(1), Amount.new(2), Amount.new(1)].each do |a|
+  tally[a] = (tally[a] ?? 0) + 1
+end
+print(tally[Amount.new(1)], tally.length)
+print(h)"##,
+    ),
     // A typed last clause that matches runs its body and continues: the VM
     // used to fall into the no-match `Rethrow` after the body.
     (

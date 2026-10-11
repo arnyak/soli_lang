@@ -135,6 +135,7 @@ fn hashkey_to_canonical_string(key: &HashKey) -> String {
         HashKey::Bool(b) => b.to_string(),
         HashKey::Null => "null".to_string(),
         HashKey::Decimal(d) => d.to_string(),
+        HashKey::ValueObject(key) => key.to_value().to_string(),
     }
 }
 

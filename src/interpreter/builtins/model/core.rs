@@ -2866,6 +2866,17 @@ pub fn register_model_builtins(env: &mut Environment) {
             let value_class = match args.get(2) {
                 Some(Value::Class(c)) if c.is_value_object() => c.name.clone(),
                 Some(Value::String(s)) => s.to_string(),
+                // `value_field :lines, [Line]`: a list of value objects.
+                Some(Value::Array(items)) => match items.borrow().as_slice() {
+                    [Value::Class(c)] if c.is_value_object() => format!("[]{}", c.name),
+                    [Value::String(s)] => format!("[]{s}"),
+                    _ => {
+                        return Err(format!(
+                            "value_field(:{field}, [ValueClass]) takes one value-object class in \
+                             the brackets"
+                        ))
+                    }
+                },
                 other => {
                     return Err(format!(
                         "value_field(:{field}, ValueClass) expects a class that inherits \

@@ -970,14 +970,26 @@ pub fn run_validations(
 
     // `value_field`s hold their value object — or a hash of its fields, which
     // is what a stored document or a merged update carries.
-    for (field, value_class) in super::registry::get_value_fields(class_name) {
-        match lookup_field(data, &field) {
-            None | Some(Value::Null) | Some(Value::Hash(_)) => {}
-            Some(Value::Instance(inst)) if is_instance_of(&inst.borrow().class, &value_class) => {}
-            Some(_) => errors.push(ValidationError::new(
-                &field,
-                format!("must be a {value_class}"),
-            )),
+    for (field, spec) in super::registry::get_value_fields(class_name) {
+        let (is_list, value_class) = crate::interpreter::domain::value_field_spec(&spec);
+        let is_value = |v: &Value| match v {
+            Value::Hash(_) => true,
+            Value::Instance(inst) => is_instance_of(&inst.borrow().class, value_class),
+            _ => false,
+        };
+        let valid = match lookup_field(data, &field) {
+            None | Some(Value::Null) => true,
+            Some(Value::Array(items)) if is_list => items.borrow().iter().all(is_value),
+            Some(_) if is_list => false,
+            Some(value) => is_value(&value),
+        };
+        if !valid {
+            let message = if is_list {
+                format!("must be a list of {value_class}")
+            } else {
+                format!("must be a {value_class}")
+            };
+            errors.push(ValidationError::new(&field, message));
         }
     }
 
@@ -1019,8 +1031,8 @@ fn run_model_invariants(
         for (key, value) in hash.borrow().iter() {
             if let HashKey::String(name) = key {
                 let value = match value_fields.iter().find(|(f, _)| f == name.as_ref()) {
-                    Some((_, value_class)) if matches!(value, Value::Hash(_)) => {
-                        crate::interpreter::domain::hydrate(value_class, value)
+                    Some((_, spec)) if matches!(value, Value::Hash(_) | Value::Array(_)) => {
+                        crate::interpreter::domain::hydrate_field(spec, value)
                             .unwrap_or_else(|| value.clone())
                     }
                     _ => value.clone(),

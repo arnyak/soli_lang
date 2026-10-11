@@ -83,7 +83,7 @@ a.to_h                                   # {"cents" =&gt; 500, "currency" =&gt; 
 print(a)                                 # Amount(cents: 500, currency: "EUR")</code></pre>
             </div>
         </div>
-        <p class="text-gray-400"><code class="text-orange-400">with</code> rebuilds the copy through the constructor, so normalisation and invariants apply to it too. A value object cannot be a hash key yet (<code>Cannot use Amount as hash key</code>): key by <code>a.to_s</code> or by its fields.</p>
+        <p class="text-gray-400"><code class="text-orange-400">with</code> rebuilds the copy through the constructor, so normalisation and invariants apply to it too. A value object can key a hash, by value: <code>prices[Amount.new(500)] = "small"</code> is read back by any equal amount, and <code>prices.keys</code> gives the value objects again.</p>
     </section>
 
     <!-- Invariants -->

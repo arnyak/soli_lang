@@ -167,6 +167,12 @@ fn subscriptions_for(class: &Class) -> Vec<Handler> {
 /// `publish(event)`: enqueue its job handlers now, run its block handlers
 /// now or after the outermost commit.
 pub fn publish(event: &Value) -> Result<(), RuntimeError> {
+    publish_with(event, true)
+}
+
+/// `publish`, with or without the stream subscriptions — an event consumed
+/// from a stream is not appended to one again.
+fn publish_with(event: &Value, to_streams: bool) -> Result<(), RuntimeError> {
     let class = event_class(event).ok_or_else(|| {
         RuntimeError::type_error(
             format!(
@@ -181,7 +187,10 @@ pub fn publish(event: &Value) -> Result<(), RuntimeError> {
     for handler in &handlers {
         match handler {
             Handler::Job(job) => enqueue_job(job, event)?,
-            Handler::Stream { topic, key } => enqueue_stream(&class, topic, key.as_deref(), event)?,
+            Handler::Stream { topic, key } if to_streams => {
+                enqueue_stream(&class, topic, key.as_deref(), event)?
+            }
+            Handler::Stream { .. } => {}
             Handler::Block(_) => has_blocks = true,
         }
     }
@@ -396,4 +405,91 @@ pub fn publish_recorded(record: &Value) -> Result<(), String> {
         publish(event).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// `EventStream.consume(topic, {"group": "shipping", "partitions": 1,
+/// "max_records": 100})`: read what consumer group `group` has not read yet
+/// from an es topic, rebuild each record as its `DomainEvent` and publish it
+/// here — its block and job subscribers run, its stream subscriptions do not
+/// — committing the group's offset after each one. A record whose event
+/// class this application does not have is skipped. Returns how many events
+/// were published. Delivery is at least once: a handler that fails stops the
+/// run before its record is committed, so the next run sees it again.
+pub fn consume_stream(args: &[Value]) -> Result<Value, String> {
+    let usage = "EventStream.consume(topic, {\"group\": …, \"partitions\": n, \"max_records\": n})";
+    let Some(Value::String(topic)) = args.first() else {
+        return Err(usage.to_string());
+    };
+    let mut group = None;
+    let mut partitions = 1u64;
+    let mut max_records = 100u64;
+    if let Some(Value::Hash(options)) = args.get(1) {
+        for (name, value) in options.borrow().iter() {
+            let crate::interpreter::value::HashKey::String(name) = name else {
+                return Err(usage.to_string());
+            };
+            match (name.as_ref(), value) {
+                ("group", Value::String(g)) => group = Some(g.to_string()),
+                ("partitions", Value::Int(n)) if *n > 0 => partitions = *n as u64,
+                ("max_records", Value::Int(n)) if *n > 0 => max_records = *n as u64,
+                (other, _) => {
+                    return Err(format!(
+                        "EventStream.consume: bad option \"{other}\" — {usage}"
+                    ))
+                }
+            }
+        }
+    }
+    let group =
+        group.ok_or_else(|| format!("EventStream.consume needs a consumer group: {usage}"))?;
+    let mut published = 0i64;
+    for partition in 0..partitions {
+        let page =
+            crate::interpreter::builtins::es::group_page(&group, topic, partition, max_records)?;
+        let records = page
+            .get("records")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for record in records {
+            let offset = record.get("offset").and_then(|o| o.as_u64()).unwrap_or(0);
+            if let Some(event) = event_from_record(&record) {
+                publish_with(&event, false).map_err(|e| e.to_string())?;
+                published += 1;
+            }
+            crate::interpreter::builtins::es::commit_offset(&group, topic, partition, offset + 1)?;
+        }
+    }
+    Ok(Value::Int(published))
+}
+
+/// A stream record (`{"type", "data", …}` as a stream subscription writes
+/// it) as its domain event, when this application declares that class.
+fn event_from_record(record: &serde_json::Value) -> Option<Value> {
+    let value = record.get("value")?;
+    let envelope: serde_json::Value = match value {
+        serde_json::Value::String(text) => serde_json::from_str(text).ok()?,
+        other => other.clone(),
+    };
+    let class = envelope.get("type")?.as_str()?;
+    let data = crate::interpreter::value_json::json_to_value_or_null(envelope.get("data")?.clone());
+    let event = crate::interpreter::domain::hydrate(class, &data)?;
+    event_class(&event).is_some().then_some(event)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stream_record_names_its_event_class() {
+        // No such class here: the record is skipped, not an error.
+        let record = serde_json::json!({
+            "offset": 0,
+            "key": "F-1",
+            "value": r#"{"type":"Billing::InvoicePaid","data":{"number":"F-1"}}"#
+        });
+        assert!(event_from_record(&record).is_none());
+        assert!(event_from_record(&serde_json::json!({"value": "not json"})).is_none());
+    }
 }

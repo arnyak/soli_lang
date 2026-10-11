@@ -2032,7 +2032,9 @@ impl Parser {
         arguments.push(self.parse_command_arg()?);
 
         while self.match_token(&TokenKind::Comma) {
-            if !self.at_command_arg_start() {
+            // After a comma a `[` can only open an array (`value_field
+            // :lines, [Line]`); first, it would read as indexing.
+            if !self.at_command_arg_start() && !self.check(&TokenKind::LeftBracket) {
                 break;
             }
             arguments.push(self.parse_command_arg()?);

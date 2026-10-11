@@ -316,6 +316,20 @@ end</code></pre>
     <p class="text-gray-400 mb-4">
         <code class="text-orange-400">value_field :name, ValueClass</code> stores the value object as an object of its fields (<code>{"cents": 900, "currency": "EUR"}</code> &mdash; a JSON column on the SQL adapters) and reads it back as the value object. The field accepts the value object or a hash of its fields; anything else is a validation error (<code>must be a Amount</code>). The class can also be named as a string, <code>value_field :total, "Amount"</code>.
     </p>
+    <p class="text-gray-400 mb-4">
+        A list of value objects &mdash; an invoice&rsquo;s lines, kept as values rather than as a related model &mdash; is <code class="text-orange-400">value_field :lines, [Line]</code>: stored as an array of objects, read back as an array of <code>Line</code>, and refused (<code>must be a list of Line</code>) unless every element is a <code>Line</code> or a hash of its fields.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">class Quote &lt; Model
+  value_field :lines, [Line]
+  invariant(:lines, "a quote has at least one line") { @lines.length &gt; 0 }
+end
+
+quote = Quote.create({"lines": [Line.new("design", 300), Line.new("build", 900)]})
+Quote.find(quote._key).lines[1]      # Line(label: "build", cents: 900)</code></pre>
+        </div>
+    </div>
 
     <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
         <div class="p-4 overflow-x-auto">

@@ -397,17 +397,25 @@ throws `StaleRecord` and the client retries on fresh data. A form can do the
 same: a hidden `lock_version` field makes `Model.update` refuse a submission
 made after someone else's edit.
 
-## What is not there yet
+## Also in the box
 
-- **Value objects as hash keys**, and a `value_field` holding a list of them
-  (an invoice's lines as values rather than a related model).
-- **Optimistic locking on column-mode tables** — models over an existing SQL
-  schema. Document tables, on every adapter, are covered.
-- **Consuming a stream into subscribers.** Events go out to es; reading
-  another service's topic back into `subscribe` handlers is done by hand with
-  `ES.group_consume` for now.
-- **Controllers per context.** Contexts hold models, services, events and
-  errors; controllers stay top-level, namespaced by folder as before.
+A few building blocks the billing example did not need:
+
+- **Lists of value objects.** `value_field :lines, [Line]` keeps an invoice's
+  lines as values in one field, read back as `Line`s, with invariants over
+  the whole list.
+- **Value objects as hash keys**: `prices[Amount.new(500)]` is found by any
+  equal amount.
+- **Locking existing tables.** `optimistic_lock` works on column-mode models
+  over an existing SQL schema too, given a `lock_version` column.
+- **The consuming side of a stream.** Another app reacts to `InvoicePaid` by
+  declaring the same event class and calling
+  `EventStream.consume("billing", {"group": "shipping"})` from a cron job:
+  each record is published to its own subscribers, and the group's offset is
+  committed record by record.
+
+What stays as it was: controllers are top-level, namespaced by folder, while
+contexts hold models, services, events and errors.
 
 The reference: [value objects](/docs/language/value-objects),
 [value fields and invariants](/docs/database/validations#value-fields-and-invariants),

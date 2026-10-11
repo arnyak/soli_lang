@@ -96,6 +96,12 @@ pub fn same_string(current: &str, before: &str) -> bool {
             || (current.len() <= 32 && current == before))
 }
 
+/// Whether `inst` is a value object — one relaxed load while none is
+/// declared.
+fn is_value_object_instance(inst: &Rc<RefCell<Instance>>) -> bool {
+    crate::interpreter::domain::value_objects_declared() && inst.borrow().class.is_value_object()
+}
+
 /// A hashable key type for use in IndexMap.
 /// This wraps primitive Value types that can be used as hash keys.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +112,39 @@ pub enum HashKey {
     Bool(bool),
     Null,
     Symbol(SoliStr),
+    /// A value object (`Amount.new(500)`): equal by value, frozen, so it can
+    /// key a hash.
+    ValueObject(ValueObjectKey),
+}
+
+/// A value object used as a hash key: its class and its fields as
+/// canonical JSON — equal by value, and `Send` like every other key (hashes
+/// are shared through process-wide caches). Read back, it is rebuilt as the
+/// value object.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ValueObjectKey {
+    pub class: String,
+    pub fields: String,
+}
+
+impl ValueObjectKey {
+    fn of(inst: &Rc<RefCell<Instance>>) -> Option<Self> {
+        let value = Value::Instance(inst.clone());
+        let fields = serde_json::to_string(&value_to_json(&value).ok()?).ok()?;
+        Some(Self {
+            class: inst.borrow().class.name.clone(),
+            fields,
+        })
+    }
+
+    /// The value object again — or its fields as a hash where the class is
+    /// not loaded on this thread.
+    pub fn to_value(&self) -> Value {
+        let fields = serde_json::from_str::<serde_json::Value>(&self.fields)
+            .map(crate::interpreter::value_json::json_to_value_or_null)
+            .unwrap_or(Value::Null);
+        crate::interpreter::domain::hydrate(&self.class, &fields).unwrap_or(fields)
+    }
 }
 
 impl Hash for HashKey {
@@ -133,6 +172,10 @@ impl Hash for HashKey {
             HashKey::Symbol(s) => {
                 5u8.hash(state);
                 s.hash(state);
+            }
+            HashKey::ValueObject(key) => {
+                6u8.hash(state);
+                key.hash(state);
             }
         }
     }
@@ -188,6 +231,9 @@ impl HashKey {
             Value::Bool(b) => Some(HashKey::Bool(*b)),
             Value::Null => Some(HashKey::Null),
             Value::Symbol(s) => Some(HashKey::Symbol(s.clone())),
+            Value::Instance(inst) if is_value_object_instance(inst) => {
+                ValueObjectKey::of(inst).map(HashKey::ValueObject)
+            }
             // Floats are not hashable due to NaN != NaN issues
             _ => None,
         }
@@ -203,6 +249,9 @@ impl HashKey {
             Value::Bool(b) => Some(HashKey::Bool(b)),
             Value::Null => Some(HashKey::Null),
             Value::Symbol(s) => Some(HashKey::Symbol(s)),
+            Value::Instance(inst) if is_value_object_instance(&inst) => {
+                ValueObjectKey::of(&inst).map(HashKey::ValueObject)
+            }
             _ => None,
         }
     }
@@ -216,6 +265,7 @@ impl HashKey {
             HashKey::Bool(b) => Value::Bool(*b),
             HashKey::Null => Value::Null,
             HashKey::Symbol(s) => Value::Symbol(s.clone()),
+            HashKey::ValueObject(key) => key.to_value(),
         }
     }
 
@@ -235,6 +285,7 @@ impl HashKey {
             }
             HashKey::Null => 4,
             HashKey::Symbol(s) => s.len() + 1,
+            HashKey::ValueObject(key) => key.to_value().to_string().len(),
         }
     }
 
@@ -252,6 +303,7 @@ impl HashKey {
                 s.push(':');
                 s.push_str(sym);
             }
+            HashKey::ValueObject(key) => s.push_str(&key.to_value().to_string()),
         }
     }
 }
@@ -265,6 +317,7 @@ impl std::fmt::Display for HashKey {
             HashKey::Bool(b) => write!(f, "{}", b),
             HashKey::Null => write!(f, "null"),
             HashKey::Symbol(s) => write!(f, ":{}", s),
+            HashKey::ValueObject(key) => write!(f, "{}", key.to_value()),
         }
     }
 }
@@ -301,6 +354,7 @@ pub fn hash_get_value<'a>(hash: &'a HashPairs, key: &Value) -> Option<&'a Value>
         Value::Bool(b) => hash.get(&HashKey::Bool(*b)),
         Value::Null => hash.get(&HashKey::Null),
         Value::Symbol(s) => hash.get(&SymKey(s)),
+        Value::Instance(_) => HashKey::from_value(key).and_then(|k| hash.get(&k)),
         _ => None,
     }
 }
@@ -365,6 +419,13 @@ pub fn hash_set_value(hash: &mut HashPairs, key: &Value, value: Value) -> bool {
             }
             true
         }
+        Value::Instance(_) => match HashKey::from_value(key) {
+            Some(hash_key) => {
+                hash.insert(hash_key, value);
+                true
+            }
+            None => false,
+        },
         _ => false,
     }
 }

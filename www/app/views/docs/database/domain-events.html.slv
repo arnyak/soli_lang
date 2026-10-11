@@ -62,6 +62,22 @@ subscribe(OrderPaid, ReceiptJob)   # ReceiptJob.perform(args) gets event.to_h</c
         </div>
     </div>
 
+    <h3 id="consuming" class="text-lg font-semibold text-white mb-4">Consuming a stream</h3>
+    <p class="text-gray-400 mb-4">
+        An application that reacts to another service&rsquo;s events reads the topic with a consumer group and publishes each record to its own subscribers. <code>EventStream.consume(topic, {"group": …, "partitions": 1, "max_records": 100})</code> rebuilds each record as its <code>DomainEvent</code> and publishes it &mdash; block and job subscribers run, stream subscriptions do not &mdash; committing the group&rsquo;s offset after each one (at least once). Records of an event class this application does not declare are skipped.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">
+        <div class="p-4 overflow-x-auto">
+            <pre data-filename="app/jobs/billing_events_job.sl"><code class="language-soli text-sm">class BillingEventsJob
+  static cron: String = Cron.every("1 minute")
+
+  static def perform(args: Hash)
+    EventStream.consume("billing", {"group": "shipping"})
+  end
+end</code></pre>
+        </div>
+    </div>
+
     <h2 id="after-commit" class="text-2xl font-bold text-white mb-6">After the commit</h2>
     <p class="text-gray-400 mb-4">
         <code>after_commit { … }</code> (or <code>after_commit do … end</code>) runs a block once the data is durable: after the outermost commit inside a transaction, never if it rolls back, at once outside one. It is the place for side effects that must not happen for data that was never stored.
@@ -104,7 +120,7 @@ b.stale?                # true — _errors names lock_version</code></pre>
             <pre><code class="language-soli text-sm">throw StaleRecord.new("order #{order.number} changed since you opened it") unless order.save</code></pre>
         </div>
     </div>
-    <p class="text-gray-400 mb-12">Not yet supported: column-mode tables (an existing SQL schema). <code>increment</code> and <code>decrement</code> do not bump the version.</p>
+    <p class="text-gray-400 mb-12">On a column-mode table (an existing SQL schema, <code>table "orders"</code>) the table needs a <code>lock_version</code> integer column; the update is one <code>UPDATE … WHERE id = ? AND lock_version = ?</code>. <code>increment</code> and <code>decrement</code> do not bump the version.</p>
 
     <h2 id="bounded-contexts" class="text-2xl font-bold text-white mb-6">Bounded contexts</h2>
     <p class="text-gray-400 mb-4">

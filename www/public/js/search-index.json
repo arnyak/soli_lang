@@ -4048,6 +4048,23 @@
       ]
     },
     {
+      "title": "EventStream.consume",
+      "type": "method",
+      "category": "Database",
+      "path": "/docs/database/domain-events#consuming",
+      "signature": "EventStream.consume(topic, {\"group\": \"shipping\"})",
+      "description": "Publish another service's es events to this application's subscribers, committing the consumer group's offset after each (at least once)",
+      "keywords": [
+        "EventStream",
+        "consume",
+        "es",
+        "consumer group",
+        "stream",
+        "events",
+        "integration events"
+      ]
+    },
+    {
       "title": "import",
       "type": "keyword",
       "category": "Language",

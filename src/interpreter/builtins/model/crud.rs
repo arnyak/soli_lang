@@ -641,10 +641,11 @@ fn apply_instance_post_load(target_class: &Rc<Class>, instance: &mut Instance) {
             instance.set(field, enum_value);
         }
     }
-    // `value_field` columns: the stored hash back into its value object.
-    for (field, value_class) in super::registry::get_value_fields(&target_class.name) {
-        if let Some(stored @ Value::Hash(_)) = instance.get(&field) {
-            if let Some(value) = crate::interpreter::domain::hydrate(&value_class, &stored) {
+    // `value_field` columns: the stored hash (or array of them) back into
+    // value objects.
+    for (field, spec) in super::registry::get_value_fields(&target_class.name) {
+        if let Some(stored @ (Value::Hash(_) | Value::Array(_))) = instance.get(&field) {
+            if let Some(value) = crate::interpreter::domain::hydrate_field(&spec, &stored) {
                 instance.set(field, value);
             }
         }
@@ -2069,11 +2070,28 @@ fn exec_update_locked_inner(
             return Err(sql_write_in_tx_error(collection));
         }
         return super::registry::run_on_collection_connection(collection, || {
-            if super::column_mode::require_schema(collection)?.is_some() {
-                return Err(format!(
-                    "optimistic_lock: `{collection}` is a column-mode table, where locked \
-                     updates are not supported yet"
-                ));
+            if let Some(schema) = super::column_mode::require_schema(collection)? {
+                // A real table: `UPDATE … WHERE pk = ? AND lock_version = ?`,
+                // one row changed or stale, then the row read back.
+                if schema.column("lock_version").is_none() {
+                    return Err(format!(
+                        "optimistic_lock: table `{collection}` has no `lock_version` column"
+                    ));
+                }
+                let changes = super::column_mode::prepare_write(&schema, &patch, false)?;
+                let pk = super::column_mode::pk_value(&schema, key)?;
+                let mut query = crate::db::sql_columns_compile::ColumnQuery::new(schema.clone());
+                query.eq_filters.insert(schema.pk.clone(), pk.clone());
+                query
+                    .eq_filters
+                    .insert("lock_version".to_string(), serde_json::json!(expected));
+                if crate::db::columns::update_all(&query, &changes)? != 1 {
+                    return Ok(LockedWrite::Stale);
+                }
+                return match crate::db::columns::get_row(&schema, &pk)? {
+                    Some(row) => Ok(LockedWrite::Written(row)),
+                    None => Ok(LockedWrite::Stale),
+                };
             }
             let Some(mut current) = crate::db::sql::get(collection, key)? else {
                 return Ok(LockedWrite::Stale);

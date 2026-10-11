@@ -870,6 +870,25 @@ fn register_event_builtins(env: &mut Environment) {
             crate::interpreter::events::perform_event_stream,
         )),
     );
+    // `EventStream.consume(topic, {"group": …})`: events from an es topic,
+    // published to this application's subscribers.
+    let mut stream_statics: HashMap<String, Rc<NativeFunction>> = HashMap::new();
+    stream_statics.insert(
+        "consume".to_string(),
+        Rc::new(NativeFunction::new(
+            "EventStream.consume",
+            None,
+            crate::interpreter::events::consume_stream,
+        )),
+    );
+    env.define(
+        "EventStream".to_string(),
+        Value::Class(Rc::new(crate::interpreter::value::Class {
+            name: "EventStream".to_string(),
+            native_static_methods: stream_statics,
+            ..Default::default()
+        })),
+    );
     env.define(
         crate::interpreter::events::EVENT_STREAM_JOB.to_string(),
         Value::Class(Rc::new(crate::interpreter::value::Class {

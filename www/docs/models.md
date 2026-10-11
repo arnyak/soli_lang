@@ -944,6 +944,26 @@ The field accepts the value object or a hash of its fields; anything else is
 a validation error (`{ field: "total", message: "must be a Amount" }`). The
 class can also be named as a string (`value_field :total, "Amount"`).
 
+**A list of value objects** — an invoice's lines, kept as values rather than
+as a related model — is `value_field :lines, [Line]`: stored as an array of
+objects, read back as an array of `Line`, and refused (`must be a list of
+Line`) unless every element is a `Line` or a hash of its fields:
+
+```soli
+class Line < ValueObject
+  label: String
+  cents: Int
+end
+
+class Quote < Model
+  value_field :lines, [Line]
+  invariant(:lines, "a quote has at least one line") { @lines.length > 0 }
+end
+
+quote = Quote.create({"lines": [Line.new("design", 300), Line.new("build", 900)]})
+Quote.find(quote._key).lines[1]      # Line(label: "build", cents: 900)
+```
+
 **`invariant(...)`** on a model is a validation rule: a falsy block adds
 `{ field, message }` to `_errors` (field `_base` when the invariant names
 none) and the record is not saved. Invariants run after every other
@@ -1035,6 +1055,30 @@ and the job appends the record once the data is committed, with the job
 queue's retries — so a stream receives every committed event, at least once,
 and never one that was rolled back.
 
+**Consuming a stream.** The other side — an application that reacts to
+another service's events — reads the topic with a consumer group and
+publishes each record here, to its own subscribers:
+
+```soli
+# app/jobs/billing_events_job.sl
+class BillingEventsJob
+  static cron: String = Cron.every("1 minute")
+
+  static def perform(args: Hash)
+    EventStream.consume("billing", {"group": "shipping"})
+  end
+end
+```
+
+`EventStream.consume(topic, {"group": …, "partitions": 1, "max_records": 100})`
+rebuilds each record as its `DomainEvent` (by the `type` a stream
+subscription wrote) and publishes it: block and job subscribers run, stream
+subscriptions do not, so nothing is echoed back. The group's offset is
+committed after each record, so delivery is at least once — a handler that
+fails stops the run before its record is committed. A record whose event
+class this application does not declare is skipped. It returns how many
+events it published.
+
 ## Bounded Contexts
 
 Models can live in modules, one per part of the domain — `Billing`,
@@ -1104,8 +1148,10 @@ whose `http_status` is 409):
 throw StaleRecord.new("order #{order.number} changed since you opened it") unless order.save
 ```
 
-Not yet supported: column-mode tables (an existing SQL schema). `increment`
-and `decrement` do not bump the version.
+On a column-mode table (an existing SQL schema, `table "orders"`) the table
+needs a `lock_version` integer column; the update is one
+`UPDATE … WHERE id = ? AND lock_version = ?`. `increment` and `decrement` do
+not bump the version.
 
 ## Callbacks
 

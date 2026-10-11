@@ -445,6 +445,7 @@ fn build_json_from_value(value: &Value) -> String {
                         HashKey::Decimal(d) => d.to_string(),
                         HashKey::Bool(b) => b.to_string(),
                         HashKey::Null => "null".to_string(),
+                        HashKey::ValueObject(key) => format!("\"{}\"", key.to_value()),
                     };
                     format!("{}: {}", key, build_json_from_value(v))
                 })
@@ -650,6 +651,7 @@ fn value_to_xml(value: &Value, element_name: &str) -> String {
                     HashKey::Decimal(d) => d.to_string().into(),
                     HashKey::Bool(b) => b.to_string().into(),
                     HashKey::Null => "null".into(),
+                    HashKey::ValueObject(key) => key.to_value().to_string().into(),
                 };
 
                 if let Some(attr_name) = key.strip_prefix('@') {
@@ -723,6 +725,7 @@ fn get_value_string(value: &Value) -> String {
                         HashKey::Decimal(d) => d.to_string().into(),
                         HashKey::Bool(b) => b.to_string().into(),
                         HashKey::Null => "null".into(),
+                        HashKey::ValueObject(key) => key.to_value().to_string().into(),
                     };
                     format!("{}: {}", key, get_value_string(v))
                 })

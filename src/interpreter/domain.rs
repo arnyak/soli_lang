@@ -60,6 +60,37 @@ pub fn register_class(class: &Rc<Class>) {
 /// frozen — no constructor, no invariants, as a record read from the database
 /// runs no callbacks (a row written before an invariant existed must still
 /// load). `None` when no such value object is defined.
+/// How a `value_field` spec reads: `Amount`, or `[]Line` for a list of them
+/// (`value_field :lines, [Line]`). Returns (is a list, class name).
+pub fn value_field_spec(spec: &str) -> (bool, &str) {
+    match spec.strip_prefix("[]") {
+        Some(class) => (true, class),
+        None => (false, spec),
+    }
+}
+
+/// A stored `value_field` value back as its value object — or, for a list
+/// field, its array of value objects. `None` when it is not in stored form.
+pub fn hydrate_field(spec: &str, stored: &Value) -> Option<Value> {
+    match value_field_spec(spec) {
+        (false, class) => hydrate(class, stored),
+        (true, class) => {
+            let Value::Array(items) = stored else {
+                return None;
+            };
+            let values = items
+                .borrow()
+                .iter()
+                .map(|item| match item {
+                    Value::Hash(_) => hydrate(class, item).unwrap_or_else(|| item.clone()),
+                    other => other.clone(),
+                })
+                .collect();
+            Some(Value::Array(Rc::new(RefCell::new(values))))
+        }
+    }
+}
+
 pub fn hydrate(class_name: &str, stored: &Value) -> Option<Value> {
     let class = CLASSES.with(|c| c.borrow().get(class_name).cloned())?;
     let Value::Hash(hash) = stored else {

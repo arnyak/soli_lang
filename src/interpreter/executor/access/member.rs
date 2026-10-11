@@ -2989,6 +2989,7 @@ impl Interpreter {
             crate::interpreter::value::HashKey::Bool(b) => b.to_string(),
             crate::interpreter::value::HashKey::Null => "null".to_string(),
             crate::interpreter::value::HashKey::Symbol(s) => format!(":{}", s),
+            crate::interpreter::value::HashKey::ValueObject(key) => key.to_value().to_string(),
         }
     }
 }

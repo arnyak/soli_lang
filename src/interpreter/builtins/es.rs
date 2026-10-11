@@ -480,6 +480,38 @@ fn bytes_to_text(bytes: Vec<u8>, base64: bool) -> String {
 
 // ----- operations -----
 
+/// One page of `topic`'s `partition` for consumer group `group`, from its
+/// committed offset: `{"records": [{offset, key, value…}], …}`.
+pub(crate) fn group_page(
+    group: &str,
+    topic: &str,
+    partition: u64,
+    max_records: u64,
+) -> Result<Json, String> {
+    let path = format!(
+        "/groups/{}/consume?topic={}&partition={partition}&max_records={max_records}&max_bytes={DEFAULT_MAX_BYTES}",
+        seg(group),
+        seg(topic)
+    );
+    page_shape(http_json("EventStream.consume", "GET", &path, None)?)
+}
+
+/// Commit `offset` (the next record to read) for `group` on a partition.
+pub(crate) fn commit_offset(
+    group: &str,
+    topic: &str,
+    partition: u64,
+    offset: u64,
+) -> Result<(), String> {
+    http(
+        "EventStream.consume",
+        "POST",
+        &format!("/groups/{}/commit", seg(group)),
+        Some(json!({"topic": topic, "partition": partition, "offset": offset})),
+    )
+    .map(|_| ())
+}
+
 /// Append one record to `topic` — `ES.emit(topic, key, value)` from Rust.
 /// What the built-in `EventStreamJob` does with a domain event.
 pub(crate) fn emit_record(topic: &str, key: Option<String>, value: String) -> Result<(), String> {

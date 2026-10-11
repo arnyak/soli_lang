@@ -565,3 +565,83 @@ fn bounded_contexts_keep_their_models_apart() {
         vec!["billing_customers", "billing_invoices", "shipping_invoices"]
     );
 }
+
+fn sqlite_script(dir: &Path, script: &str) -> Vec<String> {
+    write(dir, "script.sl", script);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_soli"))
+        .arg("script.sl")
+        .current_dir(dir)
+        .env("SOLI_DB_ADAPTER", "sqlite")
+        .env(
+            "DATABASE_URL",
+            format!("sqlite://{}/app.sqlite3", dir.display()),
+        )
+        .output()
+        .expect("run soli");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert!(
+        output.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    stdout.lines().map(str::to_string).collect()
+}
+
+#[test]
+fn a_value_field_can_hold_a_list_of_value_objects() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines = sqlite_script(
+        dir.path(),
+        r#"class Line < ValueObject
+  label: String
+  cents: Int
+end
+class Quote < Model
+  value_field :lines, [Line]
+  invariant(:lines, "a quote has at least one line") { @lines.length > 0 }
+end
+q = Quote.create({"lines": [Line.new("design", 300), Line.new("build", 900)]})
+loaded = Quote.find(q._key)
+print(loaded.lines[1], loaded.lines.length)
+print(Quote.create({"lines": []})._errors)
+print(Quote.create({"lines": [Line.new("x", 1), 5]})._errors)
+"#,
+    );
+    assert_eq!(
+        lines,
+        vec![
+            "Line(label: \"build\", cents: 900) 2",
+            "[{field => lines, message => a quote has at least one line}]",
+            "[{field => lines, message => must be a list of Line}]",
+        ]
+    );
+}
+
+#[test]
+fn optimistic_lock_works_on_a_column_mode_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = rusqlite::Connection::open(dir.path().join("app.sqlite3")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, number TEXT NOT NULL, \
+         lock_version INTEGER NOT NULL DEFAULT 0);",
+    )
+    .unwrap();
+    drop(conn);
+    let lines = sqlite_script(
+        dir.path(),
+        r#"class Order < Model
+  table "orders"
+  optimistic_lock
+end
+o = Order.create({"number": "C-1"})
+a = Order.find(o.id)
+b = Order.find(o.id)
+a.number = "C-2"
+print(a.save, a.lock_version)
+b.number = "C-3"
+print(b.save, b.stale?)
+print(Order.find(o.id).number, Order.find(o.id).lock_version)
+"#,
+    );
+    assert_eq!(lines, vec!["true 1", "false true", "C-2 1"]);
+}

@@ -3578,8 +3578,9 @@ print(a)                                 # Amount(cents: 500, currency: "EUR")
 ```
 
 `with` rebuilds the copy through the constructor, so normalisation and
-invariants apply to it as well. A value object cannot be a hash key yet
-(`Cannot use Amount as hash key`): key by `a.to_s` or by its fields.
+invariants apply to it as well. A value object can key a hash, by value:
+`prices[Amount.new(500)] = "small"` is read back by any equal amount, and
+`prices.keys` gives the value objects again.
 
 ### Invariants
 
