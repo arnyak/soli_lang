@@ -121,6 +121,21 @@ fn write_value(out: &mut Vec<u8>, value: &Value, depth: usize) -> Result<(), Str
                 out.push(b'}');
                 return Ok(());
             }
+            // A value object: every field, in declaration order — the same
+            // object `value_to_json` builds.
+            if crate::interpreter::domain::value_objects_declared()
+                && instance.class.is_value_object()
+            {
+                let open_at = out.len();
+                out.push(b'{');
+                for (key, item) in crate::interpreter::domain::value_fields(&instance) {
+                    write_key(out, &key);
+                    write_value(out, &item, depth)?;
+                    out.push(b',');
+                }
+                close(out, open_at, b'}');
+                return Ok(());
+            }
             // SEC-013: skip sensitive and framework-internal fields.
             let open_at = out.len();
             out.push(b'{');

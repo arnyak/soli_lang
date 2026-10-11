@@ -124,7 +124,7 @@ end
   # GET /vo
   def vo(req)
     total = Price.new(500, "EUR").add(Price.new(cents: 250, currency: "EUR"))
-    render_json({"total": total.to_h, "same": total == Price.new(750, "EUR"), "shown": total.to_s})
+    render_json({"total": total.to_h, "same": total == Price.new(750, "EUR"), "shown": total.to_s, "price": total})
   end
 
   # GET /insufficient
@@ -233,6 +233,11 @@ fn a_served_app_answers_a_domain_error_with_its_status() {
     assert_eq!(json["total"]["cents"], 750);
     assert_eq!(json["same"], true);
     assert_eq!(json["shown"], "Price(cents: 750, currency: \"EUR\")");
+    // `render_json` writes a value object's fields in declaration order.
+    assert!(
+        body.contains(r#""price":{"cents":750,"currency":"EUR"}"#),
+        "{body}"
+    );
 
     let (status, body) = call(&server, "GET", "/insufficient", None);
     assert_eq!(status, 422);
