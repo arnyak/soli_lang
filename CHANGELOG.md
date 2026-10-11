@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.22.0] - 2026-10-11
+
 ### Added
 
 * **scaffold:** **`soli new <app> --edge`: an application that deploys to Cloudflare Workers.** On top of the usual app it writes a `wrangler.toml` beside `app/` (the Worker named after the app, `public/` as assets, `SOLI_DB_ADAPTER = "d1"` with a `DB` binding for `wrangler d1 create`, `SOLI_SESSION_DRIVER = "cookie"`, `SOLI_CSRF_TOKENS = "require"`, and commented R2, Images, Queues and Hyperdrive blocks), a `.env` for `soli serve` on SQLite with the cookie driver and a generated 64-character `SOLI_SESSION_SECRET`, the same secret in `.dev.vars` for `soli edge dev`, `.gitignore` entries for `dist/edge/`, `.wrangler/` and `.dev.vars`, and a README and `CLAUDE.md` section on running and deploying it. `--cloudflare` is an alias; it refuses `--eui` (a Worker has no WebSockets) and `--template`. Checked: a generated app answers on workerd through `soli edge dev` and under `soli serve`.
