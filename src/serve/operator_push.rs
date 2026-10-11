@@ -31,6 +31,7 @@
 //! [`internal_store`]: super::internal_store
 
 use std::net::SocketAddr;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Limited};
@@ -41,6 +42,7 @@ use sha2::{Digest, Sha256};
 
 use super::internal_store;
 use super::notify::{Event, Kind};
+use super::tenant::TenantCell;
 use super::{admin_auth, full, ResponseBody};
 
 /// Browser subscriptions, one document per push endpoint.
@@ -225,6 +227,7 @@ pub(crate) fn subscribe(
     let sub = valid_subscription(subscription)?;
     let endpoint = sub["endpoint"].as_str().unwrap_or_default().to_string();
     internal_store::ensure(SUBSCRIPTIONS, "created_at")?;
+    SUBSCRIBER_COUNTS.clear();
     let key = key_for(&endpoint);
     match read_subscription(&endpoint)? {
         Some(doc) => {
@@ -265,6 +268,7 @@ pub(crate) fn unsubscribe(endpoint: &str, topic: Topic) -> Result<bool, String> 
     }
     let rest: Vec<String> = topics.into_iter().filter(|t| t != topic.name()).collect();
     let key = key_for(endpoint);
+    SUBSCRIBER_COUNTS.clear();
     if rest.is_empty() {
         internal_store::delete(SUBSCRIPTIONS, &key)?;
     } else {
@@ -296,16 +300,32 @@ fn all_subscriptions() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
+/// Subscribers per topic as last read, and when. `notify` asks for every
+/// event that has no email, webhook or job destination, and the answer is a
+/// database read: a burst of new error groups paid one each, and with the
+/// store unreachable one refused connection each — two seconds apiece on
+/// Windows. Subscribing or unsubscribing here clears it; a browser subscribed
+/// through another host is seen within `COUNT_TTL`.
+static SUBSCRIBER_COUNTS: TenantCell<(Instant, [usize; 2])> = TenantCell::new();
+
+const COUNT_TTL: Duration = Duration::from_secs(30);
+
 /// Browsers subscribed to `topic`. Zero, not an error, when the store cannot
 /// be read: this only decides whether there is anyone to notify.
 pub(crate) fn subscriber_count(topic: Topic) -> usize {
-    all_subscriptions()
-        .map(|rows| {
-            rows.iter()
-                .filter(|r| topics_of(r).iter().any(|t| t == topic.name()))
-                .count()
-        })
-        .unwrap_or(0)
+    if let Some((read_at, counts)) = SUBSCRIBER_COUNTS.get() {
+        if read_at.elapsed() < COUNT_TTL {
+            return counts[topic as usize];
+        }
+    }
+    let rows = all_subscriptions().unwrap_or_default();
+    let counts = [Topic::Errors, Topic::SlowQueries].map(|t| {
+        rows.iter()
+            .filter(|r| topics_of(r).iter().any(|name| name == t.name()))
+            .count()
+    });
+    SUBSCRIBER_COUNTS.set((Instant::now(), counts));
+    counts[topic as usize]
 }
 
 // --- sending -------------------------------------------------------------------
@@ -387,6 +407,7 @@ fn push_to(row: &serde_json::Value, message: &str, keys: &Keys) -> Result<Delive
     let status = status_of(&result);
     if status == 404 || status == 410 {
         let _ = internal_store::delete(SUBSCRIPTIONS, &key_for(endpoint));
+        SUBSCRIBER_COUNTS.clear();
         return Ok(Delivery::Gone(status));
     }
     if !(200..300).contains(&status) {
@@ -743,5 +764,20 @@ mod tests {
                 .and_then(|v| v.to_str().ok()),
             Some("/__soli/")
         );
+    }
+
+    #[test]
+    fn subscriber_counts_are_reused_until_a_subscription_changes() {
+        // A tenant of its own: the primary one's cache is read by every
+        // test that emits a notification.
+        let id = crate::serve::tenant::register(std::env::temp_dir());
+        crate::serve::tenant::scoped(id, || {
+            SUBSCRIBER_COUNTS.set((Instant::now(), [3, 1]));
+            // Served from the cache: no store is reachable from this test.
+            assert_eq!(subscriber_count(Topic::Errors), 3);
+            assert_eq!(subscriber_count(Topic::SlowQueries), 1);
+            SUBSCRIBER_COUNTS.clear();
+            assert!(SUBSCRIBER_COUNTS.get().is_none());
+        });
     }
 }

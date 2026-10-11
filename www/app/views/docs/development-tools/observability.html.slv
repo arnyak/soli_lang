@@ -395,7 +395,7 @@ SOLI_NOTIFY_URL=https://shop.example.com</code></pre>
     </p>
     <ul class="text-gray-400 mb-4 list-disc pl-6 space-y-1">
         <li>the VAPID key pair is the app&rsquo;s own <code>VAPID_PUBLIC_KEY</code> / <code>VAPID_PRIVATE_KEY</code> / <code>VAPID_SUBJECT</code> when set (the ones <code>WebPush</code> reads), otherwise a pair generated once and stored in the app&rsquo;s database (<code>_soli_push_keys</code>) &mdash; replacing it makes every browser subscribe again;</li>
-        <li>subscriptions are stored in <code>_soli_push_subscriptions</code>, one per browser, with the topics it chose; a push service answering 404/410 (the browser dropped it) deletes it;</li>
+        <li>subscriptions are stored in <code>_soli_push_subscriptions</code>, one per browser, with the topics it chose; a push service answering 404/410 (the browser dropped it) deletes it. Whether anyone is subscribed is read once and reused for 30 seconds, so a burst of new errors costs one database read; subscribing or unsubscribing on this server takes effect at once, a browser subscribed through another host of the same app within those 30 seconds;</li>
         <li>the subscription endpoints (<code>POST /__soli/push/subscribe</code>, <code>unsubscribe</code>, <code>status</code>, <code>test</code>) sit behind the gate of the topic&rsquo;s page (<code>SOLI_ERRORS_*</code>, <code>SOLI_SLOW_QUERIES_*</code> or <code>SOLI_ADMIN_*</code>) and the same-origin check; the service worker, <code>/__soli/push/sw.js</code>, is public and controls <code>/__soli/</code> only;</li>
         <li>Web Push needs HTTPS (or <code>localhost</code>); the same events, throttle and <code>SOLI_NOTIFY_EVENTS</code> apply as for the other destinations.</li>
     </ul>
