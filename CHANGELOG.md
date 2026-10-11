@@ -28,6 +28,8 @@
 
 ### Fixed
 
+* **pdf:** **One panic no longer breaks every later PDF render.** The three process-wide caches of the PDF engine (font registries, embedded font subsets, decoded images) were locked with `lock().unwrap()`, so a panic while one was held poisoned its mutex and made every later `pdf_render` in the process panic too. They now recover the guard: a panic there can only interrupt a lookup or an insert into a memo, which leaves it usable.
+
 * **scaffold:** **A new app's `.gitignore` ignores the EUI publisher key again.** Its entry (with a comment) was written with literal `\n` escapes into the template, so the generated file had one line reading `\n\n# The EUI publisher key…\nconfig/eui_publisher.pkcs8\n`, which matched nothing: an app that created `config/eui_publisher.pkcs8` could commit the key that signs its EUI manifest. Check `git ls-files config/eui_publisher.pkcs8` in an EUI app created since.
 
 * **edge:** **`cf-ipcountry` reaches the app under `soli edge dev`.** Cloudflare's edge adds the header in production; `wrangler dev` does not, though it fills `request.cf.country`, so a page showing the visitor's country read `unknown` locally (cf.solisoft.test's boarding pass). `worker.js` now adds `cf-ipcountry` from `request.cf.country` when the request has none, as it already did for `cf-colo`.

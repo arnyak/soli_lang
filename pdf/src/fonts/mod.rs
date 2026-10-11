@@ -205,6 +205,10 @@ struct CacheKey {
     families: Vec<String>,
 }
 
+/// Locked poison-tolerantly (`unwrap_or_else(|e| e.into_inner())`): a panic
+/// while the lock is held can only interrupt a lookup or an insert into a memo,
+/// which leaves it usable, and an `unwrap()` there would turn that one panic
+/// into a failed render for every later call in the process.
 fn font_cache() -> &'static Mutex<HashMap<CacheKey, Arc<FontRegistry>>> {
     static CACHE: OnceLock<Mutex<HashMap<CacheKey, Arc<FontRegistry>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -307,11 +311,18 @@ impl FontRegistry {
                 .collect(),
             families: families.to_vec(),
         };
-        if let Some(hit) = font_cache().lock().unwrap().get(&key) {
+        if let Some(hit) = font_cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&key)
+        {
             return Ok(hit.clone());
         }
         let registry = Arc::new(FontRegistry::from_font_dirs(dirs, families)?);
-        font_cache().lock().unwrap().insert(key, registry.clone());
+        font_cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, registry.clone());
         Ok(registry)
     }
 

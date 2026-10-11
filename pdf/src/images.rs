@@ -25,6 +25,10 @@ struct ImageCache {
 /// KB. Wholesale clear on overflow keeps it simple; live sources re-fill.
 const IMAGE_CACHE_MAX_BYTES: usize = 128 * 1024 * 1024;
 
+/// Locked poison-tolerantly (`unwrap_or_else(|e| e.into_inner())`): a panic
+/// while the lock is held can only interrupt a lookup or an insert into a memo,
+/// which leaves it usable, and an `unwrap()` there would turn that one panic
+/// into a failed render for every later call in the process.
 fn image_cache() -> &'static Mutex<ImageCache> {
     static CACHE: OnceLock<Mutex<ImageCache>> = OnceLock::new();
     CACHE.get_or_init(|| {
@@ -75,7 +79,12 @@ pub fn load_image(
 ) -> Result<Arc<ImageData>> {
     let key = cache_key(src, font_bytes);
     if let Some(k) = key {
-        if let Some(hit) = image_cache().lock().unwrap().map.get(&k) {
+        if let Some(hit) = image_cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .map
+            .get(&k)
+        {
             return Ok(hit.clone());
         }
     }
@@ -86,7 +95,7 @@ pub fn load_image(
     decoded.source_key = key;
     let img = Arc::new(decoded);
     if let Some(k) = key {
-        let mut cache = image_cache().lock().unwrap();
+        let mut cache = image_cache().lock().unwrap_or_else(|e| e.into_inner());
         let n = img.cache_bytes();
         if cache.bytes + n > IMAGE_CACHE_MAX_BYTES {
             cache.map.clear();

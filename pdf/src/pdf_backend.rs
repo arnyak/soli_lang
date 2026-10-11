@@ -58,6 +58,10 @@ const EMBED_CACHE_MAX: usize = 64;
 /// Keyed by (face content digest, used-char-set hash).
 type EmbedCache = HashMap<([u8; 16], u64), EmbedEntry>;
 
+/// Locked poison-tolerantly (`unwrap_or_else(|e| e.into_inner())`): a panic
+/// while the lock is held can only interrupt a lookup or an insert into a memo,
+/// which leaves it usable, and an `unwrap()` there would turn that one panic
+/// into a failed render for every later call in the process.
 fn embed_cache() -> &'static Mutex<EmbedCache> {
     static CACHE: OnceLock<Mutex<EmbedCache>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -78,7 +82,11 @@ fn subset_and_parse(
         h.finish()
     };
     let key = (digest, chars_hash);
-    if let Some(entry) = embed_cache().lock().unwrap().get(&key) {
+    if let Some(entry) = embed_cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&key)
+    {
         // Guard against a (astronomically unlikely) 64-bit hash collision: the
         // char set must match exactly, else fall through and rebuild.
         if entry.chars == *chars {
@@ -90,7 +98,7 @@ fn subset_and_parse(
         ParsedFont::from_bytes(&bytes, 0, font_warnings)
             .ok_or_else(|| PdfError::Font(format!("printpdf could not parse {slot:?} font")))?,
     );
-    let mut cache = embed_cache().lock().unwrap();
+    let mut cache = embed_cache().lock().unwrap_or_else(|e| e.into_inner());
     if cache.len() >= EMBED_CACHE_MAX {
         cache.clear();
     }
