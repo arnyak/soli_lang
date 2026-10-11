@@ -2,75 +2,100 @@
   <img src="www/public/images/soli-logo.svg" alt="Soli Logo" width="120" height="120" />
 </p>
 
-<h1 align="center">Soli MVC Framework</h1>
+<h1 align="center">Soli</h1>
 
 <p align="center">
-  <strong>A dynamically-typed, high-performance web framework with optional type annotations.</strong>
+  <strong>A Ruby-flavoured language and a full-stack MVC framework, written in Rust.</strong>
 </p>
 
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#documentation">Documentation</a> •
   <a href="#examples">Examples</a> •
+  <a href="#documentation">Documentation</a> •
   <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" />
-  <img src="https://img.shields.io/badge/rust-1.70+-orange.svg" alt="Rust Version" />
-  <img src="https://img.shields.io/badge/performance-170k%20req%2Fs-green.svg" alt="Performance" />
+  <img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust stable" />
+  <img src="https://img.shields.io/badge/JSON-561k%20req%2Fs-green.svg" alt="561k req/s on the JSON benchmark" />
 </p>
 
 ---
 
 ## Why Soli?
 
-Soli is a full-stack MVC framework written in Rust that brings the elegance of Ruby/Rails to the performance of systems programming. Build web applications with expressive, readable code while enjoying sub-millisecond response times.
+Soli brings Rails' expressiveness to a single Rust binary. You write terse, Ruby-like code with
+optional type annotations; the binary runs it on a bytecode VM, serves it, tests it, lints it
+and ships it. There is no `node_modules`, no separate app server and no build step to wire up.
 
 ```soli
-// Define a controller
-def index(req: Any) -> Any {
-    let posts = Post
-        .where("doc.published == true")
-        .order("created_at", "desc")
-        .limit(10)
-        .all();
+# app/controllers/posts_controller.sl — models are auto-loaded
+class PostsController < Controller
+  # GET /posts — no render call: posts/index renders with @posts
+  def index
+    @posts = Post.where({ published: true }).order("created_at", "desc").limit(10).all
+  end
 
-    return render("posts/index", {
-        "title": "Latest Posts",
-        "posts": posts
-    });
-}
+  # POST /posts
+  def create
+    @post = Post.create(permit(params, {"title": true, "body": true}))
+    return render("new", {}, {"status": 422}) if @post._errors
+
+    redirect("/posts/#{@post.id}")
+  end
+end
 ```
 
 ## Features
 
 ### Performance
-- **170,000+ requests/second** on a single server
-- **Sub-millisecond response times** for most requests
-- **Zero-copy JSON parsing** and efficient memory management
-- **Bytecode compilation** for fast execution
+- **Bytecode VM in production** for controllers, middleware, models and views
+- **561k req/s** on a JSON response and **568k req/s** on a rendered 50-row page, with 16
+  hardware threads — **12.9x Rails** on the JSON row, tied with Kemal (compiled Crystal). Full
+  methodology, every stack and every caveat: [`www/docs/benchmarks.md`](www/docs/benchmarks.md)
+- **Response cache** for pages that depend only on what they render, and **`grouped`** to ship
+  several database reads in one round trip
 
-### Developer Experience
-- **Hot reload** - See changes instantly without restart
-- **Beautiful error pages** with variable inspection in dev mode
-- **Scaffold generator** - Generate complete MVC resources in seconds
-- **Convention over configuration** - Sensible defaults, less boilerplate
+### Data
+- **SoliDB** by default (native driver), plus **PostgreSQL**, **MySQL**, **SQLite** and
+  **Cloudflare D1** adapters — as document stores or against an existing SQL schema
+- ORM with validations, callbacks, associations and `includes`, scopes, state machines,
+  soft delete, transactions, `after_commit`, domain events and optimistic locking
+- Migrations and seeds (`soli db:migrate`, `soli db:seed`), several named connections, and
+  **one database per tenant** (`switch_tenant`, `with_tenant`, `--tenant`)
+- Value objects with invariants, and `DomainError` mapped to a 422
 
-### Full-Stack Features
-- **ERB-style templates** with layouts and partials
-- **Active Record ORM** with migrations, validations, and relationships
-- **WebSocket support** with Live View for reactive UIs
-- **Built-in authentication** with JWT and session management
-- **i18n support** for multi-language applications
-- **Tailwind CSS integration** with automatic compilation
+### Web
+- ERB-style views (`.html.slv`) with layouts, partials, components and `content_for`
+- A Rails-style **form builder** (`form_with`), Rack-style nested params and `permit`
+- **Live View** with DOM-aware morphing, streams and nested components; WebSockets
+- htmx and Alpine bundled, instant navigation, Tailwind CSS v4 compiled with no npm
+- OpenAPI documents generated from routes and doc comments
+- Background jobs and cron, mailer, file attachments (disk, S3, R2), PDF rendering, i18n
 
 ### Security
-- CSRF protection
-- XSS sanitization
-- Secure session cookies
-- Input validation helpers
+- CSRF protection (Origin gate plus per-session tokens), escaped-by-default templates
+- Sessions with in-memory, encrypted-cookie, disk, SoliDB and SoliKV drivers; signed and
+  encrypted cookies
+- Generators for session auth with policies, OAuth sign-in and an OpenID Connect provider
+- `soli lint` flags unfiltered mass assignment, among others
+
+### Tooling
+- `soli serve --dev`: hot reload, error pages with variable inspection, a dev bar with
+  queries, N+1 detection and flame graphs
+- Built-in error tracking and slow-query pages at `/__soli/*` in production
+- `soli test` (specs, E2E requests, browser tests, coverage), `soli lint`, `soli fmt`,
+  `soli check`, and a language server (`soli lsp`)
+- Scaffolds, `soli routes`, a REPL, and a project-local pinned interpreter version
+
+### Deploy
+- `soli build` produces an app bundle or one standalone executable
+- `soli deploy`, a Docker image (`ghcr.io/solisoft/soli_lang`), and `soli update` in place
+- **Cloudflare Workers**: `soli new my_app --edge`, with D1, Durable Objects, R2, Queues and
+  Hyperdrive
+- Native shells for Android, iOS, Linux and Windows (`soli generate client`), and EUI windows
 
 ## Quick Start
 
@@ -88,303 +113,257 @@ to force a global install as a non-root user, or `--user` to force a per-user in
 Already installed? `soli update` upgrades in place — use `sudo soli update` if Soli lives in a
 root-owned directory like `/usr/local/bin`.
 
+With Docker:
+
+```bash
+docker run --rm ghcr.io/solisoft/soli_lang:latest --version
+```
+
 From source:
 
 ```bash
-# Clone the repository
 git clone https://github.com/solisoft/soli_lang.git
 cd soli_lang
-
-# Build the release binary
 cargo build --release
-
-# Add to PATH (optional)
 export PATH="$PATH:$(pwd)/target/release"
 ```
 
 ### Create a New Project
 
 ```bash
-# Generate a new MVC application
 soli new my_app
 cd my_app
-
-# Install frontend dependencies (for Tailwind CSS)
-npm install
-
-# Start the development server
 soli serve . --dev
 ```
 
-Visit [http://localhost:5011](http://localhost:5011) to see your app!
+Visit [http://localhost:5011](http://localhost:5011). The generated `.env` points at a SoliDB
+server on `localhost:6745`; see [`www/docs/database.md`](www/docs/database.md) for it and
+[`www/docs/multi-database.md`](www/docs/multi-database.md) for PostgreSQL, MySQL and SQLite.
 
 ### Generate a Resource
 
 ```bash
-# Generate a complete blog posts scaffold
-soli generate scaffold posts title:string content:text author:string published:boolean
-
-# Run migrations
-soli migrate
+soli generate scaffold post title:string content:text published:boolean
+soli db:migrate up
 ```
 
-This creates:
-- Model with validations
-- Controller with CRUD actions
-- Views (index, show, new, edit)
-- Database migration
-- Test files
-- Routes configuration
+This creates the model, a controller with the CRUD actions, the views (index, show, new, edit
+and a form partial), a migration, a controller spec, and the routes.
+
+### Run a Script
+
+Soli is a general-purpose language too — a file runs top to bottom:
+
+```bash
+soli hello.sl
+```
 
 ## Project Structure
 
 ```
 my_app/
 ├── app/
-│   ├── controllers/      # Route handlers
-│   ├── models/           # Data models with ORM
-│   ├── views/            # ERB templates
-│   │   └── layouts/      # Layout templates
-│   ├── middleware/       # Request/response middleware
-│   └── helpers/          # View helper functions
+│   ├── assets/css/       # Tailwind entry point
+│   ├── controllers/      # Request handlers
+│   ├── helpers/          # View helpers
+│   ├── middleware/       # Request filters
+│   ├── models/           # Data models (+ concerns/)
+│   └── views/            # .html.slv templates (+ layouts/)
 ├── config/
-│   ├── routes.sl         # Route definitions
-│   └── database.sl       # Database configuration
+│   ├── routes.sl         # URL routing
+│   └── application.sl    # Boot configuration
 ├── db/
-│   └── migrations/       # Database migrations
+│   ├── migrations/       # Database migrations
+│   └── seeds.sl
 ├── public/               # Static assets
-├── tests/                # Test files
-└── package.json          # Frontend dependencies
+├── tests/                # Specs
+├── .env                  # Database and app settings
+├── soli.toml             # Package manifest and pinned Soli version
+└── CLAUDE.md, AGENTS.md  # Guides for AI coding agents
 ```
-
-## Documentation
-
-Full documentation is available at [http://localhost:5011/docs](http://localhost:5011/docs) when running the server, covering:
-
-- **Getting Started** - Installation and first steps
-- **Core Concepts** - Routing, controllers, middleware, views
-- **Database** - Configuration, models, migrations
-- **Security** - Authentication, sessions, validation
-- **Live View** - Real-time reactive components
-- **Language Reference** - Soli language syntax and features
-- **Built-in Functions** - Complete API reference
 
 ## Examples
 
 ### Routing
 
 ```soli
-// config/routes.sl
+# config/routes.sl
+get("/", "home#index")
+get("/about", "home#about")
 
-// Simple routes
-get("/", "home#index");
-get("/about", "home#about");
+resources("posts")              # RESTful routes
 
-// RESTful resources
-resources("posts");
-resources("users");
+namespace("api/v1", -> {
+  get("/status", "api/v1/status#show")
+})
 
-// Nested resources
-resources("posts", fn() {
-    resources("comments");
-});
-
-// Scoped middleware
-middleware("authenticate", fn() {
-    get("/admin", "admin#index");
-    resources("admin/users");
-});
-
-// API namespace
-namespace("api/v1", fn() {
-    resources("posts");
-});
+cors("/api/*", {"origins": ["https://app.example.com"]})
 ```
 
 ### Models
 
 ```soli
-class Post extends Model {
-    validates("title", { "presence": true, "min_length": 3 });
-    validates("content", { "presence": true });
+# app/models/post.sl
+class Post < Model
+  validates("title", {"presence": true, "min_length": 3})
+  validates("body", {"presence": true})
 
-    def author() -> Any {
-        return User.find(this.author_id);
-    }
+  belongs_to("author")
+  has_many("comments")
 
-    def comments() -> Any {
-        return Comment.where("doc.post_id == @id", { "id": this.id });
-    }
-}
+  def summary -> String
+    @body.length > 140 ? @body.substring(0, 140) + "…" : @body
+  end
+end
 ```
 
-### Controllers
-
-```soli
-def create(req: Any) -> Any {
-    let params = req["params"];
-    let result = Post.create(params);
-
-    if result["valid"] {
-        return redirect("/posts/" + result["record"]["id"]);
-    }
-
-    return render("posts/new", {
-        "errors": result["errors"],
-        "post": params
-    });
-}
-```
+`Post.find(id)` raises when the record does not exist and the request becomes a 404;
+`Post.find_by("slug", slug)` returns `nil` instead.
 
 ### Views
 
 ```erb
 <!-- app/views/posts/index.html.slv -->
-<h1><%= title %></h1>
+<h1>Latest posts</h1>
 
-<% for post in posts %>
-    <article>
-        <h2><%= post["title"] %></h2>
-        <p><%= post["excerpt"] %></p>
-        <a href="/posts/<%= post["id"] %>">Read more</a>
-    </article>
+<% for post in @posts %>
+  <article>
+    <h2><%= post.title %></h2>
+    <p><%= post.summary %></p>
+    <a href="/posts/<%= post.id %>">Read more</a>
+  </article>
 <% end %>
+```
+
+### Forms
+
+```erb
+<%- form_with(@post) do |f| -%>
+  <%- f.error_summary() %>
+  <%- f.label("title") %>
+  <%- f.text_field("title") %>
+  <%- f.text_area("body") %>
+  <%- f.submit("Save") %>
+<%- end -%>
 ```
 
 ### Live View
 
-Build reactive UIs without writing JavaScript:
+Reactive UIs without writing JavaScript:
 
-```html
+```erb
 <!-- app/views/live/counter.html.slv -->
 <div class="counter">
-    <h2><%= count %></h2>
-    <button soli-click="decrement">-</button>
-    <button soli-click="increment">+</button>
+  <h2><%= count %></h2>
+  <button soli-click="decrement">-</button>
+  <button soli-click="increment">+</button>
 </div>
 ```
 
 ```soli
-# app/controllers/live_controller.sl
-def counter(event: Any) -> Any {
-    let count = event["state"]["count"] ?? 0;
-
-    if event["event"] == "increment" {
-        count = count + 1;
-    } elsif event["event"] == "decrement" {
-        count = count - 1;
-    }
-
-    return { "state": { "count": count } };
-}
+# config/routes.sl
+router_live("counter", "live#counter")
 ```
 
-Live View patches are DOM-aware: the client (served by the binary at `/live/client.js`) morphs nodes in place with keyed reconciliation (`soli-key`, `soli-ignore`), so focus and client-side widget state survive updates. The directive set is still a subset of Phoenix's (no uploads, streams, or nested live components).
+```soli
+# app/controllers/live_controller.sl
+def counter(event_data)
+  count = event_data["state"]["count"] || 0
+
+  match event_data["event"] {
+    "increment" => { "count": count + 1 },
+    "decrement" => { "count": count - 1 },
+    _ => { "count": count }
+  }
+end
+```
+
+Patches are DOM-aware: the client (served by the binary at `/live/client.js`) morphs nodes in
+place with keyed reconciliation (`soli-key`, `soli-ignore`), so focus and client-side widget
+state survive updates.
 
 ## Testing
 
-Soli includes a comprehensive testing framework:
-
 ```soli
-describe("PostsController", fn() {
-    before_each(fn() {
-        as_guest();
-    });
+# tests/controllers/posts_controller_spec.sl
+describe("PostsController") do
+  before_each() do
+    as_guest()
+  end
 
-    test("lists all posts", fn() {
-        let response = get("/posts");
-        assert_eq(res_status(response), 200);
-    });
+  test("lists posts") do
+    response = get("/posts")
+    assert_eq(res_status(response), 200)
+    assert_hash_has_key(assigns(), "posts")
+  end
 
-    test("creates post when authenticated", fn() {
-        login("user@example.com", "password");
-
-        let response = post("/posts", {
-            "title": "New Post",
-            "content": "Content here"
-        });
-
-        assert_eq(res_status(response), 201);
-    });
-});
+  test("creates a post when signed in") do
+    login("user@example.com", "password")
+    response = post("/posts", {"title": "New post", "body": "Content here"})
+    assert_eq(res_status(response), 302)
+  end
+end
 ```
-
-Run tests:
 
 ```bash
-# Run all tests
-soli test tests/
-
-# Run with coverage
-soli test tests/ --coverage
-
-# Run specific test file
-soli test tests/controllers/posts_test.sl
+soli test                                   # every spec under tests/
+soli test tests/controllers/posts_controller_spec.sl
+soli test --coverage-min 90                 # raise the coverage floor (default 80%)
+soli test --browser                         # browser specs
 ```
 
-## Performance
+## Documentation
 
-Benchmarked on a standard server (16 cores):
+The documentation site is [`www/`](www/), itself a Soli app; its Markdown sources are in
+[`www/docs/`](www/docs/). Start with:
 
-| Metric | Value |
-|--------|-------|
-| Requests/sec | 172,409 |
-| Avg Latency | 0.58ms |
-| Transfer/sec | 23.01 MB |
+- [Introduction](www/docs/introduction.md) and [Installation](www/docs/installation.md)
+- [The Soli language](www/docs/soli-language.md)
+- [Routing](www/docs/routing.md), [Controllers](www/docs/controllers.md),
+  [Views](www/docs/views.md), [Forms](www/docs/forms.md)
+- [Models](www/docs/models.md), [Migrations](www/docs/migrations.md),
+  [Multiple databases](www/docs/multi-database.md)
+- [Live View](www/docs/liveview.md), [Jobs](www/docs/jobs.md),
+  [Authentication](www/docs/authentication.md)
+- [Testing](www/docs/testing.md), [Deploy](www/docs/deploy.md),
+  [Cloudflare Workers](www/docs/edge.md)
+- [Benchmarks](www/docs/benchmarks.md)
 
-```bash
-$ wrk -t12 -c400 -d30s http://localhost:5011/
-Running 30s test @ http://localhost:5011/
-  12 threads and 400 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   0.58ms    0.89ms  42.31ms   98.76%
-    Req/Sec  14.52k     1.23k   18.67k    74.58%
-  5172270 requests in 30.00s, 690.30MB read
-Requests/sec: 172409.55
-Transfer/sec:     23.01MB
-```
+## Editor Support
 
-## IDE Support
-
-### VS Code Extension
-
-Install the Soli language extension for VS Code:
-
-```bash
-cd editors/vscode
-npm install
-npm run build
-code --install-extension soli-lang-*.vsix
-```
-
-Features:
-- Syntax highlighting for `.sl` and `.sliv` files
-- Code snippets
-- Error diagnostics
+`soli lsp` is a language server over stdio — diagnostics, formatting and more — for any editor
+with an LSP client; see [`www/docs/editor-integration.md`](www/docs/editor-integration.md).
+Syntax highlighting extensions live in [`editors/vscode`](editors/vscode) and
+[`editors/nova`](editors/nova).
 
 ## Contributing
 
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+Contributions are welcome. Before opening a pull request, run the CI gate locally:
+
+```bash
+cargo fmt
+cargo clippy --all-targets -- -D warnings
+cargo test
+soli test tests/
+```
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Commit your changes, with the docs that describe them
+4. Push the branch and open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- Inspired by Ruby on Rails, Phoenix Framework, and Laravel
+- Inspired by Ruby on Rails, Phoenix and Laravel
 - Built with Rust for performance and safety
-- Uses ArangoDB for flexible document storage
+- Stores documents in [SoliDB](https://github.com/solisoft/solidb) by default
 
 ---
 
 <p align="center">
   Built with love by <a href="https://github.com/solisoft">solisoft</a>
 </p>
-# Trigger release
