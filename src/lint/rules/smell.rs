@@ -273,6 +273,7 @@ mod tests {
             included_hooks: vec![],
             extended_hooks: vec![],
             concern_class_methods: vec![],
+            invariants: Vec::new(),
             span: span(),
         };
         let mut d = Vec::new();
@@ -318,6 +319,7 @@ mod tests {
             included_hooks: vec![],
             extended_hooks: vec![],
             concern_class_methods: vec![],
+            invariants: Vec::new(),
             span: span(),
         };
         let mut d = Vec::new();

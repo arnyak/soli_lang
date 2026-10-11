@@ -424,7 +424,40 @@ pub(crate) fn load_models(
 /// subdirectories (top-down). Soli executes files eagerly, so a base class in
 /// `models/base_model.sl` is defined before a `models/admin/user.sl` that
 /// extends it; keep cross-file superclasses at an equal-or-shallower depth.
+///
+/// One exception: files that declare a value object or an enum load first,
+/// wherever they sit — `value_field :price, Price` in `invoice.sl` names a
+/// class that `price.sl` (or `values/price.sl`) would only define later.
 fn load_sl_dir_recursive(interpreter: &mut Interpreter, dir: &Path) -> Result<(), RuntimeError> {
+    let mut files = Vec::new();
+    collect_sl_files(dir, &mut files)?;
+    let (first, rest): (Vec<_>, Vec<_>) = files.into_iter().partition(|(_, values)| *values);
+    for (path, _) in first.iter().chain(rest.iter()) {
+        execute_file(interpreter, path)?;
+    }
+    Ok(())
+}
+
+/// Whether a file's source declares a value object or an enum — a textual
+/// look, before anything is parsed. A protected bundle's serialized AST is
+/// never matched: it loads in plain order.
+fn declares_values(source: &[u8]) -> bool {
+    if crate::bundle::is_ast_blob(source) {
+        return false;
+    }
+    String::from_utf8_lossy(source).lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("enum ")
+            || (line.starts_with("class ")
+                && line
+                    .split_once('<')
+                    .is_some_and(|(_, parent)| parent.trim() == "ValueObject"))
+    })
+}
+
+/// The `.sl` files under `dir`, in load order — each directory's files
+/// sorted, then its subdirectories — each with [`declares_values`].
+fn collect_sl_files(dir: &Path, out: &mut Vec<(PathBuf, bool)>) -> Result<(), RuntimeError> {
     let mut files: Vec<PathBuf> = Vec::new();
     let mut subdirs: Vec<PathBuf> = Vec::new();
 
@@ -453,11 +486,12 @@ fn load_sl_dir_recursive(interpreter: &mut Interpreter, dir: &Path) -> Result<()
     files.sort();
     subdirs.sort();
 
-    for path in &files {
-        execute_file(interpreter, path)?;
+    for path in files {
+        let values = crate::platform::fs::read(&path).is_ok_and(|bytes| declares_values(&bytes));
+        out.push((path, values));
     }
     for subdir in &subdirs {
-        load_sl_dir_recursive(interpreter, subdir)?;
+        collect_sl_files(subdir, out)?;
     }
     Ok(())
 }

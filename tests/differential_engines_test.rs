@@ -229,6 +229,120 @@ const CASES: &[(&str, &str)] = &[
         "g = 1\nfn f() { g = 99 }\nf()\nprint(g)",
     ),
     // --- try / catch / finally ---
+    // --- value objects and domain errors ---
+    // Construction, freeze, value equality, invariants, `with`, `to_h`, and
+    // the error each refusal raises — the same text on both engines.
+    (
+        "value_object_equality_freeze_invariants",
+        r##"class Amount < ValueObject
+  cents: Int
+  currency: String = "EUR"
+  invariant("cents must not be negative") { @cents >= 0 }
+end
+a = new Amount(500, "EUR")
+b = new Amount(500)
+c = new Amount(cents: 700, currency: "USD")
+print(a == b)
+print(a == c)
+print([a, c].includes?(new Amount(700, "USD")))
+print([a, b, c].uniq.length)
+print(a.to_h)
+try
+  a.cents = 1
+catch e
+  print(e)
+end
+try
+  new Amount(-5)
+catch InvariantViolation e
+  print(e.message)
+  print(e.details["class"])
+end
+try
+  new Amount(1, "EUR", 3)
+catch e
+  print(e)
+end
+print(a)
+print(a.to_s)
+print("#{c}")"##,
+    ),
+    (
+        "value_object_with_and_constructor",
+        r##"class Amount < ValueObject
+  cents: Int
+  currency: String = "EUR"
+  invariant(:cents, "cents must not be negative") { @cents >= 0 }
+
+  def plus(other)
+    Amount.new(@cents + other.cents, @currency)
+  end
+end
+class Email < ValueObject
+  address: String
+  new(address: String)
+    @address = address.trim.downcase
+  end
+  invariant("must contain @") { @address.includes?("@") }
+end
+a = Amount.new(500)
+b = a.with(cents: 600)
+print(a.cents, b.cents, b.currency)
+c = a.with({"currency": "USD"})
+print(c.to_h)
+print(a.plus(b) == Amount.new(1100, "EUR"))
+e = Email.new("  Ada@Example.COM ")
+print(e.address)
+print(e.with(address: "BOB@x.io").address)
+try
+  a.with(cents: -1)
+catch InvariantViolation err
+  print(err.message, err.details["field"])
+end
+try
+  a.with(cent: 3)
+catch err
+  print(err)
+end
+try
+  Email.new("nope")
+catch DomainError err
+  print(err.message)
+end"##,
+    ),
+    (
+        // `Klass.new(positional)` runs the constructor; the one-hash and
+        // named-only forms keep assigning attributes.
+        "klass_new_runs_the_constructor",
+        r##"class InsufficientFunds < DomainError
+end
+try
+  throw InsufficientFunds.new("balance too low", {"needed": 30})
+catch DomainError e
+  print(e.message, e.details["needed"])
+end
+class Policy
+  user: Any
+  record: Any
+  new(context)
+    @user = "ctor:" + str(context)
+  end
+end
+p = Policy.new({"user": "ada", "record": 1})
+print(p.user, p.record)
+q = Policy.new(user: "bob")
+print(q.user)
+r = Policy.new("ctx")
+print(r.user)
+class Amount < ValueObject
+  cents: Int
+  currency: String = "EUR"
+end
+print(Amount.new({"cents": 5}).to_h)
+print(Amount.new(cents: 7).to_h)
+print(Amount.new(9, "USD").to_h)
+print(Amount.new({"cents": 5}) == Amount.new(5))"##,
+    ),
     // A typed last clause that matches runs its body and continues: the VM
     // used to fall into the no-match `Rethrow` after the body.
     (

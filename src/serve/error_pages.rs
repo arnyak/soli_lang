@@ -1012,6 +1012,26 @@ pub(super) fn render_production_error_page(
     message: &str,
     request_id: &str,
 ) -> String {
+    production_page(status_code, message, request_id, false)
+}
+
+/// [`render_production_error_page`] for a message written for the visitor —
+/// a `DomainError`'s (`balance too low`): the built-in page shows it in place
+/// of the status's generic description.
+pub(super) fn render_public_error_page(
+    status_code: u16,
+    message: &str,
+    request_id: &str,
+) -> String {
+    production_page(status_code, message, request_id, true)
+}
+
+fn production_page(
+    status_code: u16,
+    message: &str,
+    request_id: &str,
+    show_message: bool,
+) -> String {
     if let Some(custom_html) = crate::interpreter::builtins::template::render_error_template(
         status_code,
         public_error_message(status_code, message),
@@ -1118,6 +1138,12 @@ pub(super) fn render_production_error_page(
                 "info".to_string(),
             )
         }
+    };
+
+    let description = if show_message && !message.is_empty() {
+        crate::interpreter::builtins::html::html_escape(message)
+    } else {
+        description
     };
 
     format!(

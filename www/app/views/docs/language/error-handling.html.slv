@@ -367,13 +367,20 @@ class Overdrawn &lt; DomainError
 end
 
 try
-  throw new InsufficientFunds("balance too low", {"needed": 30})
+  throw InsufficientFunds.new("balance too low", {"needed": 30})   # or: new InsufficientFunds(…)
 catch DomainError e
   print(e.message)            # balance too low
   print(e.details["needed"])  # 30
   print(e.to_s)               # InsufficientFunds: balance too low
 end</code></pre>
                 <p class="text-gray-400 mt-3">Built in: <code class="text-amber-400">Error</code>, with <code>ValueError</code>, <code>TypeError</code>, <code>KeyError</code>, <code>IndexError</code> and <code>RuntimeError</code> under it, and <code class="text-amber-400">DomainError</code> &mdash; the base for errors a domain rule raises, as opposed to a bug &mdash; with <code>InvariantViolation</code> under it. Errors Soli itself raises (a missing method, a failed query) still reach <code>catch</code> as strings: a typed catch does not match them, a bare <code>catch e</code> does.</p>
+                <p class="text-gray-400 mt-3"><strong class="text-white">Uncaught in a served app, a <code class="text-amber-400">DomainError</code> is a response, not a crash:</strong> the request answers <code class="text-amber-400">422</code> with the error page showing its message (an <code>app/views/errors/422.html.slv</code> receives it as <code>message</code>). A class can choose another status with <code class="text-amber-400">static http_status: Int = 409</code>. Like a <code>find</code> miss, it writes no error block to the log and the action stays on the VM. Any other uncaught throw is still a 500.</p>
+<pre data-filename="app/models/errors.sl"><code class="language-soli text-sm">class StaleInvoice &lt; DomainError
+  static http_status: Int = 409
+end
+
+# in an action: answers 409 "invoice changed since you loaded it"
+throw StaleInvoice.new("invoice changed since you loaded it")</code></pre>
             </div>
         </section>
 

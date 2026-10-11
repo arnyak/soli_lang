@@ -92,8 +92,172 @@ impl Interpreter {
 
         let instance = Rc::new(RefCell::new(Instance::new(class.clone())));
         self.initialize_instance_fields(class, &instance)?;
+        if crate::interpreter::domain::value_objects_declared() && class.is_value_object() {
+            return self.construct_value_object(class, instance, positional_args, named_args, span);
+        }
         self.run_constructor(&instance, class, positional_args, named_args, span)?;
         Ok(Value::Instance(instance))
+    }
+
+    /// A value object: writable while its constructor runs — the class's, or
+    /// the arguments bound to the declared fields when it has none — then
+    /// frozen, then checked against its invariants.
+    fn construct_value_object(
+        &mut self,
+        class: &Rc<crate::interpreter::value::Class>,
+        instance: Rc<RefCell<Instance>>,
+        positional_args: Vec<Value>,
+        named_args: HashMap<String, Value>,
+        span: Span,
+    ) -> RuntimeResult<Value> {
+        {
+            let _constructing = crate::interpreter::domain::begin_construction(&instance);
+            if class.find_constructor().is_some() {
+                self.run_constructor(&instance, class, positional_args, named_args, span)?;
+            } else {
+                crate::interpreter::domain::bind_fields(&instance, positional_args, &named_args)
+                    .map_err(|e| RuntimeError::new(e, span))?;
+            }
+            crate::interpreter::domain::fill_declared_fields(&instance);
+        }
+        self.check_invariants(&instance, span)?;
+        Ok(Value::Instance(instance))
+    }
+
+    /// `Klass.new(...)` on a plain class or a value object. With positional
+    /// arguments (other than one hash) it runs the constructor exactly like
+    /// `new Klass(...)`. No arguments, one hash, or named arguments only keep
+    /// the attribute form on a plain class — an instance with those fields,
+    /// no constructor, as it always was — and build a value object from
+    /// those fields, its constructor and invariants included.
+    pub(crate) fn class_new(
+        &mut self,
+        class: &Rc<crate::interpreter::value::Class>,
+        arguments: &[Argument],
+        span: Span,
+    ) -> RuntimeResult<Value> {
+        let mut positional = Vec::new();
+        let mut named = HashMap::new();
+        for argument in arguments {
+            match argument {
+                Argument::Positional(expr) => positional.push(self.evaluate(expr)?),
+                Argument::Named(arg) => {
+                    let value = self.evaluate(&arg.value)?;
+                    named.insert(arg.name.clone(), value);
+                }
+                Argument::Block(_) => {
+                    return Err(RuntimeError::new(
+                        format!("{}.new takes no block", class.name),
+                        span,
+                    ));
+                }
+            }
+        }
+        use crate::interpreter::executor::access::member::{is_attribute_new, new_with_attributes};
+        if !is_attribute_new(&positional, !named.is_empty()) {
+            return self.instantiate_class(class, positional, named, span);
+        }
+        if crate::interpreter::domain::value_objects_declared() && class.is_value_object() {
+            if let Some(hash @ Value::Hash(_)) = positional.first() {
+                for (name, value) in crate::interpreter::domain::changes_from(Some(hash), "new")
+                    .map_err(|e| RuntimeError::new(e, span))?
+                {
+                    named.entry(name).or_insert(value);
+                }
+            }
+            return self.instantiate_class(class, Vec::new(), named, span);
+        }
+        let args = if named.is_empty() {
+            positional
+        } else {
+            let mut pairs = crate::interpreter::value::HashPairs::default();
+            for (name, value) in named {
+                pairs.insert(
+                    crate::interpreter::value::HashKey::String(name.into()),
+                    value,
+                );
+            }
+            vec![Value::Hash(Rc::new(RefCell::new(pairs)))]
+        };
+        new_with_attributes(class, &args).map_err(|e| RuntimeError::new(e, span))
+    }
+
+    /// `amount.with(cents: 600)` / `amount.with({"cents": 600})`: the value
+    /// object rebuilt through its constructor with those changes.
+    pub(crate) fn value_object_with(
+        &mut self,
+        instance: &Rc<RefCell<Instance>>,
+        arguments: &[Argument],
+        span: Span,
+    ) -> RuntimeResult<Value> {
+        let mut changes = HashMap::new();
+        let mut positional = Vec::new();
+        for argument in arguments {
+            match argument {
+                Argument::Positional(expr) => positional.push(self.evaluate(expr)?),
+                Argument::Named(named) => {
+                    let value = self.evaluate(&named.value)?;
+                    changes.insert(named.name.clone(), value);
+                }
+                Argument::Block(_) => {
+                    return Err(RuntimeError::new("with(...) takes no block", span));
+                }
+            }
+        }
+        match positional.as_slice() {
+            [] => {}
+            [single] => {
+                for (name, value) in crate::interpreter::domain::changes_from(Some(single), "with")
+                    .map_err(|e| RuntimeError::new(e, span))?
+                {
+                    changes.entry(name).or_insert(value);
+                }
+            }
+            _ => {
+                return Err(RuntimeError::new(
+                    "with(...) takes the changes as named arguments or one hash",
+                    span,
+                ))
+            }
+        }
+        let class = instance.borrow().class.clone();
+        let params: Option<Vec<String>> = class
+            .find_constructor()
+            .map(|ctor| ctor.params.iter().map(|p| p.name.clone()).collect());
+        let named = crate::interpreter::domain::with_arguments(
+            &instance.borrow(),
+            params.as_deref(),
+            &changes,
+        )
+        .map_err(|e| RuntimeError::new(e, span))?;
+        self.instantiate_class(&class, Vec::new(), named, span)
+    }
+
+    /// Run `instance`'s invariants, its ancestors' first: the first falsy one
+    /// throws an `InvariantViolation` naming it.
+    pub(crate) fn check_invariants(
+        &mut self,
+        instance: &Rc<RefCell<Instance>>,
+        span: Span,
+    ) -> RuntimeResult<()> {
+        let class = instance.borrow().class.clone();
+        for invariant in crate::interpreter::domain::invariants_of(&class) {
+            let Some(method) = class.find_method(&invariant.method) else {
+                continue;
+            };
+            let held = self.call_function_with_this(
+                &method,
+                Some(Value::Instance(instance.clone())),
+                Vec::new(),
+            )?;
+            if !held.is_truthy() {
+                return Err(RuntimeError::Thrown {
+                    value: crate::interpreter::domain::violation_for(&class, &invariant),
+                    span,
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Run `class`'s constructor on `instance`: its own or the nearest

@@ -908,6 +908,59 @@ A `uniqueness` rule on a SQL adapter also runs the rest of its `validates` call:
 `validates("email", { "uniqueness": true, "format": "email" })` checks the format
 too (the SQL path used to skip that call's `format`/`numericality`/`min`/`max`).
 
+## Value Fields and Invariants
+
+A model can hold a [value object](/docs/language/value-objects) in a field and
+state rules about the whole record — the aggregate side of domain-driven
+design, without leaving `Model`.
+
+```soli
+# app/models/values/amount.sl — value objects load before the models
+class Amount < ValueObject
+  cents: Int
+  currency: String = "EUR"
+  invariant(:cents, "must not be negative") { @cents >= 0 }
+end
+
+# app/models/invoice.sl
+class Invoice < Model
+  value_field :total, Amount
+  validates("number", {"presence": true})
+  invariant(:total, "total must be positive") { @total.cents > 0 }
+end
+```
+
+**`value_field :name, ValueClass`** stores the value object as an object of
+its fields (`{"cents": 900, "currency": "EUR"}` — a JSON column on the SQL
+adapters) and reads it back as the value object:
+
+```soli
+invoice = Invoice.create({"number": "F-1", "total": Amount.new(900)})
+Invoice.find(invoice._key).total                   # Amount(cents: 900, currency: "EUR")
+Invoice.find(invoice._key).total == Amount.new(900) # true
+```
+
+The field accepts the value object or a hash of its fields; anything else is
+a validation error (`{ field: "total", message: "must be a Amount" }`). The
+class can also be named as a string (`value_field :total, "Amount"`).
+
+**`invariant(...)`** on a model is a validation rule: a falsy block adds
+`{ field, message }` to `_errors` (field `_base` when the invariant names
+none) and the record is not saved. Invariants run after every other
+validation has passed, on a record whose value fields are value objects, so
+`@total.cents` is safe — a missing total is reported by `presence`, not by a
+crash in the rule. They run on `create`, `save`, `update` and static
+`Model.update(key, changes)` alike:
+
+```soli
+invoice = Invoice.create({"number": "F-2", "total": Amount.new(0)})
+invoice._errors     # [{"field": "total", "message": "total must be positive"}]
+```
+
+Raising instead of collecting is what a domain error is for: throw a
+`DomainError` from a service and an uncaught one answers **422** with its
+message (see [Error handling → Error classes](/docs/language/error-handling#error-classes)).
+
 ## Callbacks
 
 Define lifecycle callbacks to run code at specific points. The method name

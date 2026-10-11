@@ -155,6 +155,7 @@ def docs_nav_sections()
         { "path": "/docs/language/classes-oop", "label": "Classes & OOP" },
         { "path": "/docs/language/pattern-matching", "label": "Pattern Matching" },
         { "path": "/docs/language/enums", "label": "Enums" },
+        { "path": "/docs/language/value-objects", "label": "Value Objects" },
         { "path": "/docs/language/pipeline-operator", "label": "Pipeline Operator" },
         { "path": "/docs/language/modules", "label": "Modules" },
         { "path": "/docs/language/metaprogramming", "label": "Metaprogramming" },

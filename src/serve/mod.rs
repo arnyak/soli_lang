@@ -5292,7 +5292,9 @@ fn call_class_method(
                 // `catch` in user code, so nothing downstream will unwrap the value,
                 // and flattening it to its message is what the dev error page wants.
                 // Exempting it would cost those locals and buy nothing.
-                if e.breakpoint_env_json().is_some() {
+                // A `DomainError` is kept whole too: it is a response (422),
+                // not a failure to debug.
+                if e.breakpoint_env_json().is_some() || domain_error_parts(&e).is_some() {
                     Err(e)
                 } else {
                     let env_json = interpreter.serialize_environment_for_debug();
@@ -5593,6 +5595,42 @@ fn raised_response(err: &RuntimeError) -> Option<ResponseData> {
     record_not_found_response(err)
         .or_else(|| forbidden_response(err))
         .or_else(|| halt_response(err))
+        .or_else(|| domain_error_response(err))
+}
+
+/// An uncaught `DomainError` — a business rule the request broke, not a bug
+/// in the app: the error page with its message, as `422`, or as the class's
+/// `static http_status` (`409` for a conflict). Like the 404 and the 403, an
+/// ordinary outcome: no log block, and no fallback to the interpreter.
+fn domain_error_response(err: &RuntimeError) -> Option<ResponseData> {
+    let (status, message) = domain_error_parts(err)?;
+    Some(error_response::public_page(status, &message))
+}
+
+/// `(status, message)` when `err` is a thrown `DomainError`.
+fn domain_error_parts(err: &RuntimeError) -> Option<(u16, String)> {
+    let RuntimeError::Thrown {
+        value: thrown @ Value::Instance(inst),
+        ..
+    } = err
+    else {
+        return None;
+    };
+    let inst = inst.borrow();
+    let mut class = Some(inst.class.clone());
+    let mut status = None;
+    while let Some(current) = class {
+        if status.is_none() {
+            if let Some(Value::Int(code)) = current.static_fields.borrow().get("http_status") {
+                status = u16::try_from(*code).ok().filter(|c| (400..600).contains(c));
+            }
+        }
+        if current.name == "DomainError" {
+            return Some((status.unwrap_or(422), crate::error::render_thrown(thrown)));
+        }
+        class = current.superclass.clone();
+    }
+    None
 }
 
 fn check_for_response(value: &Value) -> Option<ResponseData> {

@@ -578,6 +578,29 @@ impl Interpreter {
                 }
                 self.check_private_access(object, &obj_val, name, span)?;
 
+                // `Klass.new(args)`: the constructor, as `new Klass(args)` —
+                // or, for no arguments / one hash, the attribute form.
+                if name == "new" {
+                    if let Value::Class(class) = &obj_val {
+                        if crate::interpreter::executor::access::member::intercepts_new(class) {
+                            let class = class.clone();
+                            return self.class_new(&class, arguments, span);
+                        }
+                    }
+                }
+
+                // `amount.with(cents: 600)` on a value object with no `with`
+                // of its own: rebuilt through its constructor.
+                if name == "with" && crate::interpreter::domain::value_objects_declared() {
+                    if let Value::Instance(inst) = &obj_val {
+                        let class = inst.borrow().class.clone();
+                        if class.is_value_object() && class.find_method("with").is_none() {
+                            let inst = inst.clone();
+                            return self.value_object_with(&inst, arguments, span);
+                        }
+                    }
+                }
+
                 // Model callback interceptors (Class.create/update, instance
                 // save/update/delete chains). Cheap name filters up front;
                 // they consume the evaluated receiver, never re-evaluate it.

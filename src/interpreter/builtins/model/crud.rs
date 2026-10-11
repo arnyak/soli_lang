@@ -621,6 +621,14 @@ fn apply_instance_post_load(target_class: &Rc<Class>, instance: &mut Instance) {
             instance.set(field, enum_value);
         }
     }
+    // `value_field` columns: the stored hash back into its value object.
+    for (field, value_class) in super::registry::get_value_fields(&target_class.name) {
+        if let Some(stored @ Value::Hash(_)) = instance.get(&field) {
+            if let Some(value) = crate::interpreter::domain::hydrate(&value_class, &stored) {
+                instance.set(field, value);
+            }
+        }
+    }
     // Dirty-tracking baseline: what this record looked like in the database.
     if target_class.is_model_subclass() {
         super::dirty::seed_snapshot(instance);

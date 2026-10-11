@@ -913,6 +913,10 @@ pub(crate) fn set_instance_field(
     name: &str,
     value: Value,
 ) -> Result<(), String> {
+    if crate::interpreter::domain::value_objects_declared() {
+        let inst_ref = inst.borrow();
+        crate::interpreter::domain::check_writable(inst, &inst_ref.class, name)?;
+    }
     if inst.borrow().class.const_fields.contains(name) {
         return Err(format!("cannot reassign const field '{}'", name));
     }

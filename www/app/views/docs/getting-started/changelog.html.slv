@@ -24,12 +24,27 @@
 
         <h3 id="unreleased-language" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Language</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
-            <li><strong class="text-white"><code class="text-cyan-400">Error</code> carries a message and details; <code class="text-cyan-400">DomainError</code> is built in.</strong> <code class="text-cyan-400">throw new InsufficientFunds("balance too low", {"needed": 30})</code> with <code class="text-cyan-400">class InsufficientFunds &lt; DomainError</code>, then <code class="text-cyan-400">catch DomainError e</code> &rarr; <code class="text-cyan-400">e.message</code>, <code class="text-cyan-400">e.details</code>. A subclass with its own constructor calls <code class="text-cyan-400">super(message)</code>. <a href="/docs/language/error-handling#error-classes" class="text-cyan-400 hover:underline">Guide</a>.</li>
+            <li><strong class="text-white">Value objects: <code class="text-cyan-400">class Amount &lt; ValueObject</code>.</strong> Small immutable types defined by their fields: <code class="text-cyan-400">Amount.new(500, "EUR") == Amount.new(500)</code> is <code class="text-cyan-400">true</code>, <code class="text-cyan-400">includes?</code> and <code class="text-cyan-400">uniq</code> compare by value, a field write raises, <code class="text-cyan-400">a.with(cents: 600)</code> returns a changed copy, and <code class="text-cyan-400">print</code> shows <code class="text-cyan-400">Amount(cents: 500, currency: "EUR")</code>. <a href="/docs/language/value-objects" class="text-cyan-400 hover:underline">Guide</a>.</li>
+            <li><strong class="text-white">Invariants.</strong> <code class="text-cyan-400">invariant(:cents, "must not be negative") { @cents &gt;= 0 }</code> in a class body: on a value object a broken rule throws <code class="text-cyan-400">InvariantViolation</code> when one is built or copied; on a model it is a validation error that stops the save. <a href="/docs/language/value-objects#section-invariants" class="text-cyan-400 hover:underline">Guide</a>.</li>
+            <li><strong class="text-white"><code class="text-cyan-400">Error</code> carries a message and details; <code class="text-cyan-400">DomainError</code> is built in.</strong> <code class="text-cyan-400">throw InsufficientFunds.new("balance too low", {"needed": 30})</code> with <code class="text-cyan-400">class InsufficientFunds &lt; DomainError</code>, then <code class="text-cyan-400">catch DomainError e</code> &rarr; <code class="text-cyan-400">e.message</code>, <code class="text-cyan-400">e.details</code>. A subclass with its own constructor calls <code class="text-cyan-400">super(message)</code>. <a href="/docs/language/error-handling#error-classes" class="text-cyan-400 hover:underline">Guide</a>.</li>
+            <li><strong class="text-white"><code class="text-cyan-400">Klass.new(...)</code> with positional arguments runs the constructor</strong>, like <code class="text-cyan-400">new Klass(...)</code> (it raised <code class="text-cyan-400">new() expects a Hash of attributes</code>). One hash, named arguments or none still assign attributes.</li>
+        </ul>
+
+        <h3 id="unreleased-orm" class="text-xl font-semibold text-white mb-4 scroll-mt-24">ORM</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white"><code class="text-cyan-400">value_field :total, Amount</code>.</strong> A model field that holds a value object: stored as an object of its fields (JSON on the SQL adapters), read back as the value object, and refused as a validation error when it is anything else. With model invariants, an aggregate&rsquo;s rules live on the model. <a href="/docs/database/validations#value-fields-and-invariants" class="text-cyan-400 hover:underline">Guide</a>.</li>
+        </ul>
+
+        <h3 id="unreleased-web" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Web</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">An uncaught <code class="text-cyan-400">DomainError</code> answers 422 with its message.</strong> A broken business rule is a response, not a crash: the error page shows the message, <code class="text-cyan-400">static http_status: Int = 409</code> picks another status, nothing is logged as a 500, and the action stays on the VM. <a href="/docs/language/error-handling#error-classes" class="text-cyan-400 hover:underline">Guide</a>.</li>
         </ul>
 
         <h3 id="unreleased-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">A typed <code class="text-cyan-400">catch</code> as the last clause no longer rethrows on the VM</strong> after running its body (scripts and served actions).</li>
+            <li><strong class="text-white">Enum files load before the models</strong>, wherever they sit under <code class="text-cyan-400">app/models/</code>, so <code class="text-cyan-400">enum_field :status, Status</code> no longer depends on file names.</li>
+            <li><strong class="text-white">A standalone script that declares a model runs</strong> &mdash; on the tree-walker, which passes the class to <code class="text-cyan-400">validates</code>, <code class="text-cyan-400">has_many</code> and the rest of the model DSL (it failed with <code class="text-cyan-400">expected 3, got 2</code>).</li>
         </ul>
     </section>
 

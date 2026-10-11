@@ -2825,6 +2825,44 @@ pub fn register_model_builtins(env: &mut Environment) {
         })),
     );
 
+    // value_field(:total, Amount) — the field holds a value object: saved as
+    // a hash of its fields, read back as the value object. `"Amount"` (a
+    // string) works too, for a value object declared in a file that loads
+    // later.
+    env.define(
+        "value_field".to_string(),
+        Value::NativeFunction(NativeFunction::new("value_field", Some(3), |args| {
+            let class_name = get_class_name_from_class(args)?;
+            let field = match args.get(1) {
+                Some(Value::String(s)) | Some(Value::Symbol(s)) => s.to_string(),
+                _ => {
+                    return Err(
+                        "value_field(field, ValueClass) expects a symbol or string field name"
+                            .to_string(),
+                    )
+                }
+            };
+            let value_class = match args.get(2) {
+                Some(Value::Class(c)) if c.is_value_object() => c.name.clone(),
+                Some(Value::String(s)) => s.to_string(),
+                other => {
+                    return Err(format!(
+                        "value_field(:{field}, ValueClass) expects a class that inherits \
+                         ValueObject (or its name as a string), got {}",
+                        other
+                            .map(|v| match v {
+                                Value::Class(c) => format!("class {}", c.name),
+                                v => v.type_name(),
+                            })
+                            .unwrap_or_else(|| "nothing".to_string())
+                    ))
+                }
+            };
+            super::registry::register_value_field(&class_name, &field, &value_class);
+            Ok(Value::Null)
+        })),
+    );
+
     // scope(name, fn) - Register a named scope on a model. The class is
     // auto-prepended in class bodies (see `executor/statements.rs`), so user
     // code reads naturally:

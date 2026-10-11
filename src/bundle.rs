@@ -411,7 +411,7 @@ impl BundleBuilder {
 pub const AST_BLOB_MAGIC: &[u8; 5] = b"SLAST";
 /// Bump on ANY change to the AST types: rmp of derived enums is not stable
 /// across variant/field reordering, so a mismatch must be a hard error.
-pub const AST_FORMAT_VERSION: u8 = 1;
+pub const AST_FORMAT_VERSION: u8 = 2; // 2: ClassDecl.invariants
 
 /// True when the bytes are a serialized-AST blob rather than source text.
 pub fn is_ast_blob(data: &[u8]) -> bool {

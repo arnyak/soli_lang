@@ -252,6 +252,11 @@ impl Linter {
         for s in &decl.class_statements {
             self.lint_stmt(s);
         }
+        for invariant in &decl.invariants {
+            for s in &invariant.body {
+                self.lint_stmt(s);
+            }
+        }
 
         // Lint nested classes
         for nested in &decl.nested_classes {

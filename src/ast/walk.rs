@@ -61,6 +61,9 @@ impl Walker<'_> {
             self.stmts(block);
         }
         self.stmts(&class.class_statements);
+        for invariant in &class.invariants {
+            self.stmts(&invariant.body);
+        }
         for hook in class.included_hooks.iter().chain(&class.extended_hooks) {
             self.stmts(hook);
         }

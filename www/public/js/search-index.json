@@ -3911,6 +3911,60 @@
       ]
     },
     {
+      "title": "ValueObject",
+      "type": "class",
+      "category": "Language",
+      "path": "/docs/language/value-objects#kw-value-object",
+      "signature": "class Amount < ValueObject; cents: Int; invariant(:cents, \"must not be negative\") { @cents >= 0 }; end",
+      "description": "Base class for immutable value objects: built from their fields, equal by value, frozen after construction, copied with with(...), checked by invariants",
+      "keywords": [
+        "value object",
+        "valueobject",
+        "immutable",
+        "invariant",
+        "with",
+        "ddd",
+        "domain-driven design",
+        "equality",
+        "to_h"
+      ]
+    },
+    {
+      "title": "Value Objects",
+      "type": "guide",
+      "category": "Language",
+      "path": "/docs/language/value-objects",
+      "signature": "Amount.new(500, \"EUR\") == Amount.new(500)",
+      "description": "Immutable types equal by value, invariants raising InvariantViolation, with(...) copies, and value_field on models",
+      "keywords": [
+        "value object",
+        "invariant",
+        "InvariantViolation",
+        "DomainError",
+        "with",
+        "value_field",
+        "ddd",
+        "aggregate",
+        "immutable"
+      ]
+    },
+    {
+      "title": "value_field",
+      "type": "dsl",
+      "category": "Database",
+      "path": "/docs/database/validations#value-fields-and-invariants",
+      "signature": "value_field :total, Amount",
+      "description": "Store a value object in a model field (an object of its fields) and read it back as the value object; model invariants become validation errors",
+      "keywords": [
+        "value_field",
+        "value object",
+        "invariant",
+        "model",
+        "aggregate",
+        "ddd"
+      ]
+    },
+    {
       "title": "import",
       "type": "keyword",
       "category": "Language",

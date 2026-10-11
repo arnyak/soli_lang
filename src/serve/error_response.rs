@@ -63,6 +63,16 @@ pub(super) fn page(status: u16, message: &str) -> ResponseData {
     )
 }
 
+/// [`page`] showing `message` itself: it was written for the visitor (a
+/// `DomainError`'s).
+pub(super) fn public_page(status: u16, message: &str) -> ResponseData {
+    let request_id = Uuid::new_v4().to_string();
+    html(
+        status,
+        error_pages::render_public_error_page(status, message, &request_id),
+    )
+}
+
 /// [`page`], preceded by the `[WARN] request_id=… METHOD PATH - STATUS` line
 /// the request path writes when it refuses a request outright.
 ///

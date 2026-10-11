@@ -379,6 +379,10 @@ pub fn tree_walker_reason(program: &ast::Program) -> Option<String> {
         if let StmtKind::Class(class) = &stmt.kind {
             if class.methods.iter().any(|m| m.name == "method_missing") {
                 reason = Some("`method_missing`".to_string());
+            } else if let Some(name) = class.class_statements.iter().find_map(class_body_call) {
+                // The VM compiles a class body's DSL calls as plain calls:
+                // `validates(...)` would miss the class it declares on.
+                reason = Some(format!("a class-body `{name}`"));
             }
         }
     };
@@ -414,6 +418,20 @@ pub fn tree_walker_reason(program: &ast::Program) -> Option<String> {
     };
     ast::walk::walk_program(program, &mut on_stmt, &mut on_expr);
     reason.or(found)
+}
+
+/// The function a class-body statement calls (`validates`, `has_many`…).
+fn class_body_call(stmt: &ast::Stmt) -> Option<&str> {
+    match &stmt.kind {
+        ast::stmt::StmtKind::Expression(expr) => match &expr.kind {
+            ast::expr::ExprKind::Call { callee, .. } => match &callee.kind {
+                ast::expr::ExprKind::Variable(name) => Some(name.as_str()),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// A bare name the tree-walker would call and the VM would not: a function

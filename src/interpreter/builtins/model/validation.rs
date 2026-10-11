@@ -968,7 +968,87 @@ pub fn run_validations(
         }
     }
 
+    // `value_field`s hold their value object — or a hash of its fields, which
+    // is what a stored document or a merged update carries.
+    for (field, value_class) in super::registry::get_value_fields(class_name) {
+        match lookup_field(data, &field) {
+            None | Some(Value::Null) | Some(Value::Hash(_)) => {}
+            Some(Value::Instance(inst)) if is_instance_of(&inst.borrow().class, &value_class) => {}
+            Some(_) => errors.push(ValidationError::new(
+                &field,
+                format!("must be a {value_class}"),
+            )),
+        }
+    }
+
+    // Invariants run last, and only on a record that passed everything else:
+    // a `nil` total reports "can't be blank" rather than crashing the rule.
+    if errors.is_empty() {
+        if let Some(class) = class {
+            run_model_invariants(class_name, class, data, &mut errors)?;
+        }
+    }
+
     Ok(errors)
+}
+
+fn is_instance_of(class: &Class, name: &str) -> bool {
+    class.name == name
+        || class
+            .superclass
+            .as_ref()
+            .is_some_and(|s| is_instance_of(s, name))
+}
+
+/// A model's `invariant(...)` rules on a record built from `data` (value
+/// fields as their value objects): a falsy one is an error on its field, or
+/// on `_base`.
+fn run_model_invariants(
+    class_name: &str,
+    class: &Rc<Class>,
+    data: &Value,
+    errors: &mut Vec<ValidationError>,
+) -> Result<(), String> {
+    let invariants = crate::interpreter::domain::invariants_of(class);
+    if invariants.is_empty() {
+        return Ok(());
+    }
+    let value_fields = super::registry::get_value_fields(class_name);
+    let mut record = Instance::new(class.clone());
+    if let Value::Hash(hash) = data {
+        for (key, value) in hash.borrow().iter() {
+            if let HashKey::String(name) = key {
+                let value = match value_fields.iter().find(|(f, _)| f == name.as_ref()) {
+                    Some((_, value_class)) if matches!(value, Value::Hash(_)) => {
+                        crate::interpreter::domain::hydrate(value_class, value)
+                            .unwrap_or_else(|| value.clone())
+                    }
+                    _ => value.clone(),
+                };
+                record.set(name.clone(), value);
+            }
+        }
+    }
+    let record = Rc::new(RefCell::new(record));
+    for invariant in invariants {
+        let func = class.find_method(&invariant.method).ok_or_else(|| {
+            format!(
+                "{class_name}: the invariant \"{}\" can only be checked on a model loaded by \
+                 the interpreter (app/models)",
+                invariant.message
+            )
+        })?;
+        let mut env = Environment::with_enclosing(func.closure.clone());
+        env.define("this".to_string(), Value::Instance(record.clone()));
+        let held = run_validator_body(&func, env, "invariant")?;
+        if !held.is_truthy() {
+            errors.push(ValidationError::new(
+                invariant.field.as_deref().unwrap_or("_base"),
+                invariant.message.clone(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

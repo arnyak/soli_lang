@@ -234,6 +234,22 @@ pub struct ClassDecl {
     /// Methods from `class_methods do … end` — become class methods on include.
     #[serde(default)]
     pub concern_class_methods: Vec<MethodDecl>,
+    /// `invariant("message") { … }` rules: a value object checks them once
+    /// constructed (a falsy one throws `InvariantViolation`), a model before
+    /// it saves (a falsy one is a validation error).
+    #[serde(default)]
+    pub invariants: Vec<InvariantDecl>,
+    pub span: Span,
+}
+
+/// `invariant("cents must not be negative") { @cents >= 0 }`, optionally
+/// about one field: `invariant(:total, "must be positive") { … }`. The block
+/// runs with the instance as `this`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InvariantDecl {
+    pub field: Option<String>,
+    pub message: String,
+    pub body: Vec<Stmt>,
     pub span: Span,
 }
 
@@ -467,6 +483,7 @@ impl EnumDecl {
             included_hooks: Vec::new(),
             extended_hooks: Vec::new(),
             concern_class_methods: Vec::new(),
+            invariants: Vec::new(),
             span,
         }
     }

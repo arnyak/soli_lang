@@ -1,0 +1,117 @@
+<div>
+    <!-- Hero Section -->
+    <div class="mb-12">
+        <nav class="flex items-center gap-2 text-sm mb-4">
+            <a href="/docs/language" class="text-gray-400 hover:text-white transition-colors">Language</a>
+            <svg class="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+            <span class="text-white">Value Objects</span>
+        </nav>
+        <h1 class="text-4xl font-bold tracking-tight text-white sm:text-5xl mb-6">
+            <span class="bg-gradient-to-r from-orange-400 to-orange-400 bg-clip-text text-transparent">Value Objects</span>
+        </h1>
+        <p class="text-xl text-gray-300 leading-8">
+            Small immutable types defined by their fields &mdash; an amount of money, an email address, a date range. Two with the same fields are the same value, none can change once built, and the rules they obey are checked every time one is made.
+        </p>
+    </div>
+
+    <!-- Declaring -->
+    <section id="kw-value-object" class="scroll-mt-20 mb-12">
+        <h2 class="text-2xl font-bold text-white mb-4">Declaring a value object</h2>
+        <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+            <p class="text-gray-400 mb-3">Inherit the built-in <code class="text-orange-400">ValueObject</code> and declare fields, defaults included. Methods are ordinary methods; one that &ldquo;changes&rdquo; the value returns a new one.</p>
+            <pre data-filename="app/models/values/amount.sl"><code class="language-soli text-sm">class Amount &lt; ValueObject
+  cents: Int
+  currency: String = "EUR"
+
+  invariant(:cents, "must not be negative") { @cents &gt;= 0 }
+
+  def plus(other: Amount) -&gt; Amount
+    @with(cents: @cents + other.cents)
+  end
+end</code></pre>
+        </div>
+    </section>
+
+    <!-- Building -->
+    <section id="section-build" class="scroll-mt-20 mb-12">
+        <h2 class="text-2xl font-bold text-white mb-4">Building one</h2>
+        <p class="text-gray-400 mb-4">Without a constructor, the arguments fill the declared fields &mdash; in order, by name, or from a hash &mdash; and a field left out takes its default.</p>
+        <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-soli text-sm">Amount.new(500, "USD")
+Amount.new(cents: 500)            # currency: "EUR"
+Amount.new({"cents": 500})        # a hash, from JSON or params
+new Amount(500)                   # the same as Amount.new(500)
+Amount.new(1, "EUR", 3)           # error: Amount takes 2 fields (cents, currency), got 3 arguments</code></pre>
+            </div>
+        </div>
+        <p class="text-gray-400 mb-4">A class that normalises its input keeps a constructor. It runs while the object is still writable, and the invariants run on what it stored:</p>
+        <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-soli text-sm">class Email &lt; ValueObject
+  address: String
+
+  new(address: String)
+    @address = address.trim.downcase
+  end
+
+  invariant("must contain @") { @address.includes?("@") }
+end
+
+Email.new("  Ada@Example.COM ").address   # "ada@example.com"</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- Equality -->
+    <section id="section-equality" class="scroll-mt-20 mb-12">
+        <h2 class="text-2xl font-bold text-white mb-4">Equality, immutability, copies</h2>
+        <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-soli text-sm">a = Amount.new(500)
+a == Amount.new(500, "EUR")              # true &mdash; same fields, same value
+[a].includes?(Amount.new(500))           # true; uniq works the same way
+
+a.cents = 1                              # error: value objects are immutable &mdash;
+                                         # build a changed copy with with(cents: …)
+b = a.with(cents: 600)                   # a copy; `a` is unchanged
+c = a.with({"currency": "USD"})          # changes as a hash work too
+
+a.to_h                                   # {"cents" =&gt; 500, "currency" =&gt; "EUR"}
+print(a)                                 # Amount(cents: 500, currency: "EUR")</code></pre>
+            </div>
+        </div>
+        <p class="text-gray-400"><code class="text-orange-400">with</code> rebuilds the copy through the constructor, so normalisation and invariants apply to it too. A value object cannot be a hash key yet (<code>Cannot use Amount as hash key</code>): key by <code>a.to_s</code> or by its fields.</p>
+    </section>
+
+    <!-- Invariants -->
+    <section id="section-invariants" class="scroll-mt-20 mb-12">
+        <h2 class="text-2xl font-bold text-white mb-4">Invariants</h2>
+        <p class="text-gray-400 mb-4"><code class="text-orange-400">invariant("message") { condition }</code> &mdash; or <code class="text-orange-400">invariant(:field, "message") { … }</code> to name the field it is about &mdash; declares a rule. The block reads the fields with <code>@</code>; a falsy result throws an <code class="text-orange-400">InvariantViolation</code>, which is a <a href="/docs/language/error-handling#error-classes" class="text-cyan-300 hover:underline"><code>DomainError</code></a>.</p>
+        <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-soli text-sm">try
+  Amount.new(-5)
+catch InvariantViolation e
+  print(e.message)            # Amount: must not be negative
+  print(e.details["field"])   # cents
+end</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- Models -->
+    <section id="section-models" class="scroll-mt-20 mb-12">
+        <h2 class="text-2xl font-bold text-white mb-4">In models</h2>
+        <p class="text-gray-400 mb-4"><code class="text-orange-400">value_field :total, Amount</code> stores a value object in a model field and reads it back as one, and <code class="text-orange-400">invariant(...)</code> on a model becomes a validation error instead of an exception &mdash; see <a href="/docs/database/validations#value-fields-and-invariants" class="text-cyan-300 hover:underline">Value fields &amp; invariants</a>.</p>
+        <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+            <div class="text-sm text-gray-400 space-y-2">
+                <div><strong class="text-white">Load order.</strong> A file under <code>app/models/</code> that declares a value object (or an enum) loads before the models, wherever it sits &mdash; <code>app/models/values/amount.sl</code> is found by <code>app/models/invoice.sl</code>.</div>
+                <div><strong class="text-white">Both engines.</strong> Construction, equality, <code>with</code> and invariants behave the same in scripts, in models and in controller actions run on the VM.</div>
+            </div>
+        </div>
+    </section>
+
+</div>

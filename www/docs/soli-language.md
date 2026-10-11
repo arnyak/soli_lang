@@ -1021,7 +1021,7 @@ class InsufficientFunds < DomainError
 end
 
 try
-  throw new InsufficientFunds("balance too low", {"needed": 30})
+  throw InsufficientFunds.new("balance too low", {"needed": 30})   # or: new InsufficientFunds(…)
 catch DomainError e
   print(e.message)            # balance too low
   print(e.details["needed"])  # 30
@@ -1048,6 +1048,22 @@ Built in: `Error`, with `ValueError`, `TypeError`, `KeyError`, `IndexError` and
 raises, as opposed to a bug — with `InvariantViolation` under it. Errors Soli
 itself raises (a missing method, a failed query) still reach `catch` as strings,
 so a typed catch does not match them; a bare `catch e` does.
+
+**Uncaught in a served app, a `DomainError` is a response, not a crash:** the
+request answers `422` with the error page showing its message (an
+`app/views/errors/422.html.slv` receives it as `message`). A class picks
+another status with `static http_status`. Like a `find` miss, it writes no
+error block to the log and the action stays on the VM; any other uncaught
+throw is still a 500.
+
+```soli
+class StaleInvoice < DomainError
+  static http_status: Int = 409
+end
+
+# in an action: answers 409 "invoice changed since you loaded it"
+throw StaleInvoice.new("invoice changed since you loaded it")
+```
 
 ### What `catch` receives
 
@@ -3421,8 +3437,8 @@ warning: match on enum 'Status' is not exhaustive — missing: Archived (add the
 
 Declare `enum_field :name, EnumType` on a model and the column round-trips
 automatically: a unit variant is stored as its tag string, a payload variant as
-a tagged object, and reads rebuild the enum value. Define the enum **above** the
-model so it loads first.
+a tagged object, and reads rebuild the enum value. A file under `app/models/`
+that declares an enum loads before the models, so the model finds it.
 
 ```soli
 # app/models/order.sl
@@ -3487,6 +3503,99 @@ What lands in the database column:
 To rebuild an enum from a stored value by hand (e.g. a webhook payload), use
 `Status.parse(value)` — it accepts either form. (The factory is `parse`, not
 `from`, because `from` is a reserved word.)
+
+---
+
+## Value Objects
+
+A value object is a small immutable type defined by its fields — an amount of
+money, an email address, a date range. Two of them with the same fields are
+the same value, it cannot change after it is built, and rules it must obey
+(its **invariants**) are checked every time one is made. Inherit the built-in
+`ValueObject`:
+
+```soli
+class Amount < ValueObject
+  cents: Int
+  currency: String = "EUR"
+
+  invariant(:cents, "must not be negative") { @cents >= 0 }
+
+  def plus(other: Amount) -> Amount
+    @with(cents: @cents + other.cents)
+  end
+end
+```
+
+### Building one
+
+Without a constructor, the arguments fill the declared fields — in order, by
+name, or from a hash — and a field left out takes its default:
+
+```soli
+Amount.new(500, "USD")
+Amount.new(cents: 500)            # currency: "EUR"
+Amount.new({"cents": 500})        # a hash, from JSON or params
+new Amount(500)                   # the same as Amount.new(500)
+Amount.new(1, "EUR", 3)           # error: Amount takes 2 fields (cents, currency), got 3 arguments
+```
+
+A class that needs to normalise its input keeps a constructor; it runs while
+the object is still writable, and the invariants run on what it stored:
+
+```soli
+class Email < ValueObject
+  address: String
+
+  new(address: String)
+    @address = address.trim.downcase
+  end
+
+  invariant("must contain @") { @address.includes?("@") }
+end
+
+Email.new("  Ada@Example.COM ").address   # "ada@example.com"
+```
+
+### Equality, immutability, copies
+
+```soli
+a = Amount.new(500)
+a == Amount.new(500, "EUR")              # true — same fields, same value
+[a].includes?(Amount.new(500))           # true; uniq works the same way
+
+a.cents = 1                              # error: value objects are immutable —
+                                         # build a changed copy with with(cents: …)
+b = a.with(cents: 600)                   # a copy; `a` is unchanged
+c = a.with({"currency": "USD"})          # changes as a hash work too
+
+a.to_h                                   # {"cents" => 500, "currency" => "EUR"}
+print(a)                                 # Amount(cents: 500, currency: "EUR")
+```
+
+`with` rebuilds the copy through the constructor, so normalisation and
+invariants apply to it as well. A value object cannot be a hash key yet
+(`Cannot use Amount as hash key`): key by `a.to_s` or by its fields.
+
+### Invariants
+
+`invariant("message") { condition }` — or `invariant(:field, "message") { … }`
+to name the field it is about — declares a rule. The block reads the fields
+with `@`; a falsy result throws an `InvariantViolation`, a `DomainError`:
+
+```soli
+try
+  Amount.new(-5)
+catch InvariantViolation e
+  print(e.message)            # Amount: must not be negative
+  print(e.details["field"])   # cents
+end
+```
+
+Invariants also work on models, where they become validation errors instead
+of exceptions — see [Validations → Value fields and invariants](/docs/database/validations#value-fields-and-invariants).
+A value object in its own file under `app/models/` loads before the models,
+so `value_field :total, Amount` finds it wherever it sits.
 
 ---
 

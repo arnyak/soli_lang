@@ -100,7 +100,11 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
             // parent counts, a subclass can refuse rows outside its
             // hierarchy, and validations see the whole record rather than
             // just the changed fields.
-            let has_validations = class_has_validations(&class_name);
+            // `value_field`s and invariants are checked like validations.
+            let has_validations = class_has_validations(&class_name)
+                || !super::registry::get_value_fields(&class_name).is_empty()
+                || super::core::get_class_rc_from_args(args)
+                    .is_ok_and(|c| !crate::interpreter::domain::invariants_of(&c).is_empty());
             let needs_preread = super::counter_cache::class_has_counter_caches(&class_name)
                 || super::registry::is_sti_subclass(&class_name)
                 || has_validations;

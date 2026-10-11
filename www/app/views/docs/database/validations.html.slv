@@ -291,6 +291,46 @@ end</code></pre>
         (the SQL path used to skip that call&rsquo;s <code>format</code>/<code>numericality</code>/<code>min</code>/<code>max</code>).
     </p>
 
+    <h2 id="value-fields-and-invariants" class="text-2xl font-bold text-white mb-6">Value Fields &amp; Invariants</h2>
+    <p class="text-gray-400 mb-4">
+        A model can hold a <a href="/docs/language/value-objects" class="text-cyan-300 hover:underline">value object</a> in a field and state rules about the whole record &mdash; the aggregate side of domain-driven design, without leaving <code>Model</code>.
+    </p>
+
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+            <pre data-filename="app/models/invoice.sl"><code class="language-soli text-sm"># app/models/values/amount.sl — value objects load before the models
+class Amount &lt; ValueObject
+  cents: Int
+  currency: String = "EUR"
+  invariant(:cents, "must not be negative") { @cents &gt;= 0 }
+end
+
+class Invoice &lt; Model
+  value_field :total, Amount
+  validates("number", {"presence": true})
+  invariant(:total, "total must be positive") { @total.cents &gt; 0 }
+end</code></pre>
+        </div>
+    </div>
+
+    <p class="text-gray-400 mb-4">
+        <code class="text-orange-400">value_field :name, ValueClass</code> stores the value object as an object of its fields (<code>{"cents": 900, "currency": "EUR"}</code> &mdash; a JSON column on the SQL adapters) and reads it back as the value object. The field accepts the value object or a hash of its fields; anything else is a validation error (<code>must be a Amount</code>). The class can also be named as a string, <code>value_field :total, "Amount"</code>.
+    </p>
+
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">invoice = Invoice.create({"number": "F-1", "total": Amount.new(900)})
+Invoice.find(invoice._key).total                    # Amount(cents: 900, currency: "EUR")
+
+refused = Invoice.create({"number": "F-2", "total": Amount.new(0)})
+refused._errors     # [{"field": "total", "message": "total must be positive"}]</code></pre>
+        </div>
+    </div>
+
+    <p class="text-gray-400 mb-12">
+        <code class="text-orange-400">invariant(...)</code> on a model is a validation rule: a falsy block adds <code>{ field, message }</code> to <code>_errors</code> (field <code>_base</code> when the invariant names none) and the record is not saved. Invariants run after every other validation has passed, on a record whose value fields are value objects &mdash; so <code>@total.cents</code> is safe, and a missing total is reported by <code>presence</code> rather than by a crash in the rule. They run on <code>create</code>, <code>save</code>, <code>update</code> and the static <code>Model.update(key, changes)</code> alike. To raise instead of collecting, throw a <a href="/docs/language/error-handling#error-classes" class="text-cyan-300 hover:underline"><code>DomainError</code></a>: uncaught, it answers 422 with its message.
+    </p>
+
     <h2 class="text-2xl font-bold text-white mb-6">Custom Methods on Models</h2>
     <p class="text-gray-400 mb-4">
         Define instance methods directly in your model class to encapsulate business logic.

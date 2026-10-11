@@ -1218,3 +1218,14 @@ fn a_class_type_pattern_keeps_its_name() {
     let src = "x = match v {\n  shape: Shape => 1,\n  _ => 0,\n}\n";
     assert_fmt(src, src);
 }
+
+#[test]
+fn invariants_survive_formatting() {
+    // Invariants sit in their own AST list: the printer dropped them.
+    let src = "class Amount < ValueObject\n  cents: Int\n  invariant(:cents, \"must not be negative\") { @cents >= 0 }\n  invariant(\"cents fit\") { @cents < 100 }\nend\n";
+    assert_fmt(
+        src,
+        "class Amount < ValueObject\n  cents: Int\n  invariant(:cents, \"must not be negative\") do\n    @cents >= 0\n  end\n  invariant(\"cents fit\") do\n    @cents < 100\n  end\nend\n",
+    );
+    assert_idempotent(src);
+}

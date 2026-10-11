@@ -229,6 +229,7 @@ impl Parser {
                     included_hooks: Vec::new(),
                     extended_hooks: Vec::new(),
                     concern_class_methods: Vec::new(),
+                    invariants: Vec::new(),
                     span,
                 }),
                 span,
@@ -250,6 +251,7 @@ impl Parser {
         let mut included_hooks = Vec::new();
         let mut extended_hooks = Vec::new();
         let mut concern_class_methods = Vec::new();
+        let mut invariants = Vec::new();
         // Ruby-style section: a `private` / `protected` / `public` alone on its
         // line applies to every method declared after it, until the next one.
         let mut section_visibility = Visibility::Public;
@@ -317,6 +319,8 @@ impl Parser {
             } else if self.check(&TokenKind::Fn) {
                 let method_visibility = explicit_visibility.unwrap_or(section_visibility);
                 methods.push(self.parse_method(method_visibility, is_static)?);
+            } else if self.is_invariant() {
+                invariants.push(self.parse_invariant()?);
             } else if self.is_class_level_statement() {
                 // Parse class-level statements like validates(...), before_save(...)
                 class_statements.push(self.parse_class_level_statement()?);
@@ -350,6 +354,7 @@ impl Parser {
                 included_hooks,
                 extended_hooks,
                 concern_class_methods,
+                invariants,
                 span,
             }),
             span,
@@ -554,6 +559,72 @@ impl Parser {
         ))
     }
 
+    /// `invariant(` / `invariant "…"` / `invariant :field` in a class body.
+    /// `invariant: Bool` stays a field declaration.
+    fn is_invariant(&self) -> bool {
+        matches!(&self.peek().kind, TokenKind::Identifier(name) if name == "invariant")
+            && matches!(
+                self.tokens.get(self.current + 1).map(|t| &t.kind),
+                Some(
+                    TokenKind::LeftParen
+                        | TokenKind::StringLiteral(_)
+                        | TokenKind::SymbolLiteral(_)
+                )
+            )
+    }
+
+    /// `invariant("message") { … }`, `invariant "message" do … end`, or
+    /// either with a field first (`invariant(:total, "must be positive") { … }`).
+    /// The message is a string literal, the block is required.
+    fn parse_invariant(&mut self) -> ParseResult<crate::ast::stmt::InvariantDecl> {
+        use crate::ast::expr::Argument;
+        let start = self.current_span();
+        let stmt = self.parse_class_level_statement()?;
+        let span = start.merge(&stmt.span);
+        let usage = || {
+            ParserError::general(
+                "an invariant is `invariant(\"message\") { condition }` — or \
+                 `invariant(:field, \"message\") { condition }`, with a string message \
+                 and a block",
+                span,
+            )
+        };
+        let StmtKind::Expression(expr) = stmt.kind else {
+            return Err(usage());
+        };
+        let ExprKind::Call { arguments, .. } = expr.kind else {
+            return Err(usage());
+        };
+        let mut texts = Vec::new();
+        let mut body = None;
+        for argument in arguments {
+            match argument {
+                Argument::Positional(e) => match e.kind {
+                    ExprKind::StringLiteral(s) => texts.push((false, s)),
+                    ExprKind::Symbol(s) => texts.push((true, s)),
+                    _ => return Err(usage()),
+                },
+                Argument::Block(e) => match e.kind {
+                    ExprKind::Lambda { body: stmts, .. } => body = Some(stmts),
+                    _ => return Err(usage()),
+                },
+                Argument::Named(_) => return Err(usage()),
+            }
+        }
+        let body = body.ok_or_else(usage)?;
+        let (field, message) = match texts.as_slice() {
+            [(false, message)] => (None, message.clone()),
+            [(_, field), (false, message)] => (Some(field.clone()), message.clone()),
+            _ => return Err(usage()),
+        };
+        Ok(crate::ast::stmt::InvariantDecl {
+            field,
+            message,
+            body,
+            span,
+        })
+    }
+
     /// Check if the current token starts a class-level statement (e.g., validates(...))
     fn is_class_level_statement(&self) -> bool {
         // Check for identifier followed by left paren
@@ -580,6 +651,7 @@ impl Parser {
                 "attr_accessible",
                 "encrypts",
                 "enum_field",
+                "value_field",
                 "state_machine",
                 "edge",
                 "timeseries",

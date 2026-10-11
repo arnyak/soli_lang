@@ -759,6 +759,13 @@ impl Interpreter {
                         format!("<{} instance>", inst_ref.class.name).into(),
                     ));
                 }
+                if crate::interpreter::domain::value_objects_declared()
+                    && inst_ref.class.is_value_object()
+                {
+                    return Ok(Value::String(
+                        Value::Instance(inst.clone()).to_string().into(),
+                    ));
+                }
                 let mut s = format!("<{}", inst_ref.class.name);
                 let mut first = true;
                 for (k, v) in inst_ref.fields.iter() {
@@ -1041,6 +1048,14 @@ impl Interpreter {
                             }
                         };
 
+                        {
+                            let class = inst_clone.borrow().class.clone();
+                            crate::interpreter::domain::check_writable(
+                                &inst_clone,
+                                &class,
+                                &var_name,
+                            )?;
+                        }
                         inst_clone.borrow_mut().set(var_name, value.clone());
                         Ok(value)
                     },
@@ -1860,50 +1875,29 @@ impl Interpreter {
             return Ok(value);
         }
 
+        // `Amount.new(500, "EUR")` on a value object is `Amount(500, "EUR")`:
+        // the class itself, so the call runs its constructor (or binds the
+        // fields) and its invariants. The attribute-hash form below would
+        // build one around them.
+        if name == "new"
+            && crate::interpreter::domain::value_objects_declared()
+            && class.is_value_object()
+        {
+            return Ok(class_val.clone());
+        }
+
         // ClassName.new() — instantiate, with an optional hash of attributes
-        // that are bulk-assigned to the new instance's fields. Framework-
-        // internal `_`-prefixed keys are skipped.
+        // that are bulk-assigned to the new instance's fields (see
+        // `new_with_attributes`). With other arguments the call itself runs
+        // the constructor (`Interpreter::class_new`); this is the bare read.
         if name == "new" {
             let class_val = class_val.clone();
             return Ok(Value::NativeFunction(NativeFunction::new(
                 "new",
                 None,
-                move |args| {
-                    if args.len() > 1 {
-                        return Err(format!(
-                            "new() expects 0 or 1 arguments, got {}",
-                            args.len()
-                        ));
-                    }
-                    let class_rc = match &class_val {
-                        Value::Class(c) => c.clone(),
-                        _ => unreachable!(),
-                    };
-                    let instance = Rc::new(RefCell::new(crate::interpreter::value::Instance::new(
-                        class_rc,
-                    )));
-                    match args.first() {
-                        None | Some(Value::Null) => {}
-                        Some(Value::Hash(pairs)) => {
-                            use crate::interpreter::value::HashKey;
-                            let mut inst_mut = instance.borrow_mut();
-                            for (k, v) in pairs.borrow().iter() {
-                                if let HashKey::String(field) = k {
-                                    if field.starts_with('_') {
-                                        continue;
-                                    }
-                                    inst_mut.set(field.clone().to_string(), v.clone());
-                                }
-                            }
-                        }
-                        Some(other) => {
-                            return Err(format!(
-                                "new() expects a Hash of attributes, got {}",
-                                other.type_name()
-                            ));
-                        }
-                    }
-                    Ok(Value::Instance(instance))
+                move |args| match &class_val {
+                    Value::Class(class) => new_with_attributes(class, args),
+                    _ => unreachable!(),
                 },
             )));
         }
@@ -2991,4 +2985,75 @@ impl Interpreter {
             crate::interpreter::value::HashKey::Symbol(s) => format!(":{}", s),
         }
     }
+}
+
+/// `Klass.new` / `Klass.new({...})` / `Klass.new(nil)`: an instance with the
+/// hash's entries assigned to its fields — no constructor runs. Framework-
+/// internal `_`-prefixed keys are skipped. The shape `Klass.new(args)` with
+/// other arguments runs the constructor instead (`Interpreter::class_new`).
+pub fn new_with_attributes(
+    class: &Rc<crate::interpreter::value::Class>,
+    args: &[Value],
+) -> Result<Value, String> {
+    if args.len() > 1 {
+        return Err(format!(
+            "new() expects 0 or 1 arguments, got {}",
+            args.len()
+        ));
+    }
+    let instance = Rc::new(RefCell::new(crate::interpreter::value::Instance::new(
+        class.clone(),
+    )));
+    match args.first() {
+        None | Some(Value::Null) => {}
+        Some(Value::Hash(pairs)) => {
+            use crate::interpreter::value::HashKey;
+            let mut inst_mut = instance.borrow_mut();
+            for (k, v) in pairs.borrow().iter() {
+                if let HashKey::String(field) = k {
+                    if field.starts_with('_') {
+                        continue;
+                    }
+                    inst_mut.set(field.clone().to_string(), v.clone());
+                }
+            }
+        }
+        Some(other) => {
+            return Err(format!(
+                "new() expects a Hash of attributes, got {}",
+                other.type_name()
+            ));
+        }
+    }
+    Ok(Value::Instance(instance))
+}
+
+/// Whether `Klass.new(...)` with these arguments is the attribute-hash form
+/// (no constructor) rather than a constructor call: no arguments, one hash
+/// or `nil`, or named arguments only (which arrive as one hash).
+pub fn is_attribute_new(positional: &[Value], has_named: bool) -> bool {
+    match positional {
+        [] => true,
+        [Value::Hash(_) | Value::Null] => !has_named,
+        _ => false,
+    }
+}
+
+/// Whether `Klass.new(...)` on `class` is answered by the engines' call
+/// interceptors: not a model (its `new` is the ORM's), not a class with its
+/// own static `new`.
+pub fn intercepts_new(class: &crate::interpreter::value::Class) -> bool {
+    !class.is_model_subclass()
+        && !class.is_module
+        && class.find_static_method("new").is_none()
+        && class.find_vm_static_method("new").is_none()
+        && !has_native_static_new(class)
+}
+
+fn has_native_static_new(class: &crate::interpreter::value::Class) -> bool {
+    class.native_static_methods.contains_key("new")
+        || class
+            .superclass
+            .as_ref()
+            .is_some_and(|superclass| has_native_static_new(superclass))
 }

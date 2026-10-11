@@ -20,6 +20,7 @@ pub mod vm_array_methods;
 pub mod vm_callback_loop;
 pub mod vm_calls;
 pub mod vm_classes;
+pub mod vm_domain;
 pub mod vm_exceptions;
 pub mod vm_hash_methods;
 pub mod vm_int_methods;

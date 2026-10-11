@@ -113,6 +113,10 @@ impl TypeChecker {
                     "define_method" | "alias_method" | "class_eval" | "send" => {
                         return Ok(Type::Any)
                     }
+                    // `Klass.new(...)`: the constructor (or, with one hash,
+                    // the attribute form) — every class has it at run time.
+                    // Its arguments depend on the shape, so `Any`.
+                    "new" => return Ok(Type::Any),
                     "methods" => return Ok(Type::Array(Box::new(Type::String))),
                     "respond_to?" => {
                         return Ok(Type::Function {

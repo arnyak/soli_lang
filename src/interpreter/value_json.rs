@@ -264,6 +264,19 @@ pub fn value_to_json(value: &Value) -> Result<serde_json::Value, String> {
                     }
                     return Ok(serde_json::Value::Object(map));
                 }
+                // A value object is its fields, in declaration order — all of
+                // them: like a hash, it is data the app put there, and a
+                // `value_field` saved without one of them would not read back.
+                if crate::interpreter::domain::value_objects_declared()
+                    && borrow.class.is_value_object()
+                {
+                    let fields = crate::interpreter::domain::value_fields(&borrow);
+                    let mut map = serde_json::Map::with_capacity(fields.len());
+                    for (k, v) in &fields {
+                        map.insert(k.clone(), inner(v, depth + 1)?);
+                    }
+                    return Ok(serde_json::Value::Object(map));
+                }
                 // SEC-013: same filter as the `serde::Serialize` path —
                 // `value_to_json(user)` must not leak `password_hash` /
                 // `*_token` / framework-internal fields.

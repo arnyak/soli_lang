@@ -63,6 +63,7 @@ impl Compiler {
         for method in &decl.concern_class_methods {
             self.compile_method(method, line)?;
         }
+        self.compile_invariants(decl, line)?;
 
         if decl.is_module
             && (!decl.included_hooks.is_empty()
@@ -150,6 +151,47 @@ impl Compiler {
             self.emit(Op::Pop, line);
         }
 
+        Ok(())
+    }
+
+    /// Each `invariant(...) { … }` becomes a private method named after the
+    /// class, and their messages the static field `__invariants__` — the same
+    /// shape the tree-walker builds (see `interpreter::domain`).
+    fn compile_invariants(&mut self, decl: &ClassDecl, line: usize) -> CompileResult<()> {
+        if decl.invariants.is_empty() {
+            return Ok(());
+        }
+        use crate::ast::{Expr, ExprKind};
+        let mut rows = Vec::with_capacity(decl.invariants.len());
+        for (i, invariant) in decl.invariants.iter().enumerate() {
+            let method = MethodDecl {
+                visibility: crate::ast::stmt::Visibility::Private,
+                is_static: false,
+                name: crate::interpreter::domain::invariant_method_name(&decl.name, i),
+                params: Vec::new(),
+                return_type: None,
+                body: invariant.body.clone(),
+                span: invariant.span,
+            };
+            self.compile_method(&method, line)?;
+            let field = match &invariant.field {
+                Some(f) => ExprKind::StringLiteral(f.clone()),
+                None => ExprKind::Null,
+            };
+            rows.push(Expr::new(
+                ExprKind::Array(vec![
+                    Expr::new(
+                        ExprKind::StringLiteral(invariant.message.clone()),
+                        invariant.span,
+                    ),
+                    Expr::new(field, invariant.span),
+                ]),
+                invariant.span,
+            ));
+        }
+        self.compile_expr(&Expr::new(ExprKind::Array(rows), decl.span))?;
+        let name_idx = self.add_string_constant(crate::interpreter::domain::INVARIANTS_FIELD);
+        self.emit(Op::StaticField(name_idx), line);
         Ok(())
     }
 

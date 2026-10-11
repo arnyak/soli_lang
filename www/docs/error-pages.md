@@ -102,6 +102,7 @@ Soli includes built-in error pages for common HTTP status codes:
 | 403 | Forbidden |
 | 404 | Not Found |
 | 405 | Method Not Allowed |
+| 422 | Unprocessable Entity — also an uncaught `DomainError`, whose message the page shows |
 | 500 | Internal Server Error |
 | 502 | Bad Gateway |
 | 503 | Service Unavailable |

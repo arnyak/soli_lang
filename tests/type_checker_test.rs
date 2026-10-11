@@ -878,3 +878,79 @@ print(box[field])
 "#,
     );
 }
+
+// ---------- value objects and domain errors ----------
+
+#[test]
+fn value_objects_and_domain_errors_typecheck() {
+    check_ok(
+        r##"class Amount < ValueObject
+  cents: Int
+  currency: String = "EUR"
+  invariant(:cents, "cents must not be negative") { @cents >= 0 }
+
+  def plus(other)
+    Amount.new(@cents + other.cents, @currency)
+  end
+end
+class Email < ValueObject
+  address: String
+  new(address: String)
+    @address = address.trim.downcase
+  end
+  invariant("must contain @") { @address.includes?("@") }
+end
+a = Amount.new(500)
+b = a.with(cents: 600)
+print(a.cents, b.cents, b.currency)
+c = a.with({"currency": "USD"})
+print(c.to_h)
+print(a.plus(b) == Amount.new(1100, "EUR"))
+e = Email.new("  Ada@Example.COM ")
+print(e.address)
+print(e.with(address: "BOB@x.io").address)
+try
+  a.with(cents: -1)
+catch InvariantViolation err
+  print(err.message, err.details["field"])
+end
+try
+  a.with(cent: 3)
+catch err
+  print(err)
+end
+try
+  Email.new("nope")
+catch DomainError err
+  print(err.message)
+end
+class InsufficientFunds < DomainError
+end
+try
+  throw InsufficientFunds.new("balance too low", {"needed": 30})
+catch DomainError e
+  print(e.message, e.details["needed"])
+end
+class Policy
+  user: Any
+  record: Any
+  new(context)
+    @user = "ctor:" + str(context)
+  end
+end
+p = Policy.new({"user": "ada", "record": 1})
+print(p.user, p.record)
+q = Policy.new(user: "bob")
+print(q.user)
+r = Policy.new("ctx")
+print(r.user)
+class Amount2 < ValueObject
+  cents: Int
+  currency: String = "EUR"
+end
+print(Amount2.new({"cents": 5}).to_h)
+print(Amount2.new(cents: 7).to_h)
+print(Amount2.new(9, "USD").to_h)
+print(Amount2.new({"cents": 5}) == Amount2.new(5))"##,
+    );
+}

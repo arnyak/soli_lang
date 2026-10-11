@@ -308,6 +308,17 @@ impl Vm {
                     *ts, *use_utc, name, span,
                 )
             }
+            Value::Instance(inst)
+                if name == "with" && Self::is_value_object_for_with(object).is_some() =>
+            {
+                // `amount.with(cents: 600)` compiles to this read plus a
+                // named call; the marker lets `call_value_named` rebuild it.
+                let _ = inst;
+                Ok(Value::method(ValueMethod {
+                    receiver: Box::new(object.clone()),
+                    method_name: "with".to_string(),
+                }))
+            }
             Value::Instance(inst) => {
                 let inst_ref = inst.borrow();
                 // A model instance answers relations (`card.project`), preloads,
@@ -842,6 +853,11 @@ impl Vm {
     ) -> Result<(), RuntimeError> {
         match object {
             Value::Instance(inst) => {
+                {
+                    let inst_ref = inst.borrow();
+                    crate::interpreter::domain::check_writable(inst, &inst_ref.class, name)
+                        .map_err(|e| RuntimeError::type_error(e, span))?;
+                }
                 inst.borrow_mut().fields.insert(name.into(), value);
                 Ok(())
             }
@@ -906,9 +922,13 @@ impl Vm {
             new_class.is_module = sub.is_module;
             new_class.included_modules = sub.included_modules.clone();
             new_class.mixin_static_methods = sub.mixin_static_methods.clone();
+            new_class.declared_fields = sub.declared_fields.clone();
+            crate::interpreter::domain::note_class(&new_class);
             // Replace the class on top of the stack
+            let new_class = Rc::new(new_class);
+            crate::interpreter::domain::register_class(&new_class);
             let top = self.stack.len() - 1;
-            self.stack[top] = Value::Class(Rc::new(new_class));
+            self.stack[top] = Value::Class(new_class);
             Ok(())
         } else {
             Err(RuntimeError::type_error(

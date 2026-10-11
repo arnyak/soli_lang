@@ -679,6 +679,23 @@ impl Interpreter {
             }
         }
 
+        // Each `invariant(...) { … }` block becomes a private method, named
+        // after this class so a subclass's do not replace its parent's.
+        for (i, invariant) in decl.invariants.iter().enumerate() {
+            let method_decl = crate::ast::stmt::MethodDecl {
+                visibility: crate::ast::stmt::Visibility::Private,
+                is_static: false,
+                name: crate::interpreter::domain::invariant_method_name(&decl.name, i),
+                params: Vec::new(),
+                return_type: None,
+                body: invariant.body.clone(),
+                span: invariant.span,
+            };
+            let func = Function::from_method(&method_decl, method_env.clone(), source_path.clone());
+            private_members.insert(method_decl.name.clone());
+            methods.insert(method_decl.name.clone(), Rc::new(func));
+        }
+
         if !private_members.is_empty() || !protected_members.is_empty() {
             crate::interpreter::value::note_restricted_methods_declared();
         }
@@ -764,7 +781,26 @@ impl Interpreter {
             ..Default::default()
         };
 
+        *class.declared_fields.borrow_mut() = decl
+            .fields
+            .iter()
+            .filter(|f| !f.is_static)
+            .map(|f| f.name.clone())
+            .collect();
+        if !decl.invariants.is_empty() {
+            let specs: Vec<(String, Option<String>)> = decl
+                .invariants
+                .iter()
+                .map(|i| (i.message.clone(), i.field.clone()))
+                .collect();
+            class.static_fields.borrow_mut().insert(
+                crate::interpreter::domain::INVARIANTS_FIELD.to_string(),
+                crate::interpreter::domain::invariants_value(&specs),
+            );
+        }
+        crate::interpreter::domain::note_class(&class);
         let class_rc = Rc::new(class);
+        crate::interpreter::domain::register_class(&class_rc);
         if !decl.included_hooks.is_empty() {
             *class_rc.included_hook_stmts.borrow_mut() = decl.included_hooks.clone();
         }

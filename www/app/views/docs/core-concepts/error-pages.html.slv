@@ -208,6 +208,10 @@ this.page_owner           # controller instance vars</code></pre>
                         <td class="py-3 px-4 text-gray-300">Method Not Allowed</td>
                     </tr>
                     <tr class="hover:bg-white/5">
+                        <td class="py-3 px-4 text-yellow-400 font-mono">422</td>
+                        <td class="py-3 px-4 text-gray-300">Unprocessable Entity &mdash; also an uncaught <a href="/docs/language/error-handling#error-classes" class="text-cyan-300 hover:underline"><code>DomainError</code></a>, whose message the page shows</td>
+                    </tr>
+                    <tr class="hover:bg-white/5">
                         <td class="py-3 px-4 text-red-400 font-mono">500</td>
                         <td class="py-3 px-4 text-gray-300">Internal Server Error</td>
                     </tr>

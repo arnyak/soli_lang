@@ -838,7 +838,14 @@ impl Printer<'_> {
             for s in &decl.class_statements {
                 p.print_stmt(s);
             }
-            if !decl.class_statements.is_empty() && !decl.methods.is_empty() {
+            // Invariants, written back as the call they were parsed from.
+            for invariant in &decl.invariants {
+                p.flush_comments_before(invariant.span.line_usize());
+                p.print_stmt(&invariant_call(invariant));
+            }
+            if (!decl.class_statements.is_empty() || !decl.invariants.is_empty())
+                && !decl.methods.is_empty()
+            {
                 p.blank_line();
             }
             // Static block — parser requires `static { ... }` (braces, no
@@ -1437,4 +1444,36 @@ fn body_starts_with_paren(body: &[Stmt]) -> bool {
         Some(StmtKind::Expression(e)) => expr_starts_with_paren(e),
         _ => false,
     }
+}
+
+/// `invariant(:field, "message") { body }` as the statement it was written as.
+fn invariant_call(invariant: &crate::ast::stmt::InvariantDecl) -> Stmt {
+    let span = invariant.span;
+    let mut arguments = Vec::new();
+    if let Some(field) = &invariant.field {
+        arguments.push(Argument::Positional(Expr::new(
+            ExprKind::Symbol(field.clone()),
+            span,
+        )));
+    }
+    arguments.push(Argument::Positional(Expr::new(
+        ExprKind::StringLiteral(invariant.message.clone()),
+        span,
+    )));
+    arguments.push(Argument::Block(Expr::new(
+        ExprKind::Lambda {
+            params: Vec::new(),
+            return_type: None,
+            body: invariant.body.clone(),
+        },
+        span,
+    )));
+    let call = Expr::new(
+        ExprKind::Call {
+            callee: Box::new(Expr::new(ExprKind::Variable("invariant".to_string()), span)),
+            arguments,
+        },
+        span,
+    );
+    Stmt::new(StmtKind::Expression(call), span, None)
 }

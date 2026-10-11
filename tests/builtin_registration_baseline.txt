@@ -320,6 +320,7 @@ upload_to_solidb
 upload_url
 url
 validates
+value_field
 vector_index
 view_path
 ws_broadcast

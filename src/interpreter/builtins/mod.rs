@@ -714,6 +714,7 @@ pub fn register_builtins(env: &mut Environment, include_test_builtins: bool) {
 
     // Register Error class and error types
     register_error_classes(env);
+    register_value_object_class(env);
 
     // Register cache builtins
     cache::register_cache_builtins(env);
@@ -785,6 +786,43 @@ pub fn register_builtins(env: &mut Environment, include_test_builtins: bool) {
     // by default) so slim builds can drop the pasetors crate.
     #[cfg(feature = "paseto")]
     paseto::register_paseto_builtins(env);
+}
+
+/// `ValueObject`: the base class of value objects — compared by value, frozen
+/// once constructed, checked against their invariants (see
+/// `interpreter::domain`). `to_h` is native; `with` and `from_h` need the
+/// engine to run a constructor, so each engine answers them at the call.
+fn register_value_object_class(env: &mut Environment) {
+    use crate::interpreter::value::{Class, NativeFunction};
+
+    let mut native_methods: HashMap<String, Rc<NativeFunction>> = HashMap::new();
+    native_methods.insert(
+        "to_h".to_string(),
+        Rc::new(NativeFunction::new("to_h", Some(0), |args| {
+            match args.first() {
+                Some(Value::Instance(inst)) => {
+                    Ok(crate::interpreter::domain::to_hash(&inst.borrow()))
+                }
+                _ => Err("to_h must be called on a value object".to_string()),
+            }
+        })),
+    );
+    // `Amount(cents: 500, currency: "EUR")` — what `print` shows.
+    native_methods.insert(
+        "to_s".to_string(),
+        Rc::new(NativeFunction::new("to_s", Some(0), |args| {
+            match args.first() {
+                Some(value @ Value::Instance(_)) => Ok(Value::String(value.to_string().into())),
+                _ => Err("to_s must be called on a value object".to_string()),
+            }
+        })),
+    );
+    let class = Class {
+        name: "ValueObject".to_string(),
+        native_methods,
+        ..Default::default()
+    };
+    env.define("ValueObject".to_string(), Value::Class(Rc::new(class)));
 }
 
 /// Register the Error class and built-in error types.

@@ -321,6 +321,29 @@ thread_local! {
     /// model's class body runs). Drives enum reconstruction on DB reads.
     pub static ENUM_FIELDS: RefCell<HashMap<String, Vec<EnumFieldBinding>>> =
         RefCell::new(HashMap::new());
+
+    /// `value_field(:total, Amount)`: model → (field, value-object class name).
+    /// By name, resolved when a record is read: the value object's file may
+    /// load after the model's.
+    pub static VALUE_FIELDS: RefCell<HashMap<String, Vec<(String, String)>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Register a model field as holding a value object (`value_field`). On read
+/// the stored hash becomes that value object again; on save anything else
+/// is a validation error.
+pub fn register_value_field(class_name: &str, field: &str, value_class: &str) {
+    VALUE_FIELDS.with(|fields| {
+        let mut map = fields.borrow_mut();
+        let entry = map.entry(class_name.to_string()).or_default();
+        entry.retain(|(name, _)| name != field);
+        entry.push((field.to_string(), value_class.to_string()));
+    });
+}
+
+/// The `value_field`s of `class_name`: (field, value-object class name).
+pub fn get_value_fields(class_name: &str) -> Vec<(String, String)> {
+    VALUE_FIELDS.with(|fields| fields.borrow().get(class_name).cloned().unwrap_or_default())
 }
 
 /// Register a model field as holding values of the given enum class (the
@@ -716,6 +739,7 @@ pub fn clear_model_classes() {
     });
     STI_PARENTS.with(|m| m.borrow_mut().clear());
     ENUM_FIELDS.with(|fields| fields.borrow_mut().clear());
+    VALUE_FIELDS.with(|fields| fields.borrow_mut().clear());
     super::state_machine::clear();
 }
 
@@ -727,6 +751,7 @@ pub fn clear_all_model_registries() {
     // Cached table shapes belong to the mappings just dropped.
     crate::db::introspect::clear_schema_cache();
     ENUM_FIELDS.with(|fields| fields.borrow_mut().clear());
+    VALUE_FIELDS.with(|fields| fields.borrow_mut().clear());
     STI_PARENTS.with(|m| m.borrow_mut().clear());
     MODEL_CLASSES.with(|classes: &RefCell<HashMap<String, Rc<Class>>>| {
         classes.borrow_mut().clear();

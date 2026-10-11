@@ -3073,6 +3073,26 @@ impl Vm {
                         let object = self.stack.last().unwrap().clone();
                         self.check_private_value(&object, &name)?;
                     }
+                    // A constructed value object is frozen. One relaxed load
+                    // while no value-object class exists.
+                    if crate::interpreter::domain::value_objects_declared() {
+                        if let Some(Value::Instance(inst)) = self.stack.last() {
+                            let frozen_class = {
+                                let inst_ref = inst.borrow();
+                                crate::interpreter::domain::is_frozen(inst, &inst_ref.class)
+                                    .then(|| inst_ref.class.clone())
+                            };
+                            if let Some(class) = frozen_class {
+                                let name = self.read_string_constant_owned(idx);
+                                // A type error, like the tree-walker's for
+                                // any refused field write.
+                                return Err(RuntimeError::type_error(
+                                    crate::interpreter::domain::frozen_error(&class, &name),
+                                    self.current_span(),
+                                ));
+                            }
+                        }
+                    }
                     // Fast path: in-place update of an EXISTING instance
                     // field — no name copy, no span. First-time sets (key
                     // absent) fall through to the general path, which needs
@@ -3294,10 +3314,15 @@ impl Vm {
                         });
                     }
                 }
-                Op::Field(idx) => {
+                Op::Field(idx) | Op::ConstField(idx) => {
+                    // The default itself is baked into the constructor; what
+                    // is kept here is the declaration order, which a value
+                    // object's implicit constructor binds arguments by.
                     let name = self.read_string_constant_owned(idx);
-                    let init_value = self.stack.pop().unwrap();
-                    let _ = (name, init_value);
+                    self.stack.pop();
+                    if let Some(Value::Class(class)) = self.stack.last() {
+                        class.declared_fields.borrow_mut().push(name);
+                    }
                 }
                 Op::StaticField(idx) => {
                     let name = self.read_string_constant_owned(idx);
@@ -3306,11 +3331,6 @@ impl Vm {
                     if let Value::Class(ref cls) = class {
                         cls.static_fields.borrow_mut().insert(name, value);
                     }
-                }
-                Op::ConstField(idx) => {
-                    let name = self.read_string_constant_owned(idx);
-                    let init_value = self.stack.pop().unwrap();
-                    let _ = (name, init_value);
                 }
                 Op::StaticConstField(idx) => {
                     let name = self.read_string_constant_owned(idx);

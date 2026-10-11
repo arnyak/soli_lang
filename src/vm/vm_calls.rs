@@ -222,7 +222,7 @@ fn view_helper_proto(func: &Function) -> Option<Arc<FunctionProto>> {
 /// error unless it declares a default. Unfilled defaulted slots are left null
 /// here and written by the callee's prologue, so a default expression is
 /// evaluated in the callee — and only when it is actually needed.
-fn bind_named_arguments(
+pub(crate) fn bind_named_arguments(
     proto: &FunctionProto,
     positional: Vec<Value>,
     named: Vec<(crate::interpreter::value::SoliStr, Value)>,
@@ -443,7 +443,7 @@ impl Vm {
     /// subset, so it computes the mask itself and hands it over here; the
     /// callee's default-value prologue then runs for exactly the unfilled
     /// parameters.
-    fn call_closure_with_slots(
+    pub(crate) fn call_closure_with_slots(
         &mut self,
         closure: Rc<VmClosure>,
         slots: Vec<Value>,
@@ -553,9 +553,37 @@ impl Vm {
                     bind_named_arguments(&closure.proto, positional, named, span)?;
                 self.call_closure_with_slots(closure, slots, supplied, None)
             }
+            // `amount.with(cents: 600)` — the property read handed back a
+            // marker for it (see `op_get_property`).
+            Value::Method(ref method)
+                if method.method_name == "with"
+                    && Self::is_value_object_for_with(&method.receiver).is_some() =>
+            {
+                let inst = Self::is_value_object_for_with(&method.receiver).expect("checked");
+                self.stack.truncate(callee_idx);
+                let mut changes = match positional.as_slice() {
+                    [] => std::collections::HashMap::new(),
+                    [single] => crate::interpreter::domain::changes_from(Some(single), "with")
+                        .map_err(|e| RuntimeError::new(e, span))?,
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "with(...) takes the changes as named arguments or one hash",
+                            span,
+                        ))
+                    }
+                };
+                for (name, value) in named {
+                    changes.insert(name.to_string(), value);
+                }
+                self.value_object_with(&inst, changes, span)
+            }
             // `Config(port: 3000)` — bind against the compiled constructor and
             // let it run with `this` in the callee slot.
             Value::Class(ref class) => {
+                if crate::interpreter::domain::value_objects_declared() && class.is_value_object() {
+                    self.stack.truncate(callee_idx);
+                    return self.build_value_object(class, positional, named, span);
+                }
                 if let Some((ctor, defining_class)) = class.find_vm_method_with_class("init") {
                     let (slots, supplied) =
                         bind_named_arguments(&ctor.proto, positional, named, span)?;
@@ -1612,6 +1640,9 @@ impl Vm {
                 span,
             ));
         }
+        if crate::interpreter::domain::value_objects_declared() && class.is_value_object() {
+            return self.construct_value_object(class, argc, span);
+        }
         let instance_val = Value::Instance(Rc::new(RefCell::new(Instance::new(class.clone()))));
 
         // Bytecode constructor (classes compiled in the VM): registered as
@@ -1738,6 +1769,13 @@ impl Vm {
             _ => None,
         };
         if let Some(class) = class_receiver {
+            // `Klass.new(args)`: the constructor, as `new Klass(args)` — or,
+            // for no arguments / one hash, the attribute form (see
+            // `Interpreter::class_new`, the same rules).
+            if name == "new" && crate::interpreter::executor::access::member::intercepts_new(&class)
+            {
+                return self.class_new(&class, receiver_idx);
+            }
             let is_model = class.is_model_subclass();
             if is_model {
                 // `Model.scope_name(args)` — `Post.by_user(5)`, `Measure.t()`.
@@ -1886,6 +1924,24 @@ impl Vm {
                 crate::vm::vm::positional_supplied_mask(argc),
             ));
             return Ok(());
+        }
+
+        // `amount.with(...)` on a value object with no `with` of its own.
+        if name == "with" {
+            if let Some(inst) = Self::is_value_object_for_with(&self.stack[receiver_idx]) {
+                let span = self.current_span();
+                let args: Vec<Value> = self.stack.drain(receiver_idx + 1..).collect();
+                self.stack.truncate(receiver_idx);
+                if args.len() > 1 {
+                    return Err(RuntimeError::new(
+                        "with(...) takes the changes as named arguments or one hash",
+                        span,
+                    ));
+                }
+                let changes = crate::interpreter::domain::changes_from(args.first(), "with")
+                    .map_err(|e| RuntimeError::new(e, span))?;
+                return self.value_object_with(&inst, changes, span);
+            }
         }
 
         // Direct native instance-method call: skip bind_native_method_to_instance

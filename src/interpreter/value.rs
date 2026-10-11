@@ -1016,13 +1016,23 @@ impl Value {
                 a_ref.iter().all(|(k, v_a)| b_ref.get(k) == Some(v_a))
             }
             (Value::Instance(a), Value::Instance(b)) => {
+                if Rc::ptr_eq(a, b) {
+                    return true;
+                }
+                // Two value objects are equal when their fields are.
+                if crate::interpreter::domain::value_objects_declared() {
+                    let (a_ref, b_ref) = (a.borrow(), b.borrow());
+                    if a_ref.class.is_value_object() {
+                        return crate::interpreter::domain::value_objects_equal(&a_ref, &b_ref);
+                    }
+                }
                 // Two DateTime instances are equal when they point at the
                 // same moment (compare by internal `_ts` nanosecond field).
                 // All other instances fall back to pointer identity.
                 if let (Some(ts_a), Some(ts_b)) = (self.datetime_ts(), other.datetime_ts()) {
                     return ts_a == ts_b;
                 }
-                Rc::ptr_eq(a, b)
+                false
             }
             (Value::Method(a), Value::Method(b)) => {
                 *a.receiver == *b.receiver && a.method_name == b.method_name
@@ -1237,7 +1247,25 @@ impl Value {
             Value::Class(class) => write!(f, "<class {}>", class.name),
             Value::Instance(inst) => {
                 let inst_ref = inst.borrow();
-                if inst_ref.fields.is_empty() {
+                if crate::interpreter::domain::value_objects_declared()
+                    && inst_ref.class.is_value_object()
+                {
+                    // A value is its fields: `Amount(cents: 500, currency: "EUR")`.
+                    write!(f, "{}(", inst_ref.class.name)?;
+                    for (i, (k, v)) in crate::interpreter::domain::value_fields(&inst_ref)
+                        .iter()
+                        .enumerate()
+                    {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        match v {
+                            Value::String(s) => write!(f, "{}: \"{}\"", k, s)?,
+                            _ => write!(f, "{}: {}", k, v)?,
+                        }
+                    }
+                    write!(f, ")")
+                } else if inst_ref.fields.is_empty() {
                     write!(f, "<{} instance>", inst_ref.class.name)
                 } else {
                     write!(f, "<{}", inst_ref.class.name)?;
@@ -1592,6 +1620,14 @@ pub struct Class {
     /// outside this module — always leave it `Cell::new(None)`; reading goes
     /// through [`Class::is_model_subclass`].
     pub model_subclass_memo: Cell<Option<bool>>,
+    /// Memoized [`Class::is_value_object`]. Same contract as
+    /// `model_subclass_memo`: always `Cell::new(None)` outside this module.
+    pub value_object_memo: Cell<Option<bool>>,
+    /// The instance fields this class declares (`cents: Int`), in order. A
+    /// value object's implicit constructor binds positional arguments to
+    /// them, and `to_h` lists them in this order. Inherited ones live on the
+    /// superclass (see [`Class::all_declared_fields`]).
+    pub declared_fields: Rc<RefCell<Vec<String>>>,
     /// `true` when this Class was defined with `module Name … end`.
     pub is_module: bool,
     /// Modules mixed into this class via `include` (instance methods).
@@ -1694,6 +1730,8 @@ impl Default for Class {
             vm_methods: Rc::new(RefCell::new(HashMap::default())),
             vm_static_methods: Rc::new(RefCell::new(HashMap::default())),
             model_subclass_memo: Cell::new(None),
+            value_object_memo: Cell::new(None),
+            declared_fields: Rc::new(RefCell::new(Vec::new())),
             is_module: false,
             included_modules: Rc::new(RefCell::new(Vec::new())),
             mixin_static_methods: Rc::new(RefCell::new(HashMap::new())),
@@ -1741,6 +1779,8 @@ impl Class {
             vm_methods: Rc::new(RefCell::new(HashMap::default())),
             vm_static_methods: Rc::new(RefCell::new(HashMap::default())),
             model_subclass_memo: Cell::new(None),
+            value_object_memo: Cell::new(None),
+            declared_fields: Rc::new(RefCell::new(Vec::new())),
             is_module: false,
             included_modules: Rc::new(RefCell::new(Vec::new())),
             mixin_static_methods: Rc::new(RefCell::new(HashMap::new())),
@@ -2079,6 +2119,37 @@ impl Class {
         self.model_subclass_memo.set(Some(result));
         result
     }
+
+    /// Whether this class is `ValueObject` or descends from it: compared by
+    /// value, frozen once constructed (see `interpreter::domain`).
+    pub fn is_value_object(&self) -> bool {
+        if let Some(cached) = self.value_object_memo.get() {
+            return cached;
+        }
+        let result = if self.superclass.is_none() {
+            self.name == "ValueObject"
+        } else {
+            self.superclass
+                .as_ref()
+                .is_some_and(|superclass| superclass.is_value_object())
+        };
+        self.value_object_memo.set(Some(result));
+        result
+    }
+
+    /// Every declared instance field, inherited ones first.
+    pub fn all_declared_fields(&self) -> Vec<String> {
+        let mut out = match &self.superclass {
+            Some(superclass) => superclass.all_declared_fields(),
+            None => Vec::new(),
+        };
+        for name in self.declared_fields.borrow().iter() {
+            if !out.contains(name) {
+                out.push(name.clone());
+            }
+        }
+        out
+    }
 }
 
 /// A class instance.
@@ -2340,6 +2411,19 @@ impl Value {
                     let mut map = serializer.serialize_map(None)?;
                     map.serialize_entry("variant", tag)?;
                     for (k, v) in payload {
+                        map.serialize_entry(k, v)?;
+                    }
+                    return map.end();
+                }
+                // A value object: its fields, in order, all of them (see
+                // `value_to_json`).
+                if crate::interpreter::domain::value_objects_declared()
+                    && borrow.class.is_value_object()
+                {
+                    use serde::ser::SerializeMap;
+                    let fields = crate::interpreter::domain::value_fields(&borrow);
+                    let mut map = serializer.serialize_map(Some(fields.len()))?;
+                    for (k, v) in &fields {
                         map.serialize_entry(k, v)?;
                     }
                     return map.end();

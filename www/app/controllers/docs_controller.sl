@@ -525,6 +525,11 @@ def language_enums
   render_docs("docs/language/enums", "Enums", "language", "enums")
 end
 
+# GET /docs/language/value-objects
+def language_value_objects
+  render_docs("docs/language/value-objects", "Value Objects", "language", "value_objects")
+end
+
 def language_pipeline_operator
   render_docs("docs/language/pipeline-operator", "Pipeline Operator", "language", "pipeline_operator")
 end
