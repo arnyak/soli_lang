@@ -309,11 +309,17 @@ pub(crate) fn mark_durable_write() {
 /// connection, commit on success, rollback + re-raise on error). Nested
 /// calls join the outer transaction. Shared by the tree-walker interceptor
 /// and the VM native-call path.
+///
+/// After the outermost commit, the block handlers of the events published
+/// inside run (`interpreter::events`); an error from one is `on_event`'s —
+/// the data is committed by then. The caller runs the `after_commit` blocks
+/// (`events::take_after_commit`): they may be closures of its engine.
 pub fn with_model_transaction<T, E>(
     class_name: &str,
     run: impl FnOnce() -> Result<T, E>,
     on_begin: impl FnOnce(String) -> E,
     on_commit: impl FnOnce(String) -> E,
+    on_event: impl FnOnce(crate::error::RuntimeError) -> E,
 ) -> Result<T, E> {
     if has_active_tx() {
         return run();
@@ -322,7 +328,10 @@ pub fn with_model_transaction<T, E>(
         .map_err(on_begin)?;
     match run() {
         Ok(value) => match commit_transaction() {
-            Ok(()) => Ok(value),
+            Ok(()) => match crate::interpreter::events::after_outermost_commit() {
+                Ok(()) => Ok(value),
+                Err(e) => Err(on_event(e)),
+            },
             Err(e) => {
                 clear_current_tx();
                 Err(on_commit(e))
@@ -344,6 +353,7 @@ pub fn clear_current_tx() {
         tx.borrow_mut().take();
     });
     crate::db::sql::clear_transaction();
+    crate::interpreter::events::discard_pending();
 }
 
 /// Begin a new transaction on the **active** connection (SoliDB HTTP or SQL).
@@ -474,6 +484,16 @@ fn commit_transaction_inner() -> Result<(), String> {
 
 /// Rollback the current transaction.
 pub fn rollback_transaction() -> Result<(), String> {
+    let result = rollback_transaction_inner();
+    // What waited for the commit goes with the transaction — unless this
+    // only closed a nested SQL level.
+    if !has_active_tx() {
+        crate::interpreter::events::discard_pending();
+    }
+    result
+}
+
+fn rollback_transaction_inner() -> Result<(), String> {
     if crate::db::sql::has_active_tx() {
         return crate::db::sql::rollback_transaction();
     }
@@ -1898,6 +1918,11 @@ pub fn exec_get(collection: &str, key: &str) -> Result<serde_json::Value, String
     if get_current_tx_id().is_some() {
         return exec_get_tx(collection, key);
     }
+    exec_get_committed(collection, key)
+}
+
+/// A SoliDB document as committed, whatever transaction is open.
+fn exec_get_committed(collection: &str, key: &str) -> Result<serde_json::Value, String> {
     let url = format!(
         "{}/{}",
         document_base_url(collection),
@@ -1990,6 +2015,108 @@ fn exec_update_inner(
         crate::live::live_query::notify_change(collection, Some(&document));
     }
     result
+}
+
+/// What a locked update did: written (the stored document), or refused
+/// because the record changed since it was read.
+pub enum LockedWrite {
+    Written(serde_json::Value),
+    Stale,
+}
+
+/// The `lock_version` a stored document carries (0 when it has none).
+pub fn lock_version_of(document: &serde_json::Value) -> i64 {
+    document
+        .get("lock_version")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0)
+}
+
+/// Update `key` with `patch` — merged into the stored document — only while
+/// its `lock_version` is still `expected`; the write sets it to
+/// `expected + 1` (`optimistic_lock`).
+///
+/// SQL: read, merge, then one `UPDATE … WHERE lock_version = expected`.
+/// SoliDB: read, then a PUT with `If-Match` on the revision just read, so a
+/// write landing in between is refused too. Inside a SoliDB transaction
+/// (where `If-Match` does not apply) the check is the read itself.
+pub fn exec_update_locked(
+    collection: &str,
+    key: &str,
+    patch: serde_json::Value,
+    expected: i64,
+) -> Result<LockedWrite, String> {
+    let result = exec_update_locked_inner(collection, key, patch, expected);
+    if let Ok(LockedWrite::Written(_)) = result {
+        mark_durable_write();
+    }
+    result
+}
+
+fn exec_update_locked_inner(
+    collection: &str,
+    key: &str,
+    mut patch: serde_json::Value,
+    expected: i64,
+) -> Result<LockedWrite, String> {
+    if let Some(obj) = patch.as_object_mut() {
+        obj.remove("_key");
+        obj.insert("lock_version".to_string(), serde_json::json!(expected + 1));
+    }
+    super::registry::encrypt_document_fields(collection, &mut patch)?;
+    if collection_is_sql(collection) {
+        if get_current_tx_id().is_some() {
+            return Err(sql_write_in_tx_error(collection));
+        }
+        return super::registry::run_on_collection_connection(collection, || {
+            if super::column_mode::require_schema(collection)?.is_some() {
+                return Err(format!(
+                    "optimistic_lock: `{collection}` is a column-mode table, where locked \
+                     updates are not supported yet"
+                ));
+            }
+            let Some(mut current) = crate::db::sql::get(collection, key)? else {
+                return Ok(LockedWrite::Stale);
+            };
+            if lock_version_of(&current) != expected {
+                return Ok(LockedWrite::Stale);
+            }
+            crate::db::merge::merge_patch(&mut current, &patch);
+            if crate::db::sql::replace_if_version(collection, key, current.clone(), expected)? {
+                Ok(LockedWrite::Written(current))
+            } else {
+                Ok(LockedWrite::Stale)
+            }
+        });
+    }
+    let current = match exec_get(collection, key) {
+        Ok(doc) if !doc.is_null() => doc,
+        _ => return Ok(LockedWrite::Stale),
+    };
+    if lock_version_of(&current) != expected {
+        return Ok(LockedWrite::Stale);
+    }
+    let mut merged = current.clone();
+    crate::db::merge::merge_patch(&mut merged, &patch);
+    if let Some(obj) = merged.as_object_mut() {
+        obj.retain(|k, _| !matches!(k.as_str(), "_key" | "_id" | "_rev"));
+    }
+    if get_current_tx_id().is_some() {
+        return exec_update_tx(collection, key, merged).map(LockedWrite::Written);
+    }
+    let Some(rev) = current.get("_rev").and_then(|r| r.as_str()) else {
+        return Err(format!(
+            "optimistic_lock: {collection}/{key} has no revision"
+        ));
+    };
+    match exec_update_if_match_inner(collection, key, merged.clone(), rev) {
+        Ok(result) => {
+            crate::live::live_query::notify_change(collection, Some(&merged));
+            Ok(LockedWrite::Written(result))
+        }
+        Err(e) if is_rev_mismatch_error(&e) => Ok(LockedWrite::Stale),
+        Err(e) => Err(e),
+    }
 }
 
 /// Conditional PUT with an `If-Match: <expected_rev>` header. SoliDB returns
@@ -2187,8 +2314,13 @@ pub fn exec_insert_tx(
     }
 }
 
-/// Transaction-aware document get.
-/// If a transaction is active, uses the transaction endpoint.
+/// Transaction-aware document get: the document as the open transaction
+/// sees it, its own uncommitted writes included.
+///
+/// SoliDB servers before the transactional GET route answer it 405; there
+/// the read falls back to the committed document (the transaction's own
+/// writes are then not visible, but a committed record is found — it used to
+/// read as missing).
 pub fn exec_get_tx(collection: &str, key: &str) -> Result<serde_json::Value, String> {
     if let Some(tx_id) = get_current_tx_id() {
         let database = get_database_name().to_string();
@@ -2200,7 +2332,10 @@ pub fn exec_get_tx(collection: &str, key: &str) -> Result<serde_json::Value, Str
             collection,
             encode_key_for_url(key)?
         ));
-        exec_document_request(reqwest::Method::GET, url, None)
+        match exec_document_request(reqwest::Method::GET, url, None) {
+            Err(e) if e.contains("HTTP 405") => exec_get_committed(collection, key),
+            result => result,
+        }
     } else {
         exec_get(collection, key)
     }

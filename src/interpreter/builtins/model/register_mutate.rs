@@ -105,9 +105,11 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                 || !super::registry::get_value_fields(&class_name).is_empty()
                 || super::core::get_class_rc_from_args(args)
                     .is_ok_and(|c| !crate::interpreter::domain::invariants_of(&c).is_empty());
+            let locked = super::registry::is_optimistic_lock(&class_name);
             let needs_preread = super::counter_cache::class_has_counter_caches(&class_name)
                 || super::registry::is_sti_subclass(&class_name)
-                || has_validations;
+                || has_validations
+                || locked;
             let old_doc = if needs_preread {
                 super::crud::exec_get(&collection, &id).ok()
             } else {
@@ -153,7 +155,40 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                 ));
             }
 
-            match exec_update(&collection, &id, data_value.clone(), true) {
+            // `optimistic_lock`: the version the caller read — a
+            // `lock_version` in the changes (a form's hidden field) — or else
+            // the stored one, so the write still bumps it.
+            let written = if locked {
+                let expected = match data_value.get("lock_version") {
+                    Some(v) => {
+                        super::register_instance::lock_version_value(Some(&json_to_value(v)))
+                    }
+                    None => old_doc
+                        .as_ref()
+                        .map(super::crud::lock_version_of)
+                        .unwrap_or(0),
+                };
+                match super::crud::exec_update_locked(
+                    &collection,
+                    &id,
+                    data_value.clone(),
+                    expected,
+                ) {
+                    Ok(super::crud::LockedWrite::Written(result)) => Ok(result),
+                    Ok(super::crud::LockedWrite::Stale) => {
+                        let mut out = crate::interpreter::value::HashPairs::default();
+                        out.insert(
+                            HashKey::String("_errors".into()),
+                            super::register_instance::stale_errors(),
+                        );
+                        return Ok(Value::Hash(Rc::new(RefCell::new(out))));
+                    }
+                    Err(e) => Err(e),
+                }
+            } else {
+                exec_update(&collection, &id, data_value.clone(), true)
+            };
+            match written {
                 Ok(result) => {
                     if let Some(old_doc) = &old_doc {
                         super::counter_cache::bump_for_json_change(

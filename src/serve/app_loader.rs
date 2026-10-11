@@ -425,9 +425,10 @@ pub(crate) fn load_models(
 /// `models/base_model.sl` is defined before a `models/admin/user.sl` that
 /// extends it; keep cross-file superclasses at an equal-or-shallower depth.
 ///
-/// One exception: files that declare a value object or an enum load first,
-/// wherever they sit — `value_field :price, Price` in `invoice.sl` names a
-/// class that `price.sl` (or `values/price.sl`) would only define later.
+/// One exception: files that declare a value object (a domain event is one)
+/// or an enum load first, wherever they sit — `value_field :price, Price` in
+/// `invoice.sl` names a class that `price.sl` (or `values/price.sl`) would
+/// only define later.
 fn load_sl_dir_recursive(interpreter: &mut Interpreter, dir: &Path) -> Result<(), RuntimeError> {
     let mut files = Vec::new();
     collect_sl_files(dir, &mut files)?;
@@ -449,9 +450,9 @@ fn declares_values(source: &[u8]) -> bool {
         let line = line.trim_start();
         line.starts_with("enum ")
             || (line.starts_with("class ")
-                && line
-                    .split_once('<')
-                    .is_some_and(|(_, parent)| parent.trim() == "ValueObject"))
+                && line.split_once('<').is_some_and(|(_, parent)| {
+                    matches!(parent.trim(), "ValueObject" | "DomainEvent")
+                }))
     })
 }
 
@@ -1054,6 +1055,20 @@ pub(crate) fn load_models_and_siblings(
     }
 }
 
+/// `app/subscribers/`: the `subscribe(...)` calls of the application, run
+/// after the models, services and jobs they name. The registry is emptied
+/// first, so a reload does not subscribe a handler twice.
+pub(crate) fn load_subscribers(worker_id: usize, interpreter: &mut Interpreter, app_dir: &Path) {
+    crate::interpreter::events::clear_subscribers();
+    let dir = app_dir.join("subscribers");
+    if !crate::platform::fs::exists(&dir) {
+        return;
+    }
+    if let Err(e) = load_models(interpreter, &dir) {
+        eprintln!("Worker {}: Error loading subscribers: {}", worker_id, e);
+    }
+}
+
 /// Load the application into a freshly built worker interpreter.
 ///
 /// The initial-load counterpart to [`reload_controllers_in_worker`] and
@@ -1111,6 +1126,9 @@ pub(crate) fn load_app_in_worker(
     // declarations to SolidB.
     if crate::platform::fs::exists(jobs_dir) {
         load_jobs_in_worker(worker_id, interpreter, jobs_dir, true);
+    }
+    if let Some(app_dir) = models_dir.parent() {
+        load_subscribers(worker_id, interpreter, app_dir);
     }
 
     // Define `<name>_path` / `<name>_url` helpers in this worker's env from

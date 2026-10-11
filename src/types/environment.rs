@@ -162,6 +162,12 @@ impl TypeEnvironment {
             self.functions.insert(name.to_string(), Type::Any);
         }
 
+        // Domain events and after-commit work: publish(event),
+        // subscribe(EventClass, handler), after_commit { … }.
+        for name in ["publish", "subscribe", "after_commit"] {
+            self.functions.insert(name.to_string(), Type::Any);
+        }
+
         // grouped(fn() { ... }) -> Any — request-coalescing batch; runs the
         // block and returns its value (the DB reads inside are combined into a
         // single round-trip).
@@ -1464,6 +1470,10 @@ impl TypeEnvironment {
         self.classes.insert(
             "InvariantViolation".to_string(),
             subclass("InvariantViolation", &domain_error),
+        );
+        self.classes.insert(
+            "StaleRecord".to_string(),
+            subclass("StaleRecord", &domain_error),
         );
         self.classes.insert("DomainError".to_string(), domain_error);
         self.classes.insert("Error".to_string(), error);

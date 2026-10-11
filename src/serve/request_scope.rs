@@ -114,6 +114,9 @@ pub(super) fn install(data: &RequestData) -> Scope {
     // No tenant until this request chooses one (`switch_tenant`): the worker
     // may last have served another site, whose database must not answer here.
     crate::db::tenancy::clear();
+    // Nor events or `after_commit` blocks a previous request left waiting on a
+    // commit that never came.
+    crate::interpreter::events::discard_pending();
 
     // Parse the Cookie header ONCE: the same parse feeds both the session-ID
     // resolution here and `req["cookies"]` in the request hash below (the

@@ -407,6 +407,11 @@ impl Interpreter {
                     return Ok(result);
                 }
             }
+            if name == "after_commit" {
+                if let Some(result) = self.try_evaluate_after_commit(arguments, span)? {
+                    return Ok(result);
+                }
+            }
             // `with_tenant(key) do … end` runs its block under that tenant.
             if name == "with_tenant" {
                 if let Some(result) = self.try_evaluate_with_tenant(arguments, span)? {
@@ -1764,8 +1769,36 @@ impl Interpreter {
                 message: format!("transaction: commit failed: {}", e),
                 span,
             },
+            |e| e,
         )
-        .map(Some)
+        .and_then(|value| {
+            for block in crate::interpreter::events::take_after_commit() {
+                self.call_value(block, Vec::new(), span)?;
+            }
+            Ok(Some(value))
+        })
+    }
+
+    /// `after_commit { … }`: queued for the outermost commit inside a
+    /// transaction, run now outside one.
+    fn try_evaluate_after_commit(
+        &mut self,
+        arguments: &[Argument],
+        span: Span,
+    ) -> RuntimeResult<Option<Value>> {
+        let [Argument::Block(block_expr) | Argument::Positional(block_expr)] = arguments else {
+            return Ok(None);
+        };
+        let block = self.evaluate(block_expr)?;
+        if !matches!(block, Value::Function(_) | Value::VmClosure(_)) {
+            return Ok(None);
+        }
+        if crate::interpreter::builtins::model::crud::has_active_tx() {
+            crate::interpreter::events::queue_after_commit(block);
+        } else {
+            self.call_value(block, Vec::new(), span)?;
+        }
+        Ok(Some(Value::Null))
     }
 
     /// `<ModelClass>.find_each(...)` / `.in_batches(...)`: build the same

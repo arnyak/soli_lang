@@ -263,6 +263,10 @@ fn build_job_interpreter(id: usize, interpreter: &mut Interpreter, config: &Pool
         // `false`: never sync `static cron` — web worker 0 already did.
         load_jobs_in_worker(id, interpreter, &config.jobs_dir, false);
     }
+    // A job that publishes an event reaches its subscribers.
+    if let Some(app_dir) = config.models_dir.parent() {
+        crate::serve::app_loader::load_subscribers(id, interpreter, app_dir);
+    }
 
     define_bg_runner(id, interpreter);
 }

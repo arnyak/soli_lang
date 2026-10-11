@@ -237,6 +237,11 @@ def database_validations
   render_docs("docs/database/validations", "Validations & Callbacks", "database", "validations")
 end
 
+# GET /docs/database/domain-events
+def database_domain_events
+  render_docs("docs/database/domain-events", "Domain Events & Locking", "database", "domain_events")
+end
+
 def database_state_machines
   render_docs("docs/database/state-machines", "State Machines", "database", "state_machines")
 end

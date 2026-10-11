@@ -715,6 +715,7 @@ pub fn register_builtins(env: &mut Environment, include_test_builtins: bool) {
     // Register Error class and error types
     register_error_classes(env);
     register_value_object_class(env);
+    register_event_builtins(env);
 
     // Register cache builtins
     cache::register_cache_builtins(env);
@@ -817,12 +818,53 @@ fn register_value_object_class(env: &mut Environment) {
             }
         })),
     );
-    let class = Class {
+    let value_object = Rc::new(Class {
         name: "ValueObject".to_string(),
         native_methods,
         ..Default::default()
+    });
+    env.define(
+        "ValueObject".to_string(),
+        Value::Class(value_object.clone()),
+    );
+
+    // `class InvoicePaid < DomainEvent`: an event is a value object — built
+    // from its fields, immutable — that `publish` hands to its subscribers.
+    let domain_event = Class {
+        name: crate::interpreter::events::DOMAIN_EVENT.to_string(),
+        superclass: Some(value_object),
+        ..Default::default()
     };
-    env.define("ValueObject".to_string(), Value::Class(Rc::new(class)));
+    env.define(
+        crate::interpreter::events::DOMAIN_EVENT.to_string(),
+        Value::Class(Rc::new(domain_event)),
+    );
+}
+
+/// `publish(event)`, `subscribe(EventClass, handler)` and `after_commit`.
+/// `after_commit { … }` itself is run by the engines (its block may be one of
+/// their closures); this placeholder answers a call without a block.
+fn register_event_builtins(env: &mut Environment) {
+    use crate::interpreter::value::NativeFunction;
+    env.define(
+        "publish".to_string(),
+        Value::NativeFunction(NativeFunction::new("publish", Some(1), |args| {
+            crate::interpreter::events::publish(&args[0]).map_err(|e| e.to_string())?;
+            Ok(Value::Null)
+        })),
+    );
+    env.define(
+        "subscribe".to_string(),
+        Value::NativeFunction(NativeFunction::new("subscribe", Some(2), |args| {
+            crate::interpreter::events::subscribe(args)
+        })),
+    );
+    env.define(
+        "after_commit".to_string(),
+        Value::NativeFunction(NativeFunction::new("after_commit", None, |_args| {
+            Err("after_commit expects a block: after_commit { … }".to_string())
+        })),
+    );
 }
 
 /// Register the Error class and built-in error types.
@@ -928,5 +970,12 @@ fn register_error_classes(env: &mut Environment) {
         "InvariantViolation".to_string(),
         Value::Class(invariant_violation.clone()),
     );
+    // `throw StaleRecord.new("…")` when a locked save was refused: a 409.
+    let stale_record = subclass("StaleRecord", &domain_error);
+    stale_record
+        .static_fields
+        .borrow_mut()
+        .insert("http_status".to_string(), Value::Int(409));
+    env.define("StaleRecord".to_string(), Value::Class(stale_record));
     crate::interpreter::domain::remember_error_classes(domain_error, invariant_violation);
 }

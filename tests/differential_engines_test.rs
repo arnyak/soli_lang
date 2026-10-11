@@ -343,6 +343,28 @@ print(Amount.new(cents: 7).to_h)
 print(Amount.new(9, "USD").to_h)
 print(Amount.new({"cents": 5}) == Amount.new(5))"##,
     ),
+    (
+        // Outside a transaction `after_commit` runs its block at once, in
+        // all three spellings; a domain event is a value object.
+        "after_commit_outside_a_transaction_and_domain_events",
+        r##"log = []
+after_commit { log.push("brace") }
+after_commit do
+  log.push("do")
+end
+after_commit(fn() { log.push("fn") })
+print(log)
+class OrderPaid < DomainEvent
+  number: String
+end
+print(OrderPaid.new("A") == OrderPaid.new(number: "A"))
+print(OrderPaid.new("A"))
+try
+  publish("not an event")
+catch e
+  print("refused")
+end"##,
+    ),
     // A typed last clause that matches runs its body and continues: the VM
     // used to fall into the no-match `Rethrow` after the body.
     (

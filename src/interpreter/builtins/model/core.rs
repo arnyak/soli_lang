@@ -2140,6 +2140,20 @@ pub fn register_model_builtins(env: &mut Environment) {
         })),
     );
 
+    // optimistic_lock - every update of a record checks that its
+    // `lock_version` is still the one it was read with, and bumps it; a
+    // stale write is refused like a failed validation.
+    env.define(
+        "optimistic_lock".to_string(),
+        Value::NativeFunction(NativeFunction::new("optimistic_lock", Some(1), |args| {
+            let class_name = get_class_name_from_class(args)?;
+            let mut metadata = get_or_create_metadata(&class_name);
+            metadata.optimistic_lock = true;
+            update_metadata(&class_name, metadata);
+            Ok(Value::Null)
+        })),
+    );
+
     // connection "name" — bind this model to a named entry in
     // config/database.toml (or the env-derived primary connection).
     env.define(

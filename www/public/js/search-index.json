@@ -3965,6 +3965,56 @@
       ]
     },
     {
+      "title": "Domain events",
+      "type": "guide",
+      "category": "Database",
+      "path": "/docs/database/domain-events",
+      "signature": "class OrderPaid < DomainEvent; subscribe(OrderPaid) do |e| \u2026 end",
+      "description": "Publish domain events from models (record_event) or anywhere (publish); block subscribers run after the commit, job subscribers are a transactional outbox",
+      "keywords": [
+        "domain event",
+        "DomainEvent",
+        "publish",
+        "subscribe",
+        "record_event",
+        "outbox",
+        "event",
+        "ddd",
+        "app/subscribers"
+      ]
+    },
+    {
+      "title": "after_commit",
+      "type": "function",
+      "category": "Database",
+      "path": "/docs/database/domain-events#after-commit",
+      "signature": "after_commit { \u2026 }",
+      "description": "Run a block after the outermost commit (never on rollback), or at once outside a transaction",
+      "keywords": [
+        "after_commit",
+        "commit",
+        "transaction",
+        "side effect"
+      ]
+    },
+    {
+      "title": "optimistic_lock",
+      "type": "dsl",
+      "category": "Database",
+      "path": "/docs/database/domain-events#optimistic-locking",
+      "signature": "optimistic_lock",
+      "description": "Refuse a save that would overwrite a record changed since it was read: lock_version checked and bumped atomically; stale? and StaleRecord (409)",
+      "keywords": [
+        "optimistic_lock",
+        "lock_version",
+        "stale",
+        "StaleRecord",
+        "concurrency",
+        "409",
+        "conflict"
+      ]
+    },
+    {
       "title": "import",
       "type": "keyword",
       "category": "Language",

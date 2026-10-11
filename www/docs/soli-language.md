@@ -3594,6 +3594,9 @@ end
 
 Invariants also work on models, where they become validation errors instead
 of exceptions — see [Validations → Value fields and invariants](/docs/database/validations#value-fields-and-invariants).
+A domain event is a value object too — `class OrderPaid < DomainEvent`,
+published to its subscribers after the commit: see
+[Models → Domain Events](/docs/database/domain-events).
 A value object in its own file under `app/models/` loads before the models,
 so `value_field :total, Amount` finds it wherever it sits.
 

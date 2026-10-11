@@ -176,6 +176,14 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                     .set("type", Value::String(class_name.as_str().into()));
             }
 
+            // `optimistic_lock`: a new record starts at version 0.
+            if super::registry::is_optimistic_lock(&class_name) {
+                if let serde_json::Value::Object(ref mut map) = data_value {
+                    map.insert("lock_version".to_string(), serde_json::json!(0));
+                }
+                instance.borrow_mut().set("lock_version", Value::Int(0));
+            }
+
             match exec_insert(&collection, chosen_key.as_deref(), data_value) {
                 Ok(id) => {
                     let mut inst_mut = instance.borrow_mut();

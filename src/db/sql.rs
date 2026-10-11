@@ -263,6 +263,21 @@ pub fn update(
     )
 }
 
+/// See `postgres::replace_if_version`: a compare-and-swap on `lock_version`.
+pub fn replace_if_version(
+    table: &str,
+    key: &str,
+    document: serde_json::Value,
+    expected: i64,
+) -> Result<bool, String> {
+    route_sql!(
+        super::postgres::replace_if_version(table, key, document, expected),
+        super::mysql::replace_if_version(table, key, document, expected),
+        super::sqlite::replace_if_version(table, key, document, expected),
+        super::d1::replace_if_version(table, key, document, expected)
+    )
+}
+
 pub fn delete(table: &str, key: &str) -> Result<(), String> {
     route_sql!(
         super::postgres::delete(table, key),

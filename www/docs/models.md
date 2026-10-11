@@ -961,6 +961,108 @@ Raising instead of collecting is what a domain error is for: throw a
 `DomainError` from a service and an uncaught one answers **422** with its
 message (see [Error handling → Error classes](/docs/language/error-handling#error-classes)).
 
+## Domain Events
+
+A domain event says that something happened in the domain — an order was
+paid, an account was closed — so other parts of the app can react without
+the code that made it happen knowing about them. An event is a
+[value object](/docs/language/value-objects) that inherits `DomainEvent`:
+
+```soli
+# app/models/order_paid.sl
+class OrderPaid < DomainEvent
+  number: String
+  cents: Int
+end
+```
+
+**Publishing.** A model records events on itself with `record_event`; they
+are published when the record is saved — so a method that raises an event
+and then fails to save publishes nothing. Elsewhere, `publish(event)`
+publishes at once.
+
+```soli
+class Order < Model
+  def pay
+    @status = "paid"
+    @record_event(OrderPaid.new(@number, @cents))
+  end
+end
+
+order.pay
+order.save            # OrderPaid is published here, if the save succeeds
+```
+
+**Subscribing.** Subscriptions live in `app/subscribers/`, loaded after the
+models, services and jobs:
+
+```soli
+# app/subscribers/orders.sl
+subscribe(OrderPaid) do |event|
+  LedgerEntry.create({"number": event.number, "cents": event.cents})
+end
+
+subscribe(OrderPaid, ReceiptJob)   # ReceiptJob.perform(args) gets event.to_h
+```
+
+A subscription to a class also receives its subclasses' events
+(`subscribe(DomainEvent) do … end` sees them all).
+
+**When handlers run.** Events wait for the data:
+
+- A **block** handler runs in the same process once the data is committed —
+  right away outside a transaction, after the outermost commit inside one,
+  and never if the transaction rolls back. A handler that throws fails the
+  request, but the data is already committed: use a job for anything that can
+  fail.
+- A **job** handler is enqueued when the event is published, with the event's
+  fields as its arguments. Inside a transaction the job row is written by that
+  transaction (`_jobs` lives on the default connection), so it commits or
+  rolls back with the data — the *transactional outbox* — and the job queue
+  retries delivery. On Cloudflare Workers jobs go to a Queue, which is not
+  transactional.
+
+A block handler must come from an application file; `subscribe` with a block
+in a standalone script runs that script on the tree-walker.
+
+## Optimistic Locking
+
+Two people edit the same record: both load version 3, the first saves, and
+the second save would silently overwrite the first. Declare
+`optimistic_lock` and the second save is refused instead:
+
+```soli
+class Order < Model
+  optimistic_lock
+end
+
+order = Order.create({"number": "A-1"})   # lock_version: 0
+a = Order.find(order._key)
+b = Order.find(order._key)
+a.number = "A-2"
+a.save                  # true — lock_version is now 1
+b.number = "A-3"
+b.save                  # false
+b.stale?                # true
+b._errors               # [{"field": "lock_version", "message": "is stale: the record was changed since it was read — reload it and try again"}]
+```
+
+Every update checks that the stored `lock_version` is still the one the
+record was read with, and bumps it; the check and the write are one atomic
+step (a conditional `UPDATE` on the SQL adapters, an `If-Match` on the
+revision on SoliDB). The static `Model.update(key, changes)` checks the
+`lock_version` in `changes` when there is one — a form's hidden field, so a
+form submitted after someone else's edit is refused — and the stored one
+otherwise. To answer HTTP, throw the built-in `StaleRecord` (a `DomainError`
+whose `http_status` is 409):
+
+```soli
+throw StaleRecord.new("order #{order.number} changed since you opened it") unless order.save
+```
+
+Not yet supported: column-mode tables (an existing SQL schema). `increment`
+and `decrement` do not bump the version.
+
 ## Callbacks
 
 Define lifecycle callbacks to run code at specific points. The method name
@@ -2919,6 +3021,29 @@ inside undoes every write in the whole nest.
 > (`.where(...).all()`, `find_by`, aggregations) read *committed* data — they do
 > not observe the transaction's own uncommitted writes. To read a row you wrote
 > earlier in the same transaction, use `find` (a key lookup).
+
+> **`find` inside a SoliDB transaction** reads through the transaction, so it
+> sees the transaction's own inserts, updates and deletes, on SoliDB servers
+> that serve `GET …/transaction/{id}/document/{collection}/{key}` (after 2.2.1).
+> On older servers it reads the committed document.
+
+### After the Commit
+
+`after_commit { … }` runs a block once the data is durable: after the
+outermost commit inside a transaction (never if it rolls back), at once
+outside one. It is the place for side effects that must not happen for data
+that was never stored — a cache purge, a notification, a webhook:
+
+```soli
+Order.transaction do
+  order.pay
+  order.save
+  after_commit { broadcast("orders", {"paid": order.number}) }
+end
+```
+
+`after_commit do … end` works too. [Domain events](#domain-events) use the
+same moment for their block handlers.
 
 ### Using AQL String
 

@@ -2,7 +2,7 @@
 
 mod core;
 mod declarations;
-mod expressions;
+pub(crate) mod expressions;
 mod precedence;
 mod statements;
 mod types;

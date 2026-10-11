@@ -188,6 +188,7 @@ mock_http_route
 mock_http_server_start
 model_uploader_config
 model_uploader_fields
+optimistic_lock
 parse_multipart
 partial
 pending

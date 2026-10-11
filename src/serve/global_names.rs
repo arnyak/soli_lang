@@ -30,6 +30,7 @@ const APPLICATION_DIRS: &[&str] = &[
     "app/controllers",
     "app/middleware",
     "app/jobs",
+    "app/subscribers",
 ];
 
 /// Directories loaded into the views' helper environment.

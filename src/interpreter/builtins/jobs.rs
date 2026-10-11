@@ -341,6 +341,12 @@ fn refused_on_queues(what: &str, instead: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Enqueue job class `handler` with `payload` (a Hash) as its arguments —
+/// what `HandlerJob.perform_later(payload)` does.
+pub(crate) fn enqueue_named(handler: &str, payload: Value) -> Result<Value, String> {
+    job_enqueue(&[Value::String(handler.to_string().into()), payload])
+}
+
 fn job_enqueue(args: &[Value]) -> Result<Value, String> {
     if args.len() < 2 {
         return Err(

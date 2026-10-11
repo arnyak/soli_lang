@@ -636,6 +636,9 @@ impl Vm {
         if native.name == "with_transaction" {
             return self.call_with_transaction_block(args, span);
         }
+        if native.name == "after_commit" {
+            return self.call_after_commit_block(args, span);
+        }
         if native.name == "with_tenant" {
             return self.call_with_tenant_block(args, span);
         }
@@ -823,8 +826,31 @@ impl Vm {
                 message: format!("transaction: commit failed: {}", e),
                 span,
             },
+            |e| e,
         )?;
+        for block in crate::interpreter::events::take_after_commit() {
+            self.invoke_callable(block, &[], span)?;
+        }
         self.push(result);
+        Ok(())
+    }
+
+    /// `after_commit { … }`: queued for the outermost commit inside a
+    /// transaction, run now outside one.
+    fn call_after_commit_block(
+        &mut self,
+        args: Vec<Value>,
+        span: Span,
+    ) -> Result<(), RuntimeError> {
+        let Some(block) = args.into_iter().next().filter(Self::is_callable_block) else {
+            return Err(RuntimeError::new("after_commit expects a block", span));
+        };
+        if crate::interpreter::builtins::model::crud::has_active_tx() {
+            crate::interpreter::events::queue_after_commit(block);
+        } else {
+            self.invoke_callable(block, &[], span)?;
+        }
+        self.push(Value::Null);
         Ok(())
     }
 

@@ -91,6 +91,8 @@ pub struct ModelMetadata {
     pub callbacks: ModelCallbacks,
     pub relations: Vec<RelationDef>,
     pub soft_delete: bool,
+    /// `optimistic_lock`: updates carry and check `lock_version`.
+    pub optimistic_lock: bool,
     pub translated_fields: Vec<String>,
     /// Fields encrypted at rest via the `encrypts` DSL (AES-256-GCM).
     pub encrypted_fields: Vec<String>,
@@ -454,6 +456,16 @@ pub fn get_accessible_attributes(class_name: &str) -> Option<Vec<String>> {
         registry
             .get(class_name)
             .and_then(|m| m.accessible_attributes.clone())
+    })
+}
+
+/// Whether the model declared `optimistic_lock`.
+pub fn is_optimistic_lock(class_name: &str) -> bool {
+    MODEL_REGISTRY.read(|registry| {
+        registry
+            .get(class_name)
+            .map(|m| m.optimistic_lock)
+            .unwrap_or(false)
     })
 }
 

@@ -271,3 +271,184 @@ fn a_served_app_answers_a_domain_error_with_its_status() {
     assert_eq!(status, 422, "{body}");
     assert!(body.contains("total must be positive"), "{body}");
 }
+
+/// Phase two: domain events published after the commit, a job subscriber as
+/// the transactional outbox, `after_commit` in a VM-run action, and
+/// `optimistic_lock` answering 409 through `StaleRecord`.
+fn events_app(root: &Path) {
+    write(
+        root,
+        "config/routes.sl",
+        r#"get("/up", "orders#up")
+post("/orders", "orders#create")
+post("/orders/:id/pay", "orders#pay")
+post("/orders/:id/pay_then_fail", "orders#pay_then_fail")
+post("/orders/:id/stale", "orders#stale")
+get("/counts", "orders#counts")
+"#,
+    );
+    write(
+        root,
+        "app/models/order_paid.sl",
+        "class OrderPaid < DomainEvent\n  number: String\n  cents: Int\nend\n",
+    );
+    write(
+        root,
+        "app/models/order.sl",
+        r#"class Order < Model
+  optimistic_lock
+
+  def pay
+    @status = "paid"
+    @record_event(OrderPaid.new(@number, @cents))
+  end
+end
+"#,
+    );
+    write(
+        root,
+        "app/models/ledger_entry.sl",
+        "class LedgerEntry < Model\nend\n",
+    );
+    write(
+        root,
+        "app/models/receipt.sl",
+        "class Receipt < Model\nend\n",
+    );
+    write(root, "app/models/note.sl", "class Note < Model\nend\n");
+    write(
+        root,
+        "app/jobs/receipt_job.sl",
+        r#"class ReceiptJob
+  static def perform(args)
+    Receipt.create({"number": args["number"]})
+  end
+end
+"#,
+    );
+    write(
+        root,
+        "app/subscribers/orders.sl",
+        r#"subscribe(OrderPaid) do |event|
+  LedgerEntry.create({"number": event.number, "cents": event.cents})
+end
+
+subscribe(OrderPaid, ReceiptJob)
+"#,
+    );
+    write(
+        root,
+        "app/controllers/orders_controller.sl",
+        r#"class OrdersController < Controller
+  # GET /up
+  def up(req)
+    "ok"
+  end
+
+  # POST /orders
+  def create(req)
+    order = Order.create({"number": params["number"], "cents": params["cents"]})
+    render_json({"key": order._key, "lock_version": order.lock_version}, 201)
+  end
+
+  # POST /orders/:id/pay
+  def pay(req)
+    Order.transaction do
+      order = Order.find(params["id"])
+      order.pay
+      throw StaleRecord.new("order changed") unless order.save
+      after_commit { Note.create({"text": "paid #{order.number}"}) }
+    end
+    render_json({"ok": true})
+  end
+
+  # POST /orders/:id/pay_then_fail
+  def pay_then_fail(req)
+    Order.transaction do
+      order = Order.find(params["id"])
+      order.pay
+      order.save
+      after_commit { Note.create({"text": "never"}) }
+      throw DomainError.new("payment provider refused")
+    end
+  end
+
+  # POST /orders/:id/stale
+  def stale(req)
+    first = Order.find(params["id"])
+    second = Order.find(params["id"])
+    first.number = first.number + "!"
+    first.save
+    second.number = "late"
+    throw StaleRecord.new("order changed since it was read") unless second.save
+    render_json({"saved": true})
+  end
+
+  # GET /counts
+  def counts(req)
+    render_json({"ledger": LedgerEntry.count, "receipts": Receipt.count, "notes": Note.count})
+  end
+end
+"#,
+    );
+}
+
+fn counts(server: &Server) -> serde_json::Value {
+    let (_, body) = call(server, "GET", "/counts", None);
+    serde_json::from_str(&body).unwrap()
+}
+
+#[test]
+fn a_served_app_publishes_events_after_the_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    events_app(dir.path());
+    let server = serve(dir.path());
+
+    let (status, body) = call(
+        &server,
+        "POST",
+        "/orders",
+        Some(r#"{"number": "A-1", "cents": 900}"#),
+    );
+    assert_eq!(status, 201, "{body}");
+    let created: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(created["lock_version"], 0);
+    let key = created["key"].as_str().unwrap().to_string();
+
+    // A rolled-back payment publishes nothing and runs no after_commit block.
+    let (status, body) = call(
+        &server,
+        "POST",
+        &format!("/orders/{key}/pay_then_fail"),
+        Some("{}"),
+    );
+    assert_eq!(status, 422, "{body}");
+    assert_eq!(
+        counts(&server),
+        serde_json::json!({"ledger": 0, "receipts": 0, "notes": 0})
+    );
+
+    // A committed one: the block subscriber and the after_commit block ran.
+    let (status, body) = call(&server, "POST", &format!("/orders/{key}/pay"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    let after = counts(&server);
+    assert_eq!(after["ledger"], 1, "{after}");
+    assert_eq!(after["notes"], 1, "{after}");
+
+    // The job subscriber was enqueued with the commit; a worker delivers it.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while counts(&server)["receipts"] != 1 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the receipt job never ran: {}",
+            counts(&server)
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    // Two copies of one order: the second save is stale, and the StaleRecord
+    // it throws answers 409.
+    let (status, body) = call(&server, "POST", &format!("/orders/{key}/stale"), Some("{}"));
+    assert_eq!(status, 409, "{body}");
+    assert!(body.contains("order changed since it was read"), "{body}");
+}

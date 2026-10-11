@@ -123,8 +123,20 @@ end
 
     <div class="my-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-8">
         <p class="text-amber-300 text-sm">
-            <strong>Nesting & reads:</strong> nested <code>transaction</code> calls join the outer one — only the outermost commits/rolls back (no savepoints). Cursor queries inside the block (<code>.where(&hellip;).all()</code>, <code>find_by</code>) read <em>committed</em> state; use <code>find</code> (key lookup) to read a row written earlier in the same transaction. That also applies to the reads a <strong>uniqueness validation</strong> performs, so two records that violate a uniqueness rule can both pass validation inside one block and both commit &mdash; enforce it with a unique index where it has to hold.
+            <strong>Nesting & reads:</strong> nested <code>transaction</code> calls join the outer one — only the outermost commits/rolls back (no savepoints). Cursor queries inside the block (<code>.where(&hellip;).all()</code>, <code>find_by</code>) read <em>committed</em> state; use <code>find</code> (key lookup) to read a row written earlier in the same transaction. That also applies to the reads a <strong>uniqueness validation</strong> performs, so two records that violate a uniqueness rule can both pass validation inside one block and both commit &mdash; enforce it with a unique index where it has to hold. On SoliDB, <code>find</code> sees the transaction&rsquo;s own writes on servers after 2.2.1 (which serve the transactional document read); older servers return the committed document.
         </p>
+    </div>
+
+    <h3 id="after-commit" class="text-xl font-bold text-white mb-4">After the Commit</h3>
+    <p class="text-gray-400 mb-4"><code class="text-amber-300">after_commit { … }</code> runs a block after the outermost commit (never if the transaction rolls back), or at once outside a transaction &mdash; for side effects that must not happen for data that was never stored. Domain events use the same moment: see <a href="/docs/database/domain-events" class="text-cyan-300 hover:underline">Domain events &amp; locking</a>.</p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-8">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">Order.transaction do
+  order.pay
+  order.save
+  after_commit { broadcast("orders", {"paid": order.number}) }
+end</code></pre>
+        </div>
     </div>
 
     <h3 class="text-xl font-bold text-white mb-4">Transaction Handle (Manual Control)</h3>

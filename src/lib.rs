@@ -403,9 +403,8 @@ pub fn tree_walker_reason(program: &ast::Program) -> Option<String> {
         });
         let hit = match name {
             "class_eval" | "instance_eval" | "send" | "methods" | "find_each" | "in_batches"
-            | "find_in_batches" | "state_machine" | "after_transition" | "before_transition" => {
-                true
-            }
+            | "find_in_batches" | "state_machine" | "after_transition" | "before_transition"
+            | "subscribe" => true,
             "respond_to?" | "inspect" | "to_s" | "to_string" => on_a_class,
             "before_save" | "after_save" | "before_create" | "after_create" | "before_update"
             | "after_update" | "before_delete" | "after_delete" | "before_validation"

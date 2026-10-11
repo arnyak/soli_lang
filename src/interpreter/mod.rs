@@ -4,6 +4,7 @@ pub mod builtins;
 pub mod deadline;
 pub mod domain;
 pub mod environment;
+pub mod events;
 pub mod executor;
 pub mod hidden_class;
 pub mod inline_cache;

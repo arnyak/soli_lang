@@ -49,6 +49,43 @@ pub(super) fn register(native_methods: &mut HashMap<String, Rc<NativeFunction>>)
         )),
     );
 
+    // instance.stale? - Whether the last save was refused because the record
+    // changed since it was read (`optimistic_lock`).
+    native_methods.insert(
+        "stale?".to_string(),
+        Rc::new(NativeFunction::new_auto_invocable(
+            "Model#stale?",
+            Some(0),
+            |args| {
+                let Some(Value::Instance(instance)) = args.first() else {
+                    return Err("stale? is called on a model instance".to_string());
+                };
+                let stale = match instance.borrow().fields.get("_errors") {
+                    Some(Value::Array(errors)) => errors.borrow().iter().any(|e| match e {
+                        Value::Hash(h) => h.borrow().iter().any(|(k, v)| {
+                            matches!(k, HashKey::String(s) if s.as_ref() == "field")
+                                && matches!(v, Value::String(s) if s.as_ref() == "lock_version")
+                        }),
+                        _ => false,
+                    }),
+                    _ => false,
+                };
+                Ok(Value::Bool(stale))
+            },
+        )),
+    );
+
+    // instance.record_event(event) - Keep a DomainEvent on the record; it is
+    // published once the record is saved (see `interpreter::events`).
+    native_methods.insert(
+        "record_event".to_string(),
+        Rc::new(NativeFunction::new(
+            "Model#record_event",
+            Some(1),
+            crate::interpreter::events::record_event,
+        )),
+    );
+
     // instance.update() - Persist current instance fields to DB
     // Returns true on success, false on validation/DB error (errors stored in _errors)
     native_methods.insert(
@@ -144,8 +181,12 @@ pub(super) fn register(native_methods: &mut HashMap<String, Rc<NativeFunction>>)
                     }
                 }
                 drop(inst_ref2);
-                match exec_update(&collection, &key_str, serde_json::Value::Object(map), true) {
-                    Ok(result) => {
+                match write_update(&class_name, &collection, &key_str, &instance, map) {
+                    Ok(Persisted::Stale) => {
+                        instance.borrow_mut().set("_errors", stale_errors());
+                        Ok(Value::Bool(false))
+                    }
+                    Ok(Persisted::Written(result)) => {
                         let mut inst_mut = instance.borrow_mut();
                         if let serde_json::Value::Object(ref res_map) = result {
                             if let Some(rev) = res_map.get("_rev") {
@@ -169,6 +210,9 @@ pub(super) fn register(native_methods: &mut HashMap<String, Rc<NativeFunction>>)
                                 Value::Instance(instance.clone()),
                             );
                         }
+                        crate::interpreter::events::publish_recorded(&Value::Instance(
+                            instance.clone(),
+                        ))?;
                         Ok(Value::Bool(true))
                     }
                     Err(e) => {
@@ -333,8 +377,12 @@ pub(super) fn register(native_methods: &mut HashMap<String, Rc<NativeFunction>>)
 
                 if let Some(ref key_str) = key_opt {
                     // Update existing document
-                    match exec_update(&collection, key_str, serde_json::Value::Object(map), true) {
-                        Ok(result) => {
+                    match write_update(&class_name, &collection, key_str, &instance, map) {
+                        Ok(Persisted::Stale) => {
+                            instance.borrow_mut().set("_errors", stale_errors());
+                            Ok(Value::Bool(false))
+                        }
+                        Ok(Persisted::Written(result)) => {
                             let mut inst_mut = instance.borrow_mut();
                             if let serde_json::Value::Object(ref res_map) = result {
                                 if let Some(rev) = res_map.get("_rev") {
@@ -344,6 +392,10 @@ pub(super) fn register(native_methods: &mut HashMap<String, Rc<NativeFunction>>)
                             inst_mut.set("_errors", Value::Array(Rc::new(RefCell::new(vec![]))));
                             let changes = super::dirty::finalize_persist(&mut inst_mut);
                             super::counter_cache::bump_for_changes(&inst_mut, &changes);
+                            drop(inst_mut);
+                            crate::interpreter::events::publish_recorded(&Value::Instance(
+                                instance.clone(),
+                            ))?;
                             Ok(Value::Bool(true))
                         }
                         Err(e) => {
@@ -368,6 +420,11 @@ pub(super) fn register(native_methods: &mut HashMap<String, Rc<NativeFunction>>)
                             .borrow_mut()
                             .set("type", Value::String(class_name.as_str().into()));
                     }
+                    // `optimistic_lock`: a new record starts at version 0.
+                    if super::registry::is_optimistic_lock(&class_name) {
+                        map.insert("lock_version".to_string(), serde_json::json!(0));
+                        instance.borrow_mut().set("lock_version", Value::Int(0));
+                    }
                     match exec_insert(&collection, None, serde_json::Value::Object(map)) {
                         Ok(result) => {
                             let mut inst_mut = instance.borrow_mut();
@@ -382,6 +439,10 @@ pub(super) fn register(native_methods: &mut HashMap<String, Rc<NativeFunction>>)
                             inst_mut.set("_errors", Value::Array(Rc::new(RefCell::new(vec![]))));
                             super::dirty::finalize_persist(&mut inst_mut);
                             super::counter_cache::bump_for_instance(&inst_mut, 1);
+                            drop(inst_mut);
+                            crate::interpreter::events::publish_recorded(&Value::Instance(
+                                instance.clone(),
+                            ))?;
                             Ok(Value::Bool(true))
                         }
                         Err(e) => {
@@ -927,4 +988,72 @@ fn merged_translations(
         }
     }
     translated
+}
+
+/// What a model update did.
+enum Persisted {
+    Written(serde_json::Value),
+    /// `optimistic_lock`: the record changed since it was read.
+    Stale,
+}
+
+/// Update a persisted record: a plain merge, or — on an `optimistic_lock`
+/// model — the compare-and-swap on the `lock_version` the instance holds,
+/// which it then advances.
+fn write_update(
+    class_name: &str,
+    collection: &str,
+    key: &str,
+    instance: &Rc<RefCell<Instance>>,
+    map: serde_json::Map<String, serde_json::Value>,
+) -> Result<Persisted, String> {
+    if !super::registry::is_optimistic_lock(class_name) {
+        return exec_update(collection, key, serde_json::Value::Object(map), true)
+            .map(Persisted::Written);
+    }
+    let expected = lock_version_value(instance.borrow().fields.get("lock_version"));
+    match super::crud::exec_update_locked(
+        collection,
+        key,
+        serde_json::Value::Object(map),
+        expected,
+    )? {
+        super::crud::LockedWrite::Written(result) => {
+            instance
+                .borrow_mut()
+                .set("lock_version", Value::Int(expected + 1));
+            Ok(Persisted::Written(result))
+        }
+        super::crud::LockedWrite::Stale => Ok(Persisted::Stale),
+    }
+}
+
+/// A `lock_version` as a record or a form carries it: an Int, or its digits
+/// (a hidden form field); nothing is version 0.
+pub(super) fn lock_version_value(value: Option<&Value>) -> i64 {
+    match value {
+        Some(Value::Int(n)) => *n,
+        Some(Value::String(s)) => s.trim().parse().unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// The message of a stale write.
+pub(super) const STALE_MESSAGE: &str =
+    "is stale: the record was changed since it was read — reload it and try again";
+
+/// `_errors` for a stale write.
+pub(super) fn stale_errors() -> Value {
+    let mut error = crate::interpreter::value::HashPairs::default();
+    error.insert(
+        HashKey::String("field".into()),
+        Value::String("lock_version".into()),
+    );
+    error.insert(
+        HashKey::String("message".into()),
+        Value::String(STALE_MESSAGE.into()),
+    );
+    Value::Array(Rc::new(RefCell::new(vec![Value::Hash(Rc::new(
+        RefCell::new(error),
+    ))])))
 }

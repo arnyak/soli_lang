@@ -32,6 +32,8 @@ pub(super) struct WatchPaths {
     pub services: PathBuf,
     pub policies: PathBuf,
     pub mailers: PathBuf,
+    /// `app/subscribers`: reloaded with the models (they name model events).
+    pub subscribers: PathBuf,
     pub jobs: PathBuf,
     pub public: PathBuf,
     pub routes_file: PathBuf,
@@ -70,6 +72,7 @@ impl WatchPaths {
             services: folder.join("app/services"),
             policies: folder.join("app/policies"),
             mailers: folder.join("app/mailers"),
+            subscribers: folder.join("app/subscribers"),
             jobs: jobs.to_path_buf(),
             public: public.to_path_buf(),
             routes_file: routes_file.to_path_buf(),
@@ -113,6 +116,7 @@ pub(super) fn spawn(
         services: watch_services_dir,
         policies: watch_policies_dir,
         mailers: watch_mailers_dir,
+        subscribers: watch_subscribers_dir,
         jobs: watch_jobs_dir,
         public: watch_public_dir,
         routes_file: watch_routes_file,
@@ -185,6 +189,13 @@ pub(super) fn spawn(
         if watch_policies_dir.exists()
             && watcher
                 .watch(&watch_policies_dir, RecursiveMode::Recursive)
+                .is_ok()
+        {
+            watch_count += 1;
+        }
+        if watch_subscribers_dir.exists()
+            && watcher
+                .watch(&watch_subscribers_dir, RecursiveMode::Recursive)
                 .is_ok()
         {
             watch_count += 1;
@@ -297,6 +308,11 @@ pub(super) fn spawn(
             ),
             (
                 &watch_policies_dir,
+                RecursiveMode::Recursive,
+                LateDir::Models,
+            ),
+            (
+                &watch_subscribers_dir,
                 RecursiveMode::Recursive,
                 LateDir::Models,
             ),
@@ -523,6 +539,7 @@ pub(super) fn spawn(
                     } else if name.ends_with(".sl")
                         && (path.starts_with(&watch_services_dir)
                             || path.starts_with(&watch_policies_dir)
+                            || path.starts_with(&watch_subscribers_dir)
                             || path.starts_with(&watch_mailers_dir))
                     {
                         // The models signal covers all three siblings, because

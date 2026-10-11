@@ -1,0 +1,95 @@
+<div>
+    <div class="mb-16">
+        <h1 class="text-4xl font-bold tracking-tight text-white sm:text-5xl mb-6">
+            <span class="bg-gradient-to-r from-amber-400 via-orange-400 to-orange-400 bg-clip-text text-transparent">Domain Events &amp; Locking</span>
+        </h1>
+        <p class="text-xl text-gray-300 leading-8">
+            Say what happened in the domain and let other parts of the app react once the data is committed; run side effects only after a commit; refuse a save that would overwrite someone else&rsquo;s edit.
+        </p>
+    </div>
+
+    <h2 id="domain-events" class="text-2xl font-bold text-white mb-6">Domain events</h2>
+    <p class="text-gray-400 mb-4">
+        An event is a <a href="/docs/language/value-objects" class="text-cyan-300 hover:underline">value object</a> that inherits <code>DomainEvent</code>. A model records events on itself with <code>record_event</code>; they are published when the record is saved, so a method that raises an event and then fails to save publishes nothing. Elsewhere, <code>publish(event)</code> publishes at once.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+            <pre data-filename="app/models/order.sl"><code class="language-soli text-sm">class OrderPaid &lt; DomainEvent
+  number: String
+  cents: Int
+end
+
+class Order &lt; Model
+  def pay
+    @status = "paid"
+    @record_event(OrderPaid.new(@number, @cents))
+  end
+end
+
+order.pay
+order.save            # OrderPaid is published here, if the save succeeds</code></pre>
+        </div>
+    </div>
+
+    <h3 id="subscribers" class="text-lg font-semibold text-white mb-4">Subscribers</h3>
+    <p class="text-gray-400 mb-4">
+        Subscriptions live in <code>app/subscribers/</code>, loaded after the models, services and jobs. A subscription to a class also receives its subclasses&rsquo; events.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+            <pre data-filename="app/subscribers/orders.sl"><code class="language-soli text-sm">subscribe(OrderPaid) do |event|
+  LedgerEntry.create({"number": event.number, "cents": event.cents})
+end
+
+subscribe(OrderPaid, ReceiptJob)   # ReceiptJob.perform(args) gets event.to_h</code></pre>
+        </div>
+    </div>
+    <ul class="list-disc pl-6 space-y-2 text-gray-400 mb-12">
+        <li>A <strong class="text-white">block</strong> handler runs in the same process once the data is committed: right away outside a transaction, after the outermost commit inside one, never if the transaction rolls back. A handler that throws fails the request, but the data is already committed &mdash; use a job for anything that can fail.</li>
+        <li>A <strong class="text-white">job</strong> handler is enqueued when the event is published, with the event&rsquo;s fields as its arguments. Inside a transaction the job row is written by that transaction (<code>_jobs</code> lives on the default connection), so it commits or rolls back with the data &mdash; the <em>transactional outbox</em> &mdash; and the job queue retries delivery. On Cloudflare Workers jobs go to a Queue, which is not transactional.</li>
+    </ul>
+
+    <h2 id="after-commit" class="text-2xl font-bold text-white mb-6">After the commit</h2>
+    <p class="text-gray-400 mb-4">
+        <code>after_commit { … }</code> (or <code>after_commit do … end</code>) runs a block once the data is durable: after the outermost commit inside a transaction, never if it rolls back, at once outside one. It is the place for side effects that must not happen for data that was never stored.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">Order.transaction do
+  order.pay
+  order.save
+  after_commit { broadcast("orders", {"paid": order.number}) }
+end</code></pre>
+        </div>
+    </div>
+
+    <h2 id="optimistic-locking" class="text-2xl font-bold text-white mb-6">Optimistic locking</h2>
+    <p class="text-gray-400 mb-4">
+        Two people edit the same record: both load version 3, the first saves, and the second save would silently overwrite the first. Declare <code>optimistic_lock</code> and the second save is refused instead.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">class Order &lt; Model
+  optimistic_lock
+end
+
+order = Order.create({"number": "A-1"})   # lock_version: 0
+a = Order.find(order._key)
+b = Order.find(order._key)
+a.number = "A-2"
+a.save                  # true — lock_version is now 1
+b.number = "A-3"
+b.save                  # false
+b.stale?                # true — _errors names lock_version</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-4">
+        Every update checks that the stored <code>lock_version</code> is still the one the record was read with, and bumps it, in one atomic step (a conditional <code>UPDATE</code> on the SQL adapters, an <code>If-Match</code> on the revision on SoliDB). The static <code>Model.update(key, changes)</code> checks the <code>lock_version</code> in <code>changes</code> when there is one &mdash; a form&rsquo;s hidden field &mdash; and the stored one otherwise. To answer HTTP, throw the built-in <code>StaleRecord</code>, a <code>DomainError</code> whose <code>http_status</code> is 409:
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">throw StaleRecord.new("order #{order.number} changed since you opened it") unless order.save</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-12">Not yet supported: column-mode tables (an existing SQL schema). <code>increment</code> and <code>decrement</code> do not bump the version.</p>
+</div>

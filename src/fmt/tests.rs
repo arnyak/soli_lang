@@ -1229,3 +1229,10 @@ fn invariants_survive_formatting() {
     );
     assert_idempotent(src);
 }
+
+#[test]
+fn after_commit_keeps_its_bare_block_form() {
+    let src = "after_commit do\n  print(1)\nend\n";
+    assert_fmt("after_commit { print(1) }\n", src);
+    assert_idempotent(src);
+}

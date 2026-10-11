@@ -568,6 +568,36 @@ pub fn update(
     })
 }
 
+/// Replace the document of `key` only while its `lock_version` is still
+/// `expected` (a missing one counts as 0): `false` when another write got
+/// there first. Optimistic locking (`optimistic_lock` on a model) — every
+/// write of a locked model bumps the version, so this one statement is the
+/// whole compare-and-swap.
+pub fn replace_if_version(
+    table: &str,
+    key: &str,
+    mut document: serde_json::Value,
+    expected: i64,
+) -> Result<bool, String> {
+    if let Some(obj) = document.as_object_mut() {
+        obj.insert("_key".to_string(), serde_json::json!(key));
+    }
+    let table_q = Dialect::Mysql.quote_ident(table)?;
+    // The new document always carries `expected + 1`, so a matched row is a
+    // changed row even with CLIENT_FOUND_ROWS off.
+    let sql = format!(
+        "UPDATE {table_q} SET doc = CAST(? AS JSON) WHERE _key = ? \
+         AND CAST(COALESCE(JSON_EXTRACT(doc, '$.lock_version'), 0) AS SIGNED) = ?"
+    );
+    let _trace = super::trace::start_plain(&sql);
+    let doc_str = document.to_string();
+    with_conn(|conn| {
+        conn.exec_drop(&sql, (&doc_str, key, expected))
+            .map_err(|e| my_error("mysql update (locked)", &e))?;
+        Ok(conn.affected_rows() == 1)
+    })
+}
+
 /// `update` minus the `ensure_table`, which `ensured::write_with_table` owns.
 fn update_existing(
     table: &str,

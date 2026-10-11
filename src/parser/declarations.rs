@@ -669,7 +669,8 @@ impl Parser {
             // Bare class-level macros (no parentheses needed). A following
             // `:` means it's really a field declaration (`timeseries: Bool`),
             // so the bare form only wins when no colon follows.
-            let bare_class_level_names = ["soft_delete", "timeseries", "columnar"];
+            let bare_class_level_names =
+                ["soft_delete", "optimistic_lock", "timeseries", "columnar"];
             if bare_class_level_names.contains(&name.as_str())
                 && !matches!(
                     self.tokens.get(self.current + 1).map(|t| &t.kind),
@@ -754,7 +755,7 @@ impl Parser {
                 return Ok(Stmt::new(StmtKind::Expression(call), span, None));
             }
 
-            let bare_names = ["soft_delete", "timeseries", "columnar"];
+            let bare_names = ["soft_delete", "optimistic_lock", "timeseries", "columnar"];
             // A following `(` means the parens form — let the expression
             // path below parse the full call instead of a bare zero-arg one.
             if bare_names.contains(&name.as_str())

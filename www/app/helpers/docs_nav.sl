@@ -74,6 +74,7 @@ def docs_nav_sections()
         { "path": "/docs/database/query-builder", "label": "Query Builder" },
         { "path": "/docs/database/relationships", "label": "Relationships" },
         { "path": "/docs/database/validations", "label": "Validations & Callbacks" },
+        { "path": "/docs/database/domain-events", "label": "Domain Events & Locking" },
         { "path": "/docs/database/state-machines", "label": "State Machines" },
         { "path": "/docs/database/finders", "label": "Finders & Aggregations" },
         { "path": "/docs/database/analytics", "label": "Analytics & Columnar" },

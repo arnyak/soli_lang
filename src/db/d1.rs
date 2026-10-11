@@ -460,6 +460,37 @@ pub fn update(
     })
 }
 
+/// Replace the document of `key` only while its `lock_version` is still
+/// `expected` (a missing one counts as 0): `false` when another write got
+/// there first. Optimistic locking (`optimistic_lock` on a model) — every
+/// write of a locked model bumps the version, so this one statement is the
+/// whole compare-and-swap.
+pub fn replace_if_version(
+    table: &str,
+    key: &str,
+    mut document: serde_json::Value,
+    expected: i64,
+) -> Result<bool, String> {
+    if let Some(obj) = document.as_object_mut() {
+        obj.insert("_key".to_string(), serde_json::json!(key));
+    }
+    let table_q = Dialect::Sqlite.quote_ident(table)?;
+    let sql = format!(
+        "UPDATE {table_q} SET doc = json(?) \
+         WHERE _key = ? AND COALESCE(json_extract(doc, '$.lock_version'), 0) = ? RETURNING _key"
+    );
+    let rows = exec(
+        "update (locked)",
+        &sql,
+        &[
+            SqlBind::Text(document.to_string()),
+            SqlBind::Text(key.to_string()),
+            SqlBind::I64(expected),
+        ],
+    )?;
+    Ok(!rows.rows.is_empty())
+}
+
 /// One `INSERT … ON CONFLICT … RETURNING doc`: an insert, a replace, or (with
 /// `merge`) an RFC 7396 patch via `json_patch`, as in the SQLite adapter.
 fn upsert(

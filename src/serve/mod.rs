@@ -864,6 +864,7 @@ pub fn serve_folder_with_options_and_hooks(
         app_loader::load_jobs_in_worker(0, &mut interpreter, &jobs_dir, true);
     }
     boot_trace("jobs loaded");
+    app_loader::load_subscribers(0, &mut interpreter, &app_dir);
 
     // Load middleware
     let middleware_dir = app_dir.join("middleware");
@@ -2040,12 +2041,18 @@ fn worker_loop(
             // reload signal — see `app_loader::load_models_and_siblings`,
             // which is also what the worker booted with.
             app_loader::load_models_and_siblings(worker_id, interpreter, &_models_dir, "reloading");
+            if let Some(app_dir) = _models_dir.parent() {
+                app_loader::load_subscribers(worker_id, interpreter, app_dir);
+            }
         }
 
         if current_jobs != last_jobs_version {
             last_jobs_version = current_jobs;
             if jobs_dir.exists() {
                 app_loader::load_jobs_in_worker(worker_id, interpreter, &jobs_dir, true);
+            }
+            if let Some(app_dir) = _models_dir.parent() {
+                app_loader::load_subscribers(worker_id, interpreter, app_dir);
             }
             // Update VM globals so production-mode bytecode sees reloaded job classes
             if let Some(ref mut vm) = vm {

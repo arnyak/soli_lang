@@ -109,6 +109,7 @@ end</code></pre>
         <div class="rounded-xl bg-white/5 border border-white/10 p-5">
             <div class="text-sm text-gray-400 space-y-2">
                 <div><strong class="text-white">Load order.</strong> A file under <code>app/models/</code> that declares a value object (or an enum) loads before the models, wherever it sits &mdash; <code>app/models/values/amount.sl</code> is found by <code>app/models/invoice.sl</code>.</div>
+                <div><strong class="text-white">Domain events</strong> are value objects too: <code>class OrderPaid &lt; DomainEvent</code>, published after the commit &mdash; see <a href="/docs/database/domain-events" class="text-cyan-300 hover:underline">Domain events &amp; locking</a>.</div>
                 <div><strong class="text-white">Both engines.</strong> Construction, equality, <code>with</code> and invariants behave the same in scripts, in models and in controller actions run on the VM.</div>
             </div>
         </div>

@@ -8,6 +8,10 @@ use crate::lexer::TokenKind;
 use super::core::{ParseResult, Parser};
 use super::precedence::{get_precedence, Precedence};
 
+/// Builtins that take only a block and read as `name do … end` /
+/// `name { … }` without parentheses.
+pub(crate) const BARE_BLOCK_CALLS: &[&str] = &["after_commit"];
+
 impl Parser {
     pub(crate) fn expression(&mut self) -> ParseResult<Expr> {
         self.parse_precedence(Precedence::Assignment)
@@ -181,6 +185,32 @@ impl Parser {
                             name: rest.to_string(),
                         },
                         start_span,
+                    ));
+                }
+
+                // A block-only builtin called bare: `after_commit do … end`,
+                // `after_commit { … }`. Without this the name parsed alone and
+                // the block became a statement of its own, run at once.
+                if BARE_BLOCK_CALLS.contains(&name.as_str())
+                    && self.peek().span.line == start_span.line
+                    && (self.check(&TokenKind::Do)
+                        || (self.check(&TokenKind::LeftBrace) && !self.looks_like_hash_literal()))
+                {
+                    let block = if self.check(&TokenKind::Do) {
+                        self.parse_trailing_do_block()?
+                    } else {
+                        self.parse_trailing_brace_block()?
+                    };
+                    let span = start_span.merge(&self.previous_span());
+                    return Ok(Expr::new(
+                        ExprKind::Call {
+                            callee: Box::new(Expr::new(
+                                ExprKind::Variable(name.clone()),
+                                start_span,
+                            )),
+                            arguments: vec![Argument::Block(block)],
+                        },
+                        span,
                     ));
                 }
 

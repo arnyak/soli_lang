@@ -529,8 +529,15 @@ impl Printer<'_> {
                 // `obj.method do … end` needs no empty parens — the parser
                 // takes a trailing `do` straight off a member access. Only for
                 // a `Member` callee: a bare-identifier callee followed by `do`
-                // is DSL-only grammar, so those keep their `()`.
-                let bare_do_ok = matches!(callee.kind, ExprKind::Member { .. });
+                // is DSL-only grammar, so those keep their `()` — except the
+                // block-only builtins the parser reads bare (`after_commit do`).
+                let bare_do_ok = match &callee.kind {
+                    ExprKind::Member { .. } => true,
+                    ExprKind::Variable(name) => {
+                        crate::parser::expressions::BARE_BLOCK_CALLS.contains(&name.as_str())
+                    }
+                    _ => false,
+                };
                 // Preserve () for zero-arg calls so the linter can distinguish
                 // function calls (.all(), .keys()) from variable reads (.all).
                 // But don't ADD parens to bare DSL forms like `soft_delete`
