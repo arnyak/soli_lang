@@ -2894,6 +2894,19 @@ use crate::ast::TypeKind;
 
 /// Check if a runtime value matches an expected type annotation.
 /// Used for runtime return type enforcement.
+fn class_answers_to(class: &Class, name: &str) -> bool {
+    let named = class.name == name
+        || class
+            .name
+            .rsplit_once("::")
+            .is_some_and(|(_, short)| short == name);
+    named
+        || class
+            .superclass
+            .as_ref()
+            .is_some_and(|superclass| class_answers_to(superclass, name))
+}
+
 pub fn value_matches_type(value: &Value, expected: &TypeAnnotation) -> bool {
     match &expected.kind {
         TypeKind::Named(name) => {
@@ -2910,8 +2923,11 @@ pub fn value_matches_type(value: &Value, expected: &TypeAnnotation) -> bool {
                 "function" => matches!(value, Value::Function(_) | Value::NativeFunction(_)),
                 "void" | "null" => matches!(value, Value::Null),
                 // Class instance check
+                // Class instance check: the class or an ancestor, named in
+                // full or — written inside its context — by its short name
+                // (`-> Invoice` for a `Billing::Invoice`).
                 _ => match value {
-                    Value::Instance(inst) => inst.borrow().class.name == *name,
+                    Value::Instance(inst) => class_answers_to(&inst.borrow().class, name),
                     _ => false,
                 },
             }

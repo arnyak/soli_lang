@@ -399,6 +399,61 @@ print(Commerce::Cart.new().size, Commerce.version)
 print(Commerce::Product.new("Pen", 1.0).class)
 print(Commerce.Product.new("Dot", 2.0).label)"##,
     ),
+    (
+        // Inside a module its classes are read unqualified — in a static
+        // method, an instance method, a block, a module function.
+        "unqualified_names_resolve_in_their_module",
+        r##"module Billing
+  class Invoice
+    total: Int
+    new(total: Int)
+      @total = total
+    end
+  end
+
+  class PayInvoice
+    static def call(total: Int)
+      Invoice.new(total)
+    end
+
+    def inside_block
+      [1, 2].map { |t| Invoice.new(t).total }
+    end
+  end
+
+  def self.make
+    Invoice.new(9)
+  end
+end
+
+print(Billing::PayInvoice.call(5).total)
+print(Billing::PayInvoice.new().inside_block)
+print(Billing.make.total)
+print(Billing::PayInvoice.call(5).class)"##,
+    ),
+    (
+        // A declared return type accepts a subclass, and a class of the
+        // module named by its short name.
+        "return_types_accept_subclasses_and_short_names",
+        r##"class A
+end
+class B < A
+end
+def make -> A
+  B.new()
+end
+print(make().class)
+module M
+  class C
+  end
+  class F
+    static def build -> C
+      C.new()
+    end
+  end
+end
+print(M::F.build.class)"##,
+    ),
     // A typed last clause that matches runs its body and continues: the VM
     // used to fall into the no-match `Rethrow` after the body.
     (

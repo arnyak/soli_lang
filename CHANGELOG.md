@@ -22,7 +22,7 @@
 
 * **orm:** **Domain events to an ES stream.** `subscribe(OrderPaid, {"stream": "billing", "key": "number"})` appends each event to an [es](https://es.solisoft.net) topic as `{"type", "data", "occurred_at"}`, keyed by the named field. Publishing enqueues the built-in `EventStreamJob` inside the transaction and the job appends the record once committed, with the queue's retries: every committed event, at least once, none that rolled back.
 
-* **language:** **Bounded contexts.** A class nested in a module is named after it (`Billing::Invoice` — `print`, `.class`, errors), on both engines; a model in a context gets its own collection (`billing_invoices`) and registry entry, and its relations name models of the same context by default (`class_name:` reaches others; foreign keys use the short name, `customer_id`). A module may be declared again — in another file of the context — and adds to it instead of replacing it; the boot-time duplicate check now compares qualified class names and allows a reopened module. Files declaring a domain event load with the value objects, first.
+* **language:** **Bounded contexts.** A class nested in a module is named after it (`Billing::Invoice` — `print`, `.class`, errors), on both engines; a model in a context gets its own collection (`billing_invoices`) and registry entry, and its relations name models of the same context by default (`class_name:` reaches others; foreign keys use the short name, `customer_id`). Inside a module its classes are read unqualified — `Invoice` in a method of `Billing::PayInvoice`, in a block there or in a module function is `Billing::Invoice` — on both engines (a `__namespace__` binding for the tree-walker, `FunctionProto::namespace` for the VM, including methods it compiles from tree-walker definitions). A module may be declared again — in another file of the context — and adds to it instead of replacing it; the boot-time duplicate check now compares qualified class names and allows a reopened module. Files declaring a domain event load with the value objects, first.
 
 ### Changed
 
@@ -31,6 +31,8 @@
 * **language:** **Every way of instantiating a class runs the same constructor.** `new Klass(...)`, `Klass(...)` and named-argument calls went through three copies of the binding code on the tree-walker, which disagreed: only `new` looked for an inherited constructor, only `Klass(...)` ran a native one, and `super(...)` saw the parent's own constructor only. They now share one path — the class's own or nearest inherited constructor, else a native one — and `super(...)` follows the same rule. Arguments to a class with no constructor are now evaluated (they were skipped by `new`).
 
 ### Fixed
+
+* **language:** **A declared return type accepts a subclass.** `def make -> Animal` returning a `Dog` failed with "expected to return Animal, got Dog" (only the exact class name matched); the class chain is checked now, and a class of a module matches its short name (`-> Invoice` for `Billing::Invoice`).
 
 * **vm:** **A class nested in a module resolves on the VM.** `Commerce::Product` evaluated to the module itself, so `new Commerce::Product(...)` failed with "cannot instantiate module Commerce" and `Billing::Invoice.create(...)` reached the module: the compiler bound a nested class declared at the top level as a global and dropped it, then stored the parent in its place.
 

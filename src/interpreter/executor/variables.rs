@@ -82,6 +82,23 @@ impl Drop for TemplateLenientVarsGuard {
 }
 
 impl Interpreter {
+    /// `name` read unqualified in a class nested in a module: resolved in the
+    /// namespace its environment records (`interpreter::domain`).
+    pub(crate) fn resolve_in_current_namespace(&self, name: &str) -> Option<Value> {
+        let namespace = match self
+            .environment
+            .borrow()
+            .get(crate::interpreter::domain::NAMESPACE_BINDING)
+        {
+            Some(Value::String(ns)) => ns.to_string(),
+            _ => return None,
+        };
+        let env = self.environment.clone();
+        crate::interpreter::domain::resolve_in_namespace(&namespace, name, |global| {
+            env.borrow().get(global)
+        })
+    }
+
     /// Inside an instance method, is `name` — which resolved to no variable or
     /// function — a method of `this`? Then the bare `name` means `@name`.
     /// Only consulted after a lookup failed, so resolved names cost nothing.

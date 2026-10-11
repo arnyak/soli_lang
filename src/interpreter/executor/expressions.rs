@@ -58,6 +58,13 @@ impl Interpreter {
                     let val = self.implicit_self_member(name, expr.span)?;
                     self.try_auto_invoke(val, expr.span, AutoInvokeContext::Member)
                 }
+                // `Invoice` inside `module Billing`: `Billing::Invoice`.
+                Err(e @ RuntimeError::UndefinedVariable(..)) => {
+                    match self.resolve_in_current_namespace(name) {
+                        Some(class) => Ok(class),
+                        None => Err(e),
+                    }
+                }
                 Err(e) => Err(e),
             },
 

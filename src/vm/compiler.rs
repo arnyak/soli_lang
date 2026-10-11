@@ -403,6 +403,7 @@ impl Compiler {
         mut compiler: Compiler,
         func: &crate::interpreter::value::Function,
     ) -> CompileResult<FunctionProto> {
+        compiler.proto.namespace = namespace_of(func);
         compiler.proto.source_path = func
             .source_path
             .as_ref()
@@ -719,6 +720,8 @@ impl Compiler {
         new_compiler.program_globals = self.program_globals.clone();
         new_compiler.referenced_globals = self.referenced_globals.clone();
         new_compiler.template_mode = self.template_mode;
+        // A closure reads names in the namespace of the code around it.
+        new_compiler.proto.namespace = self.proto.namespace.clone();
 
         // Add parameters as locals
         for param in params {
@@ -2229,6 +2232,19 @@ fn compact_nops(chunk: &mut Chunk) {
 fn fwd(old_to_new: &[usize], old: usize, d: u16, here: usize) -> u16 {
     let target = old_to_new[old + 1 + d as usize];
     (target - (here + 1)) as u16
+}
+
+/// The namespace a tree-walker function was declared in — what its
+/// environment records for a class nested in a module.
+pub(crate) fn namespace_of(func: &crate::interpreter::value::Function) -> Option<Arc<str>> {
+    match func
+        .closure
+        .borrow()
+        .get(crate::interpreter::domain::NAMESPACE_BINDING)
+    {
+        Some(crate::interpreter::value::Value::String(ns)) => Some(Arc::from(ns.as_str())),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

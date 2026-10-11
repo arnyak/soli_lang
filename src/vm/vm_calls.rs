@@ -81,7 +81,7 @@ fn compile_function_proto(
     let module = compile(&program, source_path).map_err(|e| e.to_string())?;
 
     // Extract the compiled FunctionProto from the module's constant pool.
-    module
+    let proto = module
         .main
         .chunk
         .constants
@@ -93,7 +93,25 @@ fn compile_function_proto(
                 None
             }
         })
-        .ok_or_else(|| "Failed to extract compiled function from JIT".to_string())
+        .ok_or_else(|| "Failed to extract compiled function from JIT".to_string())?;
+    // A function declared in a class nested in a module reads names in its
+    // namespace — it, and the blocks compiled inside it.
+    Ok(match crate::vm::compiler::namespace_of(func) {
+        Some(namespace) => Arc::new(with_namespace(&proto, &namespace)),
+        None => proto,
+    })
+}
+
+/// `proto` and every function compiled inside it, with `namespace`.
+fn with_namespace(proto: &FunctionProto, namespace: &Arc<str>) -> FunctionProto {
+    let mut proto = proto.clone();
+    proto.namespace = Some(namespace.clone());
+    for constant in proto.chunk.constants.iter_mut() {
+        if let Constant::Function(inner) = constant {
+            *inner = Arc::new(with_namespace(inner, namespace));
+        }
+    }
+    proto
 }
 
 fn jit_compile_function_by(

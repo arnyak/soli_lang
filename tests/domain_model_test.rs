@@ -502,6 +502,12 @@ fn contexts_app(root: &Path) {
         "app/models/shipping/invoice.sl",
         "module Shipping\n  class Invoice < Model\n  end\nend\n",
     );
+    // A service of the context names its models unqualified.
+    write(
+        root,
+        "app/services/billing/ledger.sl",
+        "module Billing\n  class Ledger\n    static def invoices -> Int\n      Invoice.count\n    end\n  end\nend\n",
+    );
     write(
         root,
         "app/controllers/contexts_controller.sl",
@@ -521,7 +527,8 @@ fn contexts_app(root: &Path) {
       "shipping": Shipping::Invoice.count,
       "class": Billing::Invoice.all[0].class,
       "label": Billing.label,
-      "first_shipping": Shipping::Invoice.all[0].number
+      "first_shipping": Shipping::Invoice.all[0].number,
+      "ledger": Billing::Ledger.invoices
     })
   end
 end
@@ -542,6 +549,7 @@ fn bounded_contexts_keep_their_models_apart() {
     assert_eq!(json["class"], "Billing::Invoice", "{body}");
     assert_eq!(json["label"], "billing", "{body}");
     assert_eq!(json["first_shipping"], "S-1", "{body}");
+    assert_eq!(json["ledger"], 1, "{body}");
     drop(server);
     let conn = rusqlite::Connection::open(dir.path().join("app.sqlite3")).unwrap();
     let mut tables: Vec<String> = conn

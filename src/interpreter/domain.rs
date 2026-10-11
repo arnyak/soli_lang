@@ -444,3 +444,55 @@ pub fn changes_from(value: Option<&Value>, what: &str) -> Result<HashMap<String,
         )),
     }
 }
+
+/// The binding a nested class's environment holds: the qualified name of the
+/// class its methods are written in, for names read unqualified there.
+pub const NAMESPACE_BINDING: &str = "__namespace__";
+
+/// `name` read inside the namespace `namespace` (`Billing::PayInvoice`): the
+/// nearest `Billing::PayInvoice::name`, then `Billing::name`, the way Ruby
+/// resolves a constant lexically. `global` looks up a top-level name.
+pub fn resolve_in_namespace(
+    namespace: &str,
+    name: &str,
+    global: impl Fn(&str) -> Option<Value>,
+) -> Option<Value> {
+    if !name.starts_with(char::is_uppercase) {
+        return None;
+    }
+    let segments: Vec<&str> = namespace.split("::").collect();
+    for depth in (1..=segments.len()).rev() {
+        let Some(Value::Class(mut class)) = global(segments[0]) else {
+            continue;
+        };
+        let mut found = true;
+        for segment in &segments[1..depth] {
+            match nested_class(&class, segment) {
+                Some(nested) => class = nested,
+                None => {
+                    found = false;
+                    break;
+                }
+            }
+        }
+        if !found {
+            continue;
+        }
+        if let Some(target) = nested_class(&class, name) {
+            return Some(Value::Class(target));
+        }
+    }
+    None
+}
+
+/// The class `name` nested in `class`: the tree-walker keeps it in
+/// `nested_classes`, the VM in a static field of that name.
+fn nested_class(class: &Class, name: &str) -> Option<Rc<Class>> {
+    if let Some(nested) = class.nested_classes.borrow().get(name) {
+        return Some(nested.clone());
+    }
+    match class.static_fields.borrow().get(name) {
+        Some(Value::Class(nested)) => Some(nested.clone()),
+        _ => None,
+    }
+}

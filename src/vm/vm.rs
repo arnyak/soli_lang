@@ -304,6 +304,23 @@ fn add_strings_into(slot: &mut Value, before: Value, rhs: Value) -> Result<Value
 }
 
 impl Vm {
+    /// `name` read unqualified in code written in a namespace: the class it
+    /// names there (`Invoice` in `Billing::PayInvoice` is `Billing::Invoice`).
+    fn namespaced(&self, name: &str) -> Option<Value> {
+        let namespace = self.frames.last()?.closure.proto.namespace.clone()?;
+        crate::interpreter::domain::resolve_in_namespace(&namespace, name, |global| {
+            self.globals.get(global).cloned()
+        })
+    }
+
+    /// A global, or else `name` in the current code's namespace.
+    fn global_or_namespaced(&self, name: &str) -> Option<Value> {
+        self.globals
+            .get(name)
+            .cloned()
+            .or_else(|| self.namespaced(name))
+    }
+
     /// Materialise a `grouped {}` deferred result read out of an instance
     /// field.
     ///
@@ -1369,10 +1386,16 @@ impl Vm {
                         Some(v) => self.stack.push(v),
                         None => {
                             let name = self.read_string_constant_owned(idx);
-                            return Err(RuntimeError::undefined_variable(
-                                name,
-                                self.current_span(),
-                            ));
+                            // `Invoice` in a method of `Billing::PayInvoice`.
+                            match self.namespaced(&name) {
+                                Some(class) => self.stack.push(class),
+                                None => {
+                                    return Err(RuntimeError::undefined_variable(
+                                        name,
+                                        self.current_span(),
+                                    ))
+                                }
+                            }
                         }
                     }
                 }
@@ -1820,17 +1843,23 @@ impl Vm {
                         }
                         None => {
                             let name = self.read_string_constant_owned(name_idx);
-                            return Err(RuntimeError::undefined_variable(
-                                name,
-                                self.current_span(),
-                            ));
+                            let Some(func) = self.namespaced(&name) else {
+                                return Err(RuntimeError::undefined_variable(
+                                    name,
+                                    self.current_span(),
+                                ));
+                            };
+                            let insert_pos = self.stack.len() - argc as usize;
+                            self.stack.insert(insert_pos, func);
+                            let span = self.current_span();
+                            self.call_value(argc as usize, span)?;
                         }
                     }
                 }
                 Op::SelfOrGlobal(name_idx) => {
                     let name = self.read_string_constant_owned(name_idx);
                     let this = self.pop();
-                    if let Some(value) = self.globals.get(&name).cloned() {
+                    if let Some(value) = self.global_or_namespaced(&name) {
                         self.push(value);
                     } else if Self::has_instance_method(&this, &name) {
                         let span = self.current_span();
@@ -1856,7 +1885,7 @@ impl Vm {
                 }
                 Op::SelfOrGlobalCallee(name_idx) => {
                     let name = self.read_string_constant_owned(name_idx);
-                    if let Some(value) = self.globals.get(&name).cloned() {
+                    if let Some(value) = self.global_or_namespaced(&name) {
                         let top = self.stack.len() - 1;
                         self.stack[top] = value;
                     } else if !Self::has_instance_method(self.stack.last().unwrap(), &name) {

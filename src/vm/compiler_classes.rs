@@ -53,6 +53,13 @@ impl Compiler {
             self.emit(Op::DefineGlobal(gname), line);
         }
 
+        // Its methods read names in its namespace (`Billing::PayInvoice`
+        // reads `Invoice` as `Billing::Invoice`) — when it has one.
+        let prev_namespace = self.proto.namespace.clone();
+        if qualified.contains("::") || !decl.nested_classes.is_empty() {
+            self.proto.namespace = Some(std::sync::Arc::from(qualified.as_str()));
+        }
+
         // Store class context for this/super resolution
         let prev_class_ctx = self.class_context.take();
         self.class_context = Some(super::compiler::ClassContext {
@@ -156,6 +163,7 @@ impl Compiler {
 
         // Restore class context
         self.class_context = prev_class_ctx;
+        self.proto.namespace = prev_namespace;
 
         // Bind the class name. Top-level classes were bound to their global
         // early (above); just discard the working copy left on the stack. A

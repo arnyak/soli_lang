@@ -3816,6 +3816,12 @@ module Shipping
 end
 ```
 
+Inside a module, its classes are read unqualified — `Invoice` in a method
+of `Billing::PayInvoice` (or in a block there, or a module function) is
+`Billing::Invoice`, the way Ruby resolves constants lexically; outside, write
+`Billing::Invoice`. A declared return type may name a class of the module by
+its short name (`-> Invoice`).
+
 A model in a context gets its own collection (`billing_invoices`), and its
 relations name models of the same context unless `class_name:` says
 otherwise (`belongs_to("user", {"class_name": "User"})`). Two files that

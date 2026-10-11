@@ -1064,8 +1064,9 @@ module Shipping
 end
 ```
 
-Relations default to models of the same context; `class_name:` names any
-other (`belongs_to("user", {"class_name": "User"})`). Two files that declare
+Inside the module its classes are read unqualified (`Invoice` in a
+`Billing` service is `Billing::Invoice`). Relations default to models of the
+same context; `class_name:` names any other (`belongs_to("user", {"class_name": "User"})`). Two files that declare
 the same qualified class stop the boot, as two top-level classes do.
 
 ## Optimistic Locking

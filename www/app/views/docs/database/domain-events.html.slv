@@ -108,7 +108,7 @@ b.stale?                # true — _errors names lock_version</code></pre>
 
     <h2 id="bounded-contexts" class="text-2xl font-bold text-white mb-6">Bounded contexts</h2>
     <p class="text-gray-400 mb-4">
-        Models can live in modules, one per part of the domain, each with its own names. A class nested in a module is <code>Billing::Invoice</code>, its collection <code>billing_invoices</code>, a module may be declared in several files, and relations default to models of the same context (<code>class_name:</code> names any other).
+        Models can live in modules, one per part of the domain, each with its own names. A class nested in a module is <code>Billing::Invoice</code>, its collection <code>billing_invoices</code>, a module may be declared in several files, its classes are read unqualified inside it, and relations default to models of the same context (<code>class_name:</code> names any other).
     </p>
     <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">
         <div class="p-4 overflow-x-auto">

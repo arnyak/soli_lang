@@ -67,6 +67,9 @@ pub struct FunctionProto {
     pub return_type: Option<crate::ast::TypeAnnotation>,
     /// Where the function is declared: the span of a return-type error.
     pub decl_span: crate::span::Span,
+    /// The qualified class its code is written in (`Billing::PayInvoice`), so
+    /// a name it reads unqualified can be its namespace's (`Billing::Invoice`).
+    pub namespace: Option<std::sync::Arc<str>>,
 }
 
 impl FunctionProto {
@@ -84,6 +87,7 @@ impl FunctionProto {
             kernel: None,
             return_type: None,
             decl_span: crate::span::Span::default(),
+            namespace: None,
         }
     }
 }
