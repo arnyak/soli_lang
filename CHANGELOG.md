@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.25.1] - 2026-10-12
+
+### Fixed
+
+* **ci:** **The release builds again.** RUSTSEC-2024-0449 (`unsafe-libyaml`, unmaintained) entered the advisory database on 2026-10-12 and `cargo audit --deny warnings` stopped the v2.25.0 tag's CI before any binary was published. v2.25.1 is the same code as v2.25.0, with that advisory reviewed and waived in `.cargo/audit.toml`: it is informational (no known vulnerability), reached only through `serde_yaml` (the `Yaml` builtin and the i18n locale files), and has no maintained drop-in — the move to the safe-Rust `serde-saphyr` is planned.
+
 ## [2.25.0] - 2026-10-12
 
 ### Added

@@ -32,6 +32,19 @@ ignore = [
     # was declared in Cargo.toml and used by nothing.
     "RUSTSEC-2026-0253",
 
+    # unsafe-libyaml 0.2.11 — unmaintained (archived 2024-03-25; advisory
+    # published to the database on 2026-10-12, which stopped the v2.25.0 tag's
+    # CI). Reached only through serde_yaml 0.9.34+deprecated, our direct
+    # dependency for the `Yaml` builtin and the i18n locale files
+    # (config/locales/*.yml, read once at boot into the `tr()` table). No
+    # known vulnerability. There is no maintained drop-in: serde_yaml_ng uses
+    # the same crate, serde_norway a c2rust fork untouched since 2024-12, and
+    # the safe-Rust replacement the advisory names (serde-saphyr) has no
+    # `Value` type and other YAML semantics — moving means rewriting i18n's
+    # tree walk and checking every locale file's parse. Unblocked by that
+    # migration (benchmark `tr()` before and after); revisit by 2026-12.
+    "RUSTSEC-2024-0449",
+
     # paste 1.0.15 — unmaintained proc-macro, no runtime risk. One parent left
     # (`cargo tree -i paste@1.0.15`): pulp, under exr, under image 0.24, under
     # umya-spreadsheet. Dropping ratatui removed the other.
