@@ -82,7 +82,12 @@
         "SOLI_DB_ADAPTER",
         "DATABASE_URL",
         "primary",
-        "legacy"
+        "legacy",
+        "d1",
+        "cloudflare d1",
+        "durable objects",
+        "do://",
+        "sqlite"
       ]
     },
     {
@@ -105,7 +110,10 @@
         "ssl",
         "sslmode",
         "sslrootcert",
-        "verify-full"
+        "verify-full",
+        "hyperdrive",
+        "cloudflare hyperdrive",
+        "cloudflare workers"
       ]
     },
     {
@@ -145,7 +153,9 @@
         "memory",
         "schema dump",
         "affinity",
-        "DATABASE_URL"
+        "DATABASE_URL",
+        "d1",
+        "cloudflare d1"
       ]
     },
     {
@@ -10193,7 +10203,10 @@
         "soli jobs",
         "soli worker",
         "retry",
-        "dashboard"
+        "dashboard",
+        "cloudflare queues",
+        "queues",
+        "edge"
       ]
     },
     {
@@ -12275,7 +12288,10 @@
         "disk",
         "s3",
         "model",
-        "orm"
+        "orm",
+        "r2",
+        "cloudflare r2",
+        "service: \"r2\""
       ]
     },
     {
@@ -12564,7 +12580,10 @@
         "round-trip",
         "n+1",
         "dataloader",
-        "defer"
+        "defer",
+        "d1",
+        "d1 batch",
+        "cloudflare d1"
       ]
     },
     {
@@ -18287,6 +18306,214 @@
         "release",
         "coverage",
         "deploy"
+      ]
+    },
+    {
+      "title": "Cloudflare Workers",
+      "type": "page",
+      "category": "Development Tools",
+      "path": "/docs/development-tools/edge",
+      "signature": "soli new my_app --edge \u00b7 soli edge build . --runtime target/edge \u00b7 soli edge dev",
+      "description": "Run a Soli app inside a Cloudflare Worker: the interpreter compiled to WebAssembly, your app's source shipped with it, and each request answered by the same routes, controllers, views and models soli serve runs. Models on D1, uploads, images and video on R2, PostgreSQL through Hyperdrive, background jobs on Cloudflare Queues.",
+      "keywords": [
+        "cloudflare",
+        "cloudflare workers",
+        "workers",
+        "worker",
+        "edge",
+        "soli edge",
+        "soli edge build",
+        "soli edge dev",
+        "soli new --edge",
+        "wasm",
+        "webassembly",
+        "wrangler",
+        "wrangler.toml",
+        "workerd",
+        "d1",
+        "r2",
+        "hyperdrive",
+        "queues",
+        "durable objects",
+        "serverless",
+        "cf.solisoft.net"
+      ]
+    },
+    {
+      "title": "Cloudflare D1",
+      "type": "feature",
+      "category": "Development Tools",
+      "path": "/docs/development-tools/edge#d1",
+      "signature": "SOLI_DB_ADAPTER = \"d1\" \u00b7 DATABASE_URL = \"d1://DB\"",
+      "description": "D1 is SQLite run by Cloudflare next to the Worker: SOLI_DB_ADAPTER = \"d1\" puts models on it, DATABASE_URL names the binding (d1://DB by default), and grouped {} reads go in one D1 batch().",
+      "keywords": [
+        "d1",
+        "cloudflare d1",
+        "d1://",
+        "d1_databases",
+        "wrangler d1",
+        "sqlite",
+        "SOLI_DB_ADAPTER",
+        "edge database",
+        "cloudflare"
+      ]
+    },
+    {
+      "title": "SQLite in Durable Objects",
+      "type": "feature",
+      "category": "Development Tools",
+      "path": "/docs/development-tools/edge#durable-objects",
+      "signature": "url = \"do://SITES/{tenant}\"",
+      "description": "A database per tenant on Cloudflare: a Durable Object with SQLite storage, reached by the D1 adapter through a do:// url (the binding, then the object's name). SoliSqlObject ships in every Worker.",
+      "keywords": [
+        "durable objects",
+        "durable object",
+        "do://",
+        "SoliSqlObject",
+        "database per tenant",
+        "multi-tenant",
+        "tenant",
+        "cloudflare",
+        "d1",
+        "sqlite"
+      ]
+    },
+    {
+      "title": "PostgreSQL through Hyperdrive",
+      "type": "feature",
+      "category": "Development Tools",
+      "path": "/docs/development-tools/edge#hyperdrive",
+      "signature": "[[hyperdrive]] binding = \"HYPERDRIVE\"",
+      "description": "On a Cloudflare Worker the postgres adapter's SQL goes to the pg JavaScript driver over the Worker's TCP sockets, with Hyperdrive pooling connections next to the database. Transactions included; MySQL is not available on the edge.",
+      "keywords": [
+        "hyperdrive",
+        "postgres",
+        "postgresql",
+        "pg",
+        "cloudflare",
+        "edge",
+        "nodejs_compat"
+      ]
+    },
+    {
+      "title": "Files on R2: uploads, images and video",
+      "type": "feature",
+      "category": "Development Tools",
+      "path": "/docs/development-tools/edge#files",
+      "signature": "has_one_attached(\"image\", {\"service\": \"r2\"}) \u00b7 [[r2_buckets]] binding = \"ATTACHMENTS\"",
+      "description": "On a Cloudflare Worker, uploads are kept in R2, Cloudflare's object storage, with service: \"r2\" and served with Range and Cloudflare Images transforms; files in public/ are static assets.",
+      "keywords": [
+        "r2",
+        "cloudflare r2",
+        "r2_buckets",
+        "object storage",
+        "uploads",
+        "attachments",
+        "images",
+        "video",
+        "cloudflare images",
+        "range",
+        "cloudflare",
+        "s3"
+      ]
+    },
+    {
+      "title": "Background jobs on Cloudflare Queues",
+      "type": "feature",
+      "category": "Development Tools",
+      "path": "/docs/development-tools/edge#queues",
+      "signature": "[[queues.producers]] binding = \"JOBS\"",
+      "description": "On the edge, perform_later, perform_in, perform_at, Job.enqueue* and Webhook.enqueue* send the job as a message on a Cloudflare Queue, and the Worker's queue() handler runs it: the same job classes, no code change.",
+      "keywords": [
+        "queues",
+        "cloudflare queues",
+        "queue",
+        "jobs",
+        "background jobs",
+        "perform_later",
+        "cloudflare",
+        "edge"
+      ]
+    },
+    {
+      "title": "S3 Functions",
+      "type": "page",
+      "category": "Built-in Functions",
+      "path": "/docs/builtins/s3",
+      "signature": "S3.put_object(bucket, key, body) \u00b7 S3_ENDPOINT \u00b7 S3_REGION",
+      "description": "Amazon S3 and S3-compatible storage for buckets, objects and file operations: AWS, Garage, SeaweedFS, MinIO, Cloudflare R2 (S3_REGION=auto) and DigitalOcean Spaces, signed with AWS Signature V4.",
+      "keywords": [
+        "s3",
+        "aws",
+        "r2",
+        "cloudflare r2",
+        "minio",
+        "garage",
+        "seaweedfs",
+        "digitalocean spaces",
+        "bucket",
+        "object storage",
+        "S3_ENDPOINT",
+        "S3_REGION",
+        "S3_ACCESS_KEY"
+      ]
+    },
+    {
+      "title": "Deploy",
+      "type": "page",
+      "category": "Development Tools",
+      "path": "/docs/development-tools/deploy",
+      "signature": "soli deploy \u00b7 deploy.toml",
+      "description": "Deploy your Soli applications to remote servers with a single command: blue-green deployments via soli-proxy, a single-binary bundle, or, with no server at all, a Cloudflare Worker (soli edge build).",
+      "keywords": [
+        "deploy",
+        "deploy.toml",
+        "blue-green",
+        "soli-proxy",
+        "preview environments",
+        "bundle",
+        "standalone executable",
+        "cloudflare",
+        "cloudflare workers",
+        "edge",
+        "production"
+      ]
+    },
+    {
+      "title": "ES \u2014 event streaming",
+      "type": "page",
+      "category": "Built-in Functions",
+      "path": "/docs/builtins/es",
+      "signature": "ES.emit(topic, key, value, options?) \u00b7 EventStream.consume(topic, {\"group\": ...})",
+      "description": "The driver for es, a Kafka-shaped event log in one binary: topics with partitions, consumer groups, idempotent producers, over es's binary protocol (ES_BINARY) or its HTTP API.",
+      "keywords": [
+        "es",
+        "event streaming",
+        "event stream",
+        "kafka",
+        "topics",
+        "partitions",
+        "consumer groups",
+        "idempotent producer",
+        "ES_BROKER",
+        "ES_BINARY",
+        "ES_AUTH",
+        "EventStream.consume"
+      ]
+    },
+    {
+      "title": "Blog",
+      "type": "page",
+      "category": "Blog",
+      "path": "/docs/blog",
+      "signature": "",
+      "description": "Tutorials, feature write-ups and deep dives about Soli.",
+      "keywords": [
+        "blog",
+        "posts",
+        "articles",
+        "tutorials",
+        "deep dive"
       ]
     }
   ]

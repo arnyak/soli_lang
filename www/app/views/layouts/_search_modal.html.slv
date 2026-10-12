@@ -35,12 +35,20 @@ if (!window.__soliSearchInit) {
 
     // Load the search index once per document (it never changes mid-session).
     // Routed through public_path so it cache-busts like the other assets.
-    fetch('<%= public_path("js/search-index.json") %>')
-        .then(r => r.json())
-        .then(data => {
-            window.__soliSearchFuse = new Fuse(data.entries, {
+    // The blog posts come from the blog controller, built from its manifest,
+    // so a new post needs no entry here; the docs still search without them.
+    const posts = fetch('/docs/blog/search-index')
+        .then(r => r.ok ? r.json() : { entries: [] })
+        .catch(() => ({ entries: [] }));
+    Promise.all([fetch('<%= public_path("js/search-index.json") %>').then(r => r.json()), posts])
+        .then(([data, blog]) => {
+            window.__soliSearchFuse = new Fuse(data.entries.concat(blog.entries), {
                 keys: ['title', 'signature', 'description', 'keywords'],
                 threshold: 0.3,
+                // Without it Fuse scores a match by its distance from the
+                // start of the field: a term past the 30th character of a
+                // description (D1, R2, Cloudflare...) counted as no match.
+                ignoreLocation: true,
                 includeMatches: true
             });
         })
@@ -92,7 +100,8 @@ function handleSearch(query) {
             keyword: 'bg-orange-500/20 text-orange-400',
             operator: 'bg-amber-500/20 text-amber-400',
             type: 'bg-green-500/20 text-green-400',
-            page: 'bg-gray-500/20 text-gray-400'
+            page: 'bg-gray-500/20 text-gray-400',
+            post: 'bg-purple-500/20 text-purple-400'
         };
         const color = typeColors[item.type] || typeColors.page;
         return `

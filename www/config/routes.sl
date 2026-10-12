@@ -216,6 +216,9 @@ get("/docs/testing-quick-reference", "docs#testing_quick_reference")
 # ============================================================================
 
 get("/docs/blog", "blog#index")
+# The posts as entries for the search modal (layouts/_search_modal), built from
+# blog_manifest so a new post is searchable without editing search-index.json.
+get("/docs/blog/search-index", "blog#search_index")
 get("/docs/blog/:slug", "blog#show")
 
 # ============================================================================

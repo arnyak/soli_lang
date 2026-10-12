@@ -96,6 +96,32 @@ def blog_manifest()
     ]
 end
 
+# GET /docs/blog/search-index — the visible posts as search-modal entries
+# Read from blog_manifest on each request, so a post is searchable the day it
+# is published and never before: scheduled posts stay out, as on the index.
+def search_index
+    entries = get_blog_posts().map do |post|
+        tag = post["tag"].to_s
+        headings = blog_headings(slurp("docs/blog/#{post["slug"]}.md"))
+        {
+            "title": post["title"],
+            "type": "post",
+            "category": tag.blank? ? "Blog" : "Blog · #{tag}",
+            "path": "/docs/blog/#{post["slug"]}",
+            "description": post["description"],
+            "keywords": (["blog", tag.downcase] + headings).filter { |word| word.present? }
+        }
+    end
+    render_json({"entries": entries})
+end
+
+# The `## ` and `### ` headings of a post, the keywords its search entry carries.
+def blog_headings(markdown)
+    markdown.split("\n")
+        .filter { |line| line.starts_with?("## ") or line.starts_with?("### ") }
+        .map { |line| line.replace("### ", "").replace("## ", "").trim }
+end
+
 def get_blog_posts()
     let posts = []
 
