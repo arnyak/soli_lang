@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+* **security:** **YAML is read by Soli's own parser, in safe Rust.** `serde_yaml` (deprecated) and its parser `unsafe-libyaml` (a machine translation of libyaml's C, unmaintained: RUSTSEC-2024-0449) are replaced by `soli-yaml` (`yaml/`, depending on `serde_json` alone), behind `Yaml.parse`, `Yaml.stringify` and the `config/locales/*.yml` files; the advisory's waiver is removed from `.cargo/audit.toml`. It reads what serde_yaml read — block and flow collections, every scalar style and escape, block scalars with chomping and indentation indicators, the YAML 1.2 core schema (`012`, `yes`, `on` and dates stay strings), last duplicate key wins — and writes byte for byte what it wrote; the crate's tests hold both, recorded from serde_yaml 0.9.34. On 436 YAML files of the workspace, 428 read identically, 2 fail on both, and the 6 others use anchors. It is 2.8× faster on locale files. **Refused now, with an error naming the line and column:** anchors and aliases (`&a`, `*a`, so `<<: *defaults` merge keys), tags (`!!str`), `? complex` keys and `%YAML` directives, which serde_yaml read; a locale file using them is skipped at boot with a warning. Nesting is capped at 128 levels (a document of 100 000 `[` overflowed the stack and aborted the process).
+
+### Fixed
+
+* **ci:** **The unwrap ratchet no longer stops on a clean directory.** `scripts/lint_unwraps.sh` exited 1, printing nothing, when a watched directory held no `.unwrap()` at all (`grep` finding nothing failed under `pipefail`); `yaml/src` is now watched, at zero.
+
 ## [2.25.1] - 2026-10-12
 
 ### Fixed

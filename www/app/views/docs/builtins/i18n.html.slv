@@ -121,6 +121,7 @@ I18n.plural("items", 5)   # "5 items"</code></pre>
                 <li>Resolution falls back to <code class="text-amber-400">en</code> when the active locale has no entry.</li>
                 <li>If no locale resolves the key, the literal key is returned (e.g. <code>"app.welcome"</code>) — typos surface during development.</li>
                 <li>A single file may declare multiple locales, and several files may extend the same locale (e.g. <code>en.yml</code> + <code>accounts.en.yml</code>).</li>
+                <li>Files are read by <a href="/docs/builtins/toml-yaml#def-yaml-subset" class="text-amber-400 hover:underline">Yaml.parse</a>, which refuses anchors, aliases and <code>&lt;&lt;:</code> merge keys: such a file is skipped at boot with a warning naming its line and column. Write shared keys out in each locale.</li>
             </ul>
             <pre data-filename="config/locales/en.yml"><code class="language-yaml text-sm">en:
   app:

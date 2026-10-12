@@ -292,7 +292,10 @@ ecow = { version = "0.2", features = ["serde"] }
 
 # Test framework
 walkdir = "2"
-serde_yaml = "0.9"
+# YAML (locale files, `Yaml.parse` / `Yaml.stringify`): our own reader for
+# the subset Soli uses, in safe Rust (yaml/). serde_yaml was deprecated and its
+# parser, unsafe-libyaml, unmaintained (RUSTSEC-2024-0449).
+soli-yaml = { path = "yaml" }
 rand = "0.8"
 # Pinned together: the five crates ship in lockstep and mix badly.
 cranelift-codegen = { version = "=0.136.1", optional = true }

@@ -96,8 +96,7 @@ pub fn register_toml_yaml_classes(env: &mut Environment) {
                     ))
                 }
             };
-            let parsed: serde_json::Value =
-                serde_yaml::from_str(&text).map_err(|e| format!("Yaml.parse(): {e}"))?;
+            let parsed = soli_yaml::parse(&text).map_err(|e| format!("Yaml.parse(): {e}"))?;
             json_to_value_ref(&parsed)
         })),
     );
@@ -107,9 +106,7 @@ pub fn register_toml_yaml_classes(env: &mut Environment) {
         "stringify".to_string(),
         Rc::new(NativeFunction::new("Yaml.stringify", Some(1), |args| {
             let doc = value_to_json(&args[0]).map_err(|e| format!("Yaml.stringify(): {e}"))?;
-            serde_yaml::to_string(&doc)
-                .map_err(|e| format!("Yaml.stringify(): {e}"))
-                .map(|s| Value::String(s.into()))
+            Ok(Value::String(soli_yaml::to_string(&doc).into()))
         })),
     );
 
@@ -185,17 +182,16 @@ mod tests {
 
     #[test]
     fn yaml_round_trips_scalars_and_nesting() {
-        let parsed: serde_json::Value =
-            serde_yaml::from_str("name: demo\ncounts:\n  - 1\n  - 2\n").unwrap();
+        let parsed = soli_yaml::parse("name: demo\ncounts:\n  - 1\n  - 2\n").unwrap();
         let value = json_to_value_ref(&parsed).unwrap();
         assert!(matches!(value, Value::Hash(_)));
-        // YAML 1.1-style booleans parse per serde_yaml's rules; plain keys work.
-        let flat: serde_json::Value = serde_yaml::from_str("on: true").unwrap();
+        // YAML 1.2: `on` is a plain string key, not a YAML 1.1 boolean.
+        let flat = soli_yaml::parse("on: true").unwrap();
         assert_eq!(flat["on"], true);
     }
 
     #[test]
     fn yaml_rejects_garbage_cleanly() {
-        assert!(serde_yaml::from_str::<serde_json::Value>("\t- [\nbad: : :").is_err());
+        assert!(soli_yaml::parse("\t- [\nbad: : :").is_err());
     }
 }

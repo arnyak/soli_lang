@@ -100,11 +100,12 @@ pub fn negotiate(header: &str, available: &[String]) -> Option<String> {
 
 /// Translations loaded from this application's `config/locales/*.yml` at boot.
 /// Keyed by locale name (top-level YAML key, e.g. `"en"`); values are the parsed
-/// YAML subtree under that key. `serde_yaml::Value` is `Send + Sync`, so one
+/// YAML subtree under that key, as JSON values (keys are strings, as YAML keys
+/// are once read into JSON). `serde_json::Value` is `Send + Sync`, so one
 /// store serves every worker of the application — and only those: the store
 /// is on the render path, and a process-wide one would have `t()` in one
 /// application's views rendering another's strings.
-static TRANSLATIONS: TenantValue<Option<HashMap<String, serde_yaml::Value>>> =
+static TRANSLATIONS: TenantValue<Option<HashMap<String, serde_json::Value>>> =
     TenantValue::new(|| None);
 
 /// Get the current locale — the default until a request installs one.
@@ -137,9 +138,9 @@ pub fn load_locales_from_config_dir(config_dir: &Path) -> usize {
 /// The translations under `config_dir/locales`, parsed and merged by locale,
 /// without installing them. Touches no shared state, so a server parses them on
 /// a thread of its own while it loads the application (see `serve_folder`).
-pub fn parse_locales(config_dir: &Path) -> HashMap<String, serde_yaml::Value> {
+pub fn parse_locales(config_dir: &Path) -> HashMap<String, serde_json::Value> {
     let locales_dir = config_dir.join("locales");
-    let mut store: HashMap<String, serde_yaml::Value> = HashMap::new();
+    let mut store: HashMap<String, serde_json::Value> = HashMap::new();
 
     if crate::platform::fs::is_dir(&locales_dir) {
         match crate::platform::fs::read_dir(&locales_dir) {
@@ -158,14 +159,14 @@ pub fn parse_locales(config_dir: &Path) -> HashMap<String, serde_yaml::Value> {
                             continue;
                         }
                     };
-                    let parsed: serde_yaml::Value = match serde_yaml::from_str(&body) {
+                    let parsed = match soli_yaml::parse(&body) {
                         Ok(v) => v,
                         Err(e) => {
                             eprintln!("Warning: invalid YAML in {}: {}", path.display(), e);
                             continue;
                         }
                     };
-                    let mapping = match parsed.as_mapping() {
+                    let mapping = match parsed.as_object() {
                         Some(m) => m,
                         None => {
                             eprintln!(
@@ -175,14 +176,10 @@ pub fn parse_locales(config_dir: &Path) -> HashMap<String, serde_yaml::Value> {
                             continue;
                         }
                     };
-                    for (k, v) in mapping {
-                        let locale = match k.as_str() {
-                            Some(s) => s.to_string(),
-                            None => continue,
-                        };
+                    for (locale, v) in mapping {
                         let entry = store
-                            .entry(locale)
-                            .or_insert_with(|| serde_yaml::Value::Mapping(Default::default()));
+                            .entry(locale.clone())
+                            .or_insert_with(|| serde_json::Value::Object(Default::default()));
                         merge_yaml(entry, v.clone());
                     }
                 }
@@ -197,7 +194,7 @@ pub fn parse_locales(config_dir: &Path) -> HashMap<String, serde_yaml::Value> {
 }
 
 /// Make `store` the translations every lookup reads. Returns the locale count.
-pub fn install_locales(store: HashMap<String, serde_yaml::Value>) -> usize {
+pub fn install_locales(store: HashMap<String, serde_json::Value>) -> usize {
     let count = store.len();
     TRANSLATIONS.write(|g| *g = Some(store));
     count
@@ -205,9 +202,9 @@ pub fn install_locales(store: HashMap<String, serde_yaml::Value>) -> usize {
 
 /// Recursively merge `src` into `dst`. Mappings are merged key-by-key; any
 /// other YAML kind in `src` overwrites `dst`.
-fn merge_yaml(dst: &mut serde_yaml::Value, src: serde_yaml::Value) {
+fn merge_yaml(dst: &mut serde_json::Value, src: serde_json::Value) {
     match (dst, src) {
-        (serde_yaml::Value::Mapping(d), serde_yaml::Value::Mapping(s)) => {
+        (serde_json::Value::Object(d), serde_json::Value::Object(s)) => {
             for (k, v) in s {
                 if let Some(existing) = d.get_mut(&k) {
                     merge_yaml(existing, v);
@@ -400,15 +397,13 @@ fn lookup_exact(locale: &str, key: &str) -> Option<String> {
 }
 
 fn lookup_in(
-    store: &HashMap<String, serde_yaml::Value>,
+    store: &HashMap<String, serde_json::Value>,
     locale: &str,
     key: &str,
 ) -> Option<String> {
     let mut node = store.get(locale)?;
     for part in key.split('.') {
-        node = node
-            .as_mapping()?
-            .get(serde_yaml::Value::String(part.to_string()))?;
+        node = node.as_object()?.get(part)?;
     }
     node.as_str().map(|s| s.to_string())
 }
@@ -656,7 +651,7 @@ mod tests {
         let cfg = tmp.path().to_path_buf();
         let locales = cfg.join("locales");
         fs::create_dir_all(&locales).unwrap();
-        // Tab indentation is invalid in YAML; serde_yaml will reject this.
+        // Tab indentation is invalid in YAML; the reader refuses it.
         write_yaml(&locales, "broken.yml", "en:\n\tnope: x\n");
         write_yaml(&locales, "good.yml", "en:\n  ok: yes\n");
         load_locales_from_config_dir(&cfg);

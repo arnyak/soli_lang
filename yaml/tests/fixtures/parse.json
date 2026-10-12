@@ -1,0 +1,306 @@
+[
+ {
+  "yaml": "a: 1\nb: 1.5\nc: true\nd: null\ne: ~\nf:\ng: yes\nh: on\ni: 012\nj: 0o17\nk: 0x1F\nl: .inf\nm: -.inf\nn: .nan\no: 1e3\np: 1_000\nq: +12\nr: True\ns: NULL\nt: 2026-10-12\nu: 1.\nv: .5\nw: -0\nx: 0b101\ny: 12:30\nz: '012'",
+  "value": {
+   "a": 1,
+   "b": 1.5,
+   "c": true,
+   "d": null,
+   "e": null,
+   "f": null,
+   "g": "yes",
+   "h": "on",
+   "i": "012",
+   "j": 15,
+   "k": 31,
+   "l": null,
+   "m": null,
+   "n": null,
+   "o": 1000.0,
+   "p": "1_000",
+   "q": 12,
+   "r": true,
+   "s": null,
+   "t": "2026-10-12",
+   "u": 1.0,
+   "v": 0.5,
+   "w": 0,
+   "x": 5,
+   "y": "12:30",
+   "z": "012"
+  }
+ },
+ {
+  "yaml": "1: a\n2: b",
+  "value": {
+   "1": "a",
+   "2": "b"
+  }
+ },
+ {
+  "yaml": "true: a",
+  "value": {
+   "true": "a"
+  }
+ },
+ {
+  "yaml": "null: a",
+  "value": {
+   "null": "a"
+  }
+ },
+ {
+  "yaml": "a: 1\na: 2",
+  "value": {
+   "a": 2
+  }
+ },
+ {
+  "yaml": "a: plain text\n  continued here\n\n  and a new paragraph",
+  "value": {
+   "a": "plain text continued here\nand a new paragraph"
+  }
+ },
+ {
+  "yaml": "a: \"line one\n  line two\n\n  para\"",
+  "value": {
+   "a": "line one line two\npara"
+  }
+ },
+ {
+  "yaml": "a: \"esc \\t tab \\n nl \\u00e9 \\x41 \\\\ \\\" \\/ \\e end\"",
+  "value": {
+   "a": "esc \t tab \n nl é A \\ \" / \u001b end"
+  }
+ },
+ {
+  "yaml": "a: 'it''s'",
+  "value": {
+   "a": "it's"
+  }
+ },
+ {
+  "yaml": "a: |\n  line1\n  line2\n\nb: |-\n  x\n  y\nc: |+\n  keep\n\nd: >\n  folded\n  text\n\n  para\n    indented\n  back\ne: >-\n  f\n  g\n",
+  "value": {
+   "a": "line1\nline2\n",
+   "b": "x\ny",
+   "c": "keep\n\n",
+   "d": "folded text\npara\n  indented\nback\n",
+   "e": "f g"
+  }
+ },
+ {
+  "yaml": "a: [1, two, \"three\", [4], {k: v}]\nb: {x: 1, y: [a, b]}",
+  "value": {
+   "a": [
+    1,
+    "two",
+    "three",
+    [
+     4
+    ],
+    {
+     "k": "v"
+    }
+   ],
+   "b": {
+    "x": 1,
+    "y": [
+     "a",
+     "b"
+    ]
+   }
+  }
+ },
+ {
+  "yaml": "- a\n- b: 1\n  c: 2\n- - nested\n  - seq\n-\n  k: v\n- ",
+  "value": [
+   "a",
+   {
+    "b": 1,
+    "c": 2
+   },
+   [
+    "nested",
+    "seq"
+   ],
+   {
+    "k": "v"
+   },
+   null
+  ]
+ },
+ {
+  "yaml": "key:\n- a\n- b\nother: 1",
+  "value": {
+   "key": [
+    "a",
+    "b"
+   ],
+   "other": 1
+  }
+ },
+ {
+  "yaml": "a: &anchor 1\nb: *anchor",
+  "error": true
+ },
+ {
+  "yaml": "a: !tag x",
+  "error": true
+ },
+ {
+  "yaml": "--- \na: 1",
+  "value": {
+   "a": 1
+  }
+ },
+ {
+  "yaml": "a: 1\n---\nb: 2",
+  "error": true
+ },
+ {
+  "yaml": "a: 1\n...\n",
+  "value": {
+   "a": 1
+  }
+ },
+ {
+  "yaml": "",
+  "value": null
+ },
+ {
+  "yaml": "# only comment\n",
+  "value": null
+ },
+ {
+  "yaml": "plain scalar doc",
+  "value": "plain scalar doc"
+ },
+ {
+  "yaml": "a: b: c",
+  "error": true
+ },
+ {
+  "yaml": "a: value # comment\nb: 'q # not comment' # c\nc: x#y",
+  "value": {
+   "a": "value",
+   "b": "q # not comment",
+   "c": "x#y"
+  }
+ },
+ {
+  "yaml": "a:\tb",
+  "value": {
+   "a": "b"
+  }
+ },
+ {
+  "yaml": "\ta: 1",
+  "error": true
+ },
+ {
+  "yaml": "a: '  spaces  '\nb:   lead",
+  "value": {
+   "a": "  spaces  ",
+   "b": "lead"
+  }
+ },
+ {
+  "yaml": "\"quoted key\": 1\n'single key': 2\nkey with spaces: 3",
+  "value": {
+   "quoted key": 1,
+   "single key": 2,
+   "key with spaces": 3
+  }
+ },
+ {
+  "yaml": "a:\n  b:\n    c: deep\n  d: [1,2]\n",
+  "value": {
+   "a": {
+    "b": {
+     "c": "deep"
+    },
+    "d": [
+     1,
+     2
+    ]
+   }
+  }
+ },
+ {
+  "yaml": "a: @x",
+  "error": true
+ },
+ {
+  "yaml": "a: `x",
+  "error": true
+ },
+ {
+  "yaml": "? complex\n: value",
+  "error": true
+ },
+ {
+  "yaml": "a: |2\n    two extra\n  base\n",
+  "value": {
+   "a": "  two extra\nbase\n"
+  }
+ },
+ {
+  "yaml": "a: 'multi\n  line single'\n",
+  "value": {
+   "a": "multi line single"
+  }
+ },
+ {
+  "yaml": "emoji: \"\\U0001F600\"\nnbsp: \"a\\_b\"",
+  "value": {
+   "emoji": "😀",
+   "nbsp": "a b"
+  }
+ },
+ {
+  "yaml": "a: 1\n b: 2",
+  "error": true
+ },
+ {
+  "yaml": "list:\n  - x\n  - y\n",
+  "value": {
+   "list": [
+    "x",
+    "y"
+   ]
+  }
+ },
+ {
+  "yaml": "a: >\n  one\n  two\n",
+  "value": {
+   "a": "one two\n"
+  }
+ },
+ {
+  "yaml": "a: 100%\nb: 50% off\nc: '%s'",
+  "value": {
+   "a": "100%",
+   "b": "50% off",
+   "c": "%s"
+  }
+ },
+ {
+  "yaml": "a: -1\nb: - x",
+  "error": true
+ },
+ {
+  "yaml": "a: [1, 2,\n  3]\n",
+  "value": {
+   "a": [
+    1,
+    2,
+    3
+   ]
+  }
+ },
+ {
+  "yaml": "x: -\ny: ?\nz: :",
+  "error": true
+ }
+]

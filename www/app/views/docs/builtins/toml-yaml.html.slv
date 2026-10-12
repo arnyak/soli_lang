@@ -11,20 +11,40 @@
         <h2 class="text-2xl font-bold text-white mb-6">Toml.parse(str) / Toml.stringify(hash)</h2>
         <p class="text-gray-400 mb-4">TOML documents map onto hashes of scalars, arrays, and nested tables. Stringify raises on null values — TOML cannot represent them.</p>
         <div class="bg-[#171412] rounded-xl border border-gray-700 p-6">
-            <pre class="text-sm text-gray-300 overflow-x-auto"><code class="language-soli">let config = Toml.parse(slurp(&quot;config.toml&quot;));
-config[&quot;owner&quot;][&quot;name&quot;];
+            <pre class="text-sm text-gray-300 overflow-x-auto"><code class="language-soli">config = Toml.parse(slurp(&quot;config.toml&quot;))
+config[&quot;owner&quot;][&quot;name&quot;]
 
-Toml.stringify({ &quot;title&quot;: &quot;demo&quot;, &quot;owner&quot;: { &quot;name&quot;: &quot;Ann&quot; } });</code></pre>
+Toml.stringify({ &quot;title&quot;: &quot;demo&quot;, &quot;owner&quot;: { &quot;name&quot;: &quot;Ann&quot; } })</code></pre>
         </div>
     </section>
     <section id="def-yaml-parse" class="mb-16 scroll-mt-20">
         <h2 class="text-2xl font-bold text-white mb-6">Yaml.parse(str) / Yaml.stringify(value)</h2>
         <p class="text-gray-400 mb-4">YAML parses into whatever shape the document has — hash, array, or scalar. Stringify accepts any serializable value.</p>
         <div class="bg-[#171412] rounded-xl border border-gray-700 p-6">
-            <pre class="text-sm text-gray-300 overflow-x-auto"><code class="language-soli">let spec = Yaml.parse(slurp(&quot;openapi.yaml&quot;));
-spec[&quot;paths&quot;][&quot;/users&quot;][&quot;get&quot;][&quot;summary&quot;];
+            <pre class="text-sm text-gray-300 overflow-x-auto"><code class="language-soli">spec = Yaml.parse(slurp(&quot;openapi.yaml&quot;))
+spec[&quot;paths&quot;][&quot;/users&quot;][&quot;get&quot;][&quot;summary&quot;]
 
-Yaml.stringify({ &quot;name&quot;: &quot;demo&quot;, &quot;counts&quot;: [1, 2] });</code></pre>
+Yaml.stringify({ &quot;name&quot;: &quot;demo&quot;, &quot;counts&quot;: [1, 2] })
+# name: demo
+# counts:
+# - 1
+# - 2</code></pre>
         </div>
+    </section>
+    <section id="def-yaml-subset" class="mb-16 scroll-mt-20">
+        <h2 class="text-2xl font-bold text-white mb-6">What Yaml.parse reads</h2>
+        <p class="text-gray-400 mb-4">Soli's YAML parser is its own (the <code class="text-amber-400">soli-yaml</code> crate, safe Rust). It reads the YAML that configuration and locale files are written in, and <strong class="text-white">refuses</strong> the rest with an error naming the line and column, rather than reading it some other way.</p>
+        <ul class="text-gray-400 list-disc list-inside space-y-2 mb-4">
+            <li><strong class="text-white">Read:</strong> block mappings and sequences (a sequence may sit at its key's indentation), plain, <code>'single'</code> and <code>"double"</code>-quoted scalars over several lines, every double-quoted escape, <code>|</code> and <code>&gt;</code> block scalars with chomping (<code>|-</code>, <code>&gt;+</code>) and an indentation indicator, flow collections (<code>[a, b]</code>, <code>{k: v}</code>), comments, a leading <code>---</code> and a trailing <code>...</code>.</li>
+            <li><strong class="text-white">Refused:</strong> anchors and aliases (<code>&amp;base</code>, <code>*base</code>, so also <code>&lt;&lt;: *base</code> merge keys), tags (<code>!!str</code>, <code>!Ruby</code>), <code>? complex</code> keys, directives (<code>%YAML</code>), a stream of several documents, tabs in indentation, and nesting deeper than 128 levels.</li>
+        </ul>
+        <p class="text-gray-400 mb-4">Values follow the YAML 1.2 core schema: <code>null</code>, <code>~</code> and an empty value are <code>nil</code>; <code>true</code>/<code>false</code> (any case) are booleans; decimal, <code>0o</code>, <code>0x</code> and <code>0b</code> integers and floats are numbers (<code>.inf</code> and <code>.nan</code> become <code>nil</code>); everything else is a string, including <code>yes</code>, <code>on</code>, <code>012</code>, <code>1_000</code> and <code>2026-10-12</code>. Keys are strings (<code>1: a</code> reads as <code>{"1": "a"}</code>), and a key given twice keeps its last value.</p>
+        <div class="bg-[#171412] rounded-xl border border-gray-700 p-6 mb-4">
+            <pre class="text-sm text-gray-300 overflow-x-auto"><code class="language-soli">Yaml.parse(&quot;port: 8080\nmode: on\nzip: 012&quot;)   # {&quot;port&quot;: 8080, &quot;mode&quot;: &quot;on&quot;, &quot;zip&quot;: &quot;012&quot;}
+
+Yaml.parse(&quot;base: &amp;b {x: 1}\nprod: *b&quot;) rescue &quot;refused&quot;
+# Yaml.parse(): anchors (`&amp;name`) are not supported at line 1 column 7</code></pre>
+        </div>
+        <p class="text-gray-400"><code>Yaml.stringify</code> writes block style with two-space indentation, quotes a string only when its plain form would read back as something else (<code>'012'</code>, <code>'true'</code>, <code>': x'</code>; double quotes when it holds a control character), and writes a multi-line string as a <code>|</code> literal block.</p>
     </section>
 </div>

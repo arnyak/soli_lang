@@ -173,6 +173,12 @@ jobs:
       - name: Run PDF engine tests
         run: cargo test --locked --manifest-path pdf/Cargo.toml
 
+      # `yaml/` (soli-yaml, the parser behind `Yaml.parse` and the locale
+      # files) is its own workspace too; its tests hold what serde_yaml read
+      # and wrote, so a change that drifts from it fails here.
+      - name: Run YAML parser tests
+        run: cargo test --locked --manifest-path yaml/Cargo.toml
+
       # The specs run against the SoliDB started above (16745) and SoliKV. A
       # spec that needs one calls `requires_solidb()` / `requires_solikv()` in
       # a `before_each`, which skips when the service does not answer — and
@@ -276,6 +282,9 @@ jobs:
         run: cargo clippy --locked --manifest-path pdf/Cargo.toml --all-targets
         continue-on-error: true
 
+      - name: Clippy (YAML parser)
+        run: cargo clippy --locked --manifest-path yaml/Cargo.toml --all-targets -- -D warnings
+
       - name: Unwrap-count ratchet (parser/template/JSON)
         # Freezes `.unwrap()`/`.expect()` counts in modules that process
         # untrusted input. Every one of them is a potential panic the fuzzing
@@ -298,6 +307,9 @@ jobs:
 
       - name: Check formatting (PDF engine)
         run: cargo fmt --check --manifest-path pdf/Cargo.toml
+
+      - name: Check formatting (YAML parser)
+        run: cargo fmt --check --manifest-path yaml/Cargo.toml
 
       - name: Check formatting (edge runtime)
         run: cargo fmt --check --manifest-path edge/Cargo.toml

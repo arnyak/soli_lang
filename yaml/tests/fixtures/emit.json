@@ -1,0 +1,140 @@
+[
+ {
+  "value": {
+   "name": "x"
+  },
+  "yaml": "name: x\n"
+ },
+ {
+  "value": {
+   "a": [
+    1,
+    2
+   ],
+   "b": {
+    "c": "d"
+   },
+   "e": []
+  },
+  "yaml": "a:\n- 1\n- 2\nb:\n  c: d\ne: []\n"
+ },
+ {
+  "value": {
+   "e": {}
+  },
+  "yaml": "e: {}\n"
+ },
+ {
+  "value": [
+   1,
+   "two",
+   null,
+   true,
+   1.5
+  ],
+  "yaml": "- 1\n- two\n- null\n- true\n- 1.5\n"
+ },
+ {
+  "value": "plain",
+  "yaml": "plain\n"
+ },
+ {
+  "value": {
+   "amp": "&x",
+   "at": "@x",
+   "bang": "!x",
+   "big": 1e+20,
+   "brace": "{x}",
+   "bracket": "[x]",
+   "colon": "http://x",
+   "comma": "a, b",
+   "dq": "say \"hi\"",
+   "emoji": "é😀",
+   "exp": 1.5e-07,
+   "f": 1.0,
+   "hash": "#x",
+   "k": "tab\there",
+   "m": "multi\nline\n",
+   "n": "multi\nline",
+   "neg": -3,
+   "num": 12,
+   "p": "quote's",
+   "pct": "%x",
+   "q": "a #b",
+   "q2": "?x",
+   "r": "- x",
+   "s": "012",
+   "star": "*x",
+   "t": "yes",
+   "tilde": "~",
+   "u": "true",
+   "v": "null",
+   "w": "1.5",
+   "x": "",
+   "y": " lead",
+   "z": "a: b"
+  },
+  "yaml": "amp: '&x'\nat: '@x'\nbang: '!x'\nbig: 1e20\nbrace: '{x}'\nbracket: '[x]'\ncolon: http://x\ncomma: a, b\ndq: say \"hi\"\nemoji: é😀\nexp: 1.5e-7\nf: 1.0\nhash: '#x'\nk: \"tab\\there\"\nm: |\n  multi\n  line\nn: |-\n  multi\n  line\nneg: -3\nnum: 12\np: quote's\npct: '%x'\nq: 'a #b'\nq2: ?x\nr: '- x'\ns: '012'\nstar: '*x'\nt: yes\ntilde: '~'\nu: 'true'\nv: 'null'\nw: '1.5'\nx: ''\ny: ' lead'\nz: 'a: b'\n"
+ },
+ {
+  "value": [
+   [
+    1,
+    2
+   ],
+   [
+    {
+     "a": 1,
+     "b": [
+      3
+     ]
+    }
+   ]
+  ],
+  "yaml": "- - 1\n  - 2\n- - a: 1\n    b:\n    - 3\n"
+ },
+ {
+  "value": {
+   "list": [
+    {
+     "a": 1,
+     "b": 2
+    },
+    {
+     "c": [
+      1,
+      2
+     ]
+    }
+   ]
+  },
+  "yaml": "list:\n- a: 1\n  b: 2\n- c:\n  - 1\n  - 2\n"
+ },
+ {
+  "value": {
+   "1": "numkey",
+   "k:colon": 2,
+   "key with space": 1,
+   "true": "boolkey"
+  },
+  "yaml": "'1': numkey\nk:colon: 2\nkey with space: 1\n'true': boolkey\n"
+ },
+ {
+  "value": null,
+  "yaml": "null\n"
+ },
+ {
+  "value": true,
+  "yaml": "true\n"
+ },
+ {
+  "value": {
+   "nested": {
+    "deep": {
+     "x": null
+    }
+   }
+  },
+  "yaml": "nested:\n  deep:\n    x: null\n"
+ }
+]

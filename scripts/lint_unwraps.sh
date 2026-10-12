@@ -22,12 +22,14 @@ src/lexer|lexer sees raw source from users
 src/parser|parser sees raw source from users
 src/interpreter/value_json.rs|JSON parsing of network bodies
 src/interpreter/value_stringify.rs|serialization of runtime values
+yaml/src|YAML parser behind Yaml.parse and locale files
 "
 
 count() {
     local path="$1"
     if [ -d "$path" ]; then
-        grep -rE '\.(unwrap|expect)\(' "$path" --include='*.rs' | wc -l | tr -d ' '
+        # No match is exit 1, which `pipefail` would turn into an abort.
+        { grep -rE '\.(unwrap|expect)\(' "$path" --include='*.rs' || true; } | wc -l | tr -d ' '
     else
         # `grep -c` exits 1 when the count is zero; neutralize under `set -e`.
         { grep -cE '\.(unwrap|expect)\(' "$path" || true; } | tr -d ' '

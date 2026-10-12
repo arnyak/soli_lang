@@ -1,0 +1,14 @@
+[package]
+name = "soli-yaml"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The YAML subset Soli reads (locale files, Yaml.parse) and writes (Yaml.stringify), in safe Rust"
+publish = false
+
+[dependencies]
+# Values are JSON values: what the interpreter converts to and from already.
+# No `preserve_order`: features unify, and turning it on here would switch
+# every `serde_json::Map` in the interpreter from sorted to insertion order.
+# serde_yaml read into the same sorted maps.
+serde_json = "1.0"

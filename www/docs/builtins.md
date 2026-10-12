@@ -4918,7 +4918,7 @@ I18n.set_locale("fr")
 
 ### Locale files
 
-Soli auto-loads every `*.yml` (and `*.yaml`) file under `config/locales/` at server boot. The top-level YAML key is the locale name; nested keys form the dotted lookup path used by `I18n.translate`. A single file may declare multiple locales, and several files may extend the same locale (e.g. `en.yml`, `accounts.en.yml`, …).
+Soli auto-loads every `*.yml` (and `*.yaml`) file under `config/locales/` at server boot. The top-level YAML key is the locale name; nested keys form the dotted lookup path used by `I18n.translate`. A single file may declare multiple locales, and several files may extend the same locale (e.g. `en.yml`, `accounts.en.yml`, …). Anchors, aliases and `<<:` merge keys are refused (see [What `Yaml.parse` reads](#what-yamlparse-reads)): such a file is skipped at boot with a warning naming its line and column.
 
 ```yaml
 # config/locales/en.yml
@@ -6928,14 +6928,55 @@ Config-format parse/stringify over the same Value model as JSON.
 | `Yaml.stringify(value)` | Serialize any value to YAML. |
 
 ```soli
-let config = Toml.parse(slurp("config.toml"));
-config["owner"]["name"];
+config = Toml.parse(slurp("config.toml"))
+config["owner"]["name"]
 
-let spec = Yaml.parse(slurp("openapi.yaml"));
-spec["paths"]["/users"]["get"]["summary"];
+spec = Yaml.parse(slurp("openapi.yaml"))
+spec["paths"]["/users"]["get"]["summary"]
+
+Yaml.stringify({ "name": "demo", "counts": [1, 2] })
+# name: demo
+# counts:
+# - 1
+# - 2
 ```
 
 Note: TOML cannot represent null; stringify raises on null values.
+
+### What `Yaml.parse` reads
+
+Soli's YAML parser is its own (the `soli-yaml` crate, safe Rust). It reads the
+YAML that configuration and locale files are written in, and **refuses** the
+rest with an error naming the line and column, rather than reading it some
+other way:
+
+- Read: block mappings and sequences (a sequence may sit at its key's
+  indentation), plain, `'single'` and `"double"`-quoted scalars over several
+  lines, every double-quoted escape, `|` and `>` block scalars with chomping
+  (`|-`, `>+`) and an indentation indicator, flow collections (`[a, b]`,
+  `{k: v}`), comments, a leading `---` and a trailing `...`.
+- Refused: anchors and aliases (`&base`, `*base`, so also `<<: *base` merge
+  keys), tags (`!!str`, `!Ruby`), `? complex` keys, directives (`%YAML`), a
+  stream of several documents, tabs in indentation, and nesting deeper than 128
+  levels.
+
+Values follow the YAML 1.2 core schema: `null`, `~` and an empty value are
+`nil`; `true`/`false` (any case) are booleans; decimal, `0o`, `0x` and `0b`
+integers and floats are numbers (`.inf` and `.nan` become `nil`); everything
+else is a string, including `yes`, `on`, `012`, `1_000` and `2026-10-12`. Keys
+are strings (`1: a` reads as `{"1": "a"}`), and a key given twice keeps its
+last value.
+
+```soli
+Yaml.parse("port: 8080\nmode: on\nzip: 012")   # {"port": 8080, "mode": "on", "zip": "012"}
+
+Yaml.parse("base: &b {x: 1}\nprod: *b") rescue "refused"
+# Yaml.parse(): anchors (`&name`) are not supported at line 1 column 7
+```
+
+`Yaml.stringify` writes block style with two-space indentation, quotes a
+string only when its plain form would read back as something else (`'012'`,
+`'true'`, `': x'`; double quotes when it holds a control character), and writes a multi-line string as a `|` literal block.
 
 ---
 
