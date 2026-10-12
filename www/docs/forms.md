@@ -225,7 +225,8 @@ Rails-style layer:
 - `csrf_token()` — the per-session token (builtin, available in controllers
   and views; created on first use).
 - `csrf_field()` — hidden `_csrf_token` input; `f.open()` and `button_to`
-  embed it automatically.
+  embed it automatically. It also renders the spam honeypot and signed render
+  time that `spam_check(req)` reads — see [Spam on public forms](security/spam.md).
 - `csrf_meta_tag()` — `<meta name="csrf-token">` for layouts, so JS clients
   (fetch/htmx) can send the `X-CSRF-Token` header.
 
@@ -253,6 +254,19 @@ For htmx, wire the header once:
 ```html
 <body hx-headers='{"X-CSRF-Token": "<%= csrf_token() %>"}'>
 ```
+
+## Spam
+
+Every POST form already carries a hidden honeypot and a signed render time;
+check them, and optionally a proof of work, in the action:
+
+```soli
+refused = spam_check(req)                      # nil, or {"reason", "show", "score"}
+form_with(contact, {"url": "/contacts", "pow": true})   # adds a proof of work
+```
+
+The reasons, the options, the Bayes score and the `/__soli/spam` quarantine:
+[Spam on public forms](security/spam.md).
 
 ## Partials
 

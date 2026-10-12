@@ -177,6 +177,7 @@ pub mod session_solikv;
 pub mod soap;
 pub mod solidb;
 pub mod solikv;
+pub mod spam;
 #[cfg(feature = "office")]
 pub mod spreadsheet;
 pub mod sql_ddl;
@@ -734,6 +735,10 @@ pub fn register_builtins(env: &mut Environment, include_test_builtins: bool) {
 
     // Register rate limit builtins
     rate_limit::register_rate_limit_builtins(env);
+
+    // Spam defences for form posts: spam_fields, pow_field, spam_check,
+    // client_ip and the SpamFilter model.
+    spam::register_spam_builtins(env);
 
     // Register security headers builtins
     security_headers::register_security_headers_builtins(env);

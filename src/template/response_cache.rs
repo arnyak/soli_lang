@@ -156,6 +156,7 @@ pub fn request_has_session() -> bool {
 pub fn reset_for_new_request() {
     DATA_DIRTY.with(|c| *c.borrow_mut() = false);
     RESPONSE_DIRTY.with(|c| *c.borrow_mut() = false);
+    crate::interpreter::builtins::spam::reset_honeypot_ids();
 }
 
 /// True when the current request's response depends on a

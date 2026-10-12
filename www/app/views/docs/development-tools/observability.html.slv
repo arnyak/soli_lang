@@ -341,6 +341,11 @@ SOLI_ADMIN_PASSWORD=&lt;long random string&gt;</code></pre>
         <strong class="text-white">Limits.</strong> The time measured is the whole round trip seen from Soli &mdash; network, queueing in the pool, the database's own work &mdash; not the database's execution time alone. It says <em>which</em> query is slow, not why: run it with <code>EXPLAIN</code> on the database. At most <strong class="text-white">1000 shapes</strong> are kept per app; slow runs of a new shape past that are counted on the page but not stored. Raw <code>db_query()</code> strings that inline different identifiers are different shapes.
     </p>
 
+    <h2 id="spam" class="text-2xl font-bold text-white mb-6">Spam (<code>/__soli/spam</code>)</h2>
+    <p class="text-gray-400 mb-12">
+        The posts <code>spam_check(req)</code> refused and accepted, with the model it scores them with; &ldquo;not spam&rdquo; and &ldquo;spam&rdquo; correct a mistake and retrain it. Same access rules as the errors page, with <code>SOLI_SPAM_*</code> credentials; <code>SOLI_SPAM=off</code> stops recording. See <a href="/docs/security/spam" class="text-amber-400 hover:underline">Spam on public forms</a>.
+    </p>
+
     <h2 id="notifications" class="text-2xl font-bold text-white mb-6">Notifications</h2>
     <p class="text-gray-400 mb-4">
         Errors and slow queries can tell someone instead of waiting to be looked at. Four events are sent, each after its group is stored:

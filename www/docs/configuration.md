@@ -484,6 +484,9 @@ These knobs control how the request edge handles untrusted input. See the
 | `SOLI_SLOW_QUERY_MS` | A query taking this many milliseconds or more is recorded as slow. Read once per process. | `200` |
 | `SOLI_SLOW_QUERY_BINDS` | `off` stores slow queries without their bind values. | on |
 | `SOLI_SLOW_QUERIES_USER` / `SOLI_SLOW_QUERIES_PASSWORD` / `SOLI_SLOW_QUERIES_TOKEN` | Credentials for the production `/__soli/slow_queries` page, like `SOLI_ERRORS_*`. With none and no `SOLI_ADMIN_*`, the route 404s outside `--dev`. | unset |
+| `SOLI_SPAM` | Recording of the posts `spam_check(req)` sees, and of its model, for [`/__soli/spam`](security/spam.md#the-quarantine-__solispam). `off` stops recording (the checks still run); `on` forces it on under `APP_ENV=test`, where it is otherwise off. | on |
+| `SOLI_SPAM_USER` / `SOLI_SPAM_PASSWORD` / `SOLI_SPAM_TOKEN` | Credentials for the production `/__soli/spam` page, like `SOLI_ERRORS_*`. With none and no `SOLI_ADMIN_*`, the route 404s outside `--dev`. | unset |
+| `SOLI_CLIENT_IP_HEADER` | With trust proxy on, a header holding the client address on its own (`cf-connecting-ip`, `x-real-ip`), read before `X-Forwarded-For` by `client_ip(req)`, the rate limiter and the per-client body budget. Ignored without trust proxy. | unset |
 | `SOLI_MOBILE_USER` / `SOLI_MOBILE_PASSWORD` / `SOLI_MOBILE_TOKEN` | Credentials for [`/__soli/mobile`](native/clients.md#distribute-__solimobile), where `soli mobile publish` uploads native builds. The token is also what the CLI sends (`SOLI_MOBILE_TOKEN` in its environment). With none and no `SOLI_ADMIN_*`, the page and its install links 404 outside `--dev`. | unset |
 | `SOLI_MOBILE_PATH` | Where `/__soli/mobile` stores builds. | `./storage/mobile` |
 | `SOLI_MOBILE_MAX_SIZE` | Upload cap for one build, in bytes; independent of `SOLI_MAX_BODY_SIZE`. | 536870912 (512 MiB) |

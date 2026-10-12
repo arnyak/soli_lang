@@ -1046,8 +1046,11 @@ mod tests {
         let data = hash(vec![("post", post)]);
         let _lenient = crate::interpreter::executor::enter_template_lenient_vars();
         let nodes = parse_template(source)?;
+        // Each render as its own request: the form's honeypot ids restart.
+        crate::interpreter::builtins::spam::reset_honeypot_ids();
         let tree = render_nodes(&nodes, &data, None)?;
         let compiled = VmTemplate::compile(&nodes)?;
+        crate::interpreter::builtins::spam::reset_honeypot_ids();
         let on_vm = compiled
             .render(&mut view.vm, &data)
             .unwrap_or_else(|e| panic!("{e}"))
@@ -1063,11 +1066,14 @@ mod tests {
     fn assert_renders_same(source: &str, data: &Value) {
         let _lenient = crate::interpreter::executor::enter_template_lenient_vars();
         let nodes = parse_template(source).unwrap_or_else(|e| panic!("{source}: {e}"));
+        // Each render as its own request: a form's honeypot ids restart.
+        crate::interpreter::builtins::spam::reset_honeypot_ids();
         let tree =
             render_nodes(&nodes, data, None).unwrap_or_else(|e| panic!("{source}: tree: {e}"));
         let compiled =
             VmTemplate::compile(&nodes).unwrap_or_else(|e| panic!("{source}: compile: {e}"));
         let mut vm = view_vm();
+        crate::interpreter::builtins::spam::reset_honeypot_ids();
         let on_vm = compiled
             .render(&mut vm, data)
             .unwrap_or_else(|e| panic!("{source}: vm: {e}"))

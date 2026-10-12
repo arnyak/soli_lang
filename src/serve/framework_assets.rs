@@ -17,7 +17,7 @@ use http_body_util::Full;
 use hyper::{Response, StatusCode};
 
 use super::{
-    box_full, camera, files, full, native, native_stream_response, nav, prefetch, sensors,
+    box_full, camera, files, full, native, native_stream_response, nav, pow, prefetch, sensors,
     ResponseBody,
 };
 
@@ -92,6 +92,9 @@ pub(super) fn bundled(
         "/__soli/camera.js" => box_full(camera::handle_camera_js()),
         "/__soli/barcode-decoder.js" => box_full(camera::handle_barcode_decoder_js()),
         "/__soli/sensors.js" => box_full(sensors::handle_sensors_js()),
+
+        // The proof-of-work solver, for forms carrying a `pow_field()`.
+        "/__soli/pow.js" => box_full(pow::handle_pow_js()),
 
         "/__soli/native/stream" => match native::topic_for_query(raw_query) {
             Some(topic) => native_stream_response(&topic),

@@ -280,6 +280,13 @@ SOLI_ADMIN_PASSWORD=<long random string>
 
 **Limits.** The time measured is the whole round trip seen from Soli — network, queueing in the pool, the database's own work — not the database's execution time alone. It says *which* query is slow, not why: run it with `EXPLAIN` on the database. At most **1000 shapes** are kept per app; slow runs of a new shape past that are counted on the page but not stored. Raw `db_query()` strings that inline different identifiers are different shapes.
 
+## Spam (`/__soli/spam`)
+
+The posts `spam_check(req)` refused and accepted, with the model it scores
+them with; "not spam" and "spam" correct a mistake and retrain it. Same access
+rules as the errors page, with `SOLI_SPAM_*` credentials; `SOLI_SPAM=off`
+stops recording. See [Spam on public forms](security/spam.md).
+
 ## Notifications
 
 Errors and slow queries can tell someone instead of waiting to be looked at. Four events are sent, each after its group is stored:

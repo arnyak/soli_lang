@@ -666,7 +666,12 @@ pub(crate) fn rate_limit_ip_key(ip: &str) -> String {
 /// * trust-proxy OFF (default): use the request hash's `remote_addr`
 ///   (the actual TCP peer IP populated by `serve/mod.rs`). Falls back
 ///   to `None` only when called from a non-server context.
-fn extract_client_ip(req: &Value) -> Option<String> {
+///
+/// `SOLI_CLIENT_IP_HEADER` (behind trust-proxy only) names a header that holds
+/// the client address on its own, read before `X-Forwarded-For`: Cloudflare's
+/// `CF-Connecting-IP`, or `X-Real-IP` from an nginx that sets it. Without trust
+/// proxy it is ignored like `X-Forwarded-For`, since a client can send it.
+pub(crate) fn extract_client_ip(req: &Value) -> Option<String> {
     let hash = match req {
         Value::Hash(h) => h,
         _ => return None,
@@ -674,6 +679,9 @@ fn extract_client_ip(req: &Value) -> Option<String> {
     let borrowed = hash.borrow();
 
     if super::trust_proxy::is_trust_proxy_enabled() {
+        if let Some(ip) = client_ip_header_value(&borrowed) {
+            return Some(ip);
+        }
         if let Some((_, Value::Hash(headers))) = borrowed
             .iter()
             .find(|(k, _)| matches!(k, HashKey::String(s) if **s == *"headers"))
@@ -712,6 +720,46 @@ fn extract_client_ip(req: &Value) -> Option<String> {
             }
         })
         .map(|s| s.to_string())
+}
+
+/// The address in the `SOLI_CLIENT_IP_HEADER` header, when that variable names
+/// one and the request carries it.
+fn client_ip_header_value(request: &HashPairs) -> Option<String> {
+    let name = crate::platform::env::var("SOLI_CLIENT_IP_HEADER")
+        .ok()
+        .map(|n| n.trim().to_ascii_lowercase())
+        .filter(|n| !n.is_empty())?;
+    header_ip(request, &name)
+}
+
+/// The non-empty value of the request header `name` (lowercase), whatever
+/// case the request used.
+fn header_ip(request: &HashPairs, name: &str) -> Option<String> {
+    let Some(Value::Hash(headers)) = request.get(&HashKey::String("headers".into())) else {
+        return None;
+    };
+    let headers = headers.borrow();
+    headers.iter().find_map(|(key, value)| match (key, value) {
+        (HashKey::String(k), Value::String(v)) if k.to_ascii_lowercase() == name => {
+            let ip = v.trim();
+            (!ip.is_empty()).then(|| ip.to_string())
+        }
+        _ => None,
+    })
+}
+
+/// Spend one request of `key`'s budget: `limit` per `window_secs`. `false` when
+/// the budget is gone. The bucket is the one `RateLimiter(key, ...)` uses.
+pub(crate) fn allow(key: &str, limit: usize, window_secs: u64) -> bool {
+    if limit == 0 {
+        return true;
+    }
+    RATE_LIMIT_STORE.write(|store| {
+        store
+            .get_or_create(key, limit, Duration::from_secs(window_secs))
+            .is_allowed()
+            .0
+    })
 }
 
 #[cfg(test)]
@@ -780,6 +828,34 @@ mod tests {
     /// Bundled into one test because `TRUST_PROXY_ENABLED` is process-global —
     /// running cases as separate `#[test]` items would race them under
     /// cargo's parallel runner.
+    #[test]
+    fn a_named_client_ip_header_is_read_whatever_its_case() {
+        let mut headers = HashPairs::default();
+        headers.insert(
+            HashKey::String("CF-Connecting-IP".into()),
+            Value::String(" 198.51.100.7 ".into()),
+        );
+        let mut request = HashPairs::default();
+        request.insert(
+            HashKey::String("headers".into()),
+            Value::Hash(Rc::new(RefCell::new(headers))),
+        );
+        assert_eq!(
+            header_ip(&request, "cf-connecting-ip").as_deref(),
+            Some("198.51.100.7")
+        );
+        assert_eq!(header_ip(&request, "x-real-ip"), None);
+        assert_eq!(header_ip(&HashPairs::default(), "cf-connecting-ip"), None);
+    }
+
+    #[test]
+    fn allow_spends_the_budget_of_one_key() {
+        assert!(allow("spam-test:allow", 1, 60));
+        assert!(!allow("spam-test:allow", 1, 60));
+        assert!(allow("spam-test:other", 1, 60));
+        assert!(allow("spam-test:unlimited", 0, 60));
+    }
+
     #[test]
     fn extract_client_ip_honours_trust_proxy_gate() {
         // Helper to build a request hash with the given headers and remote.

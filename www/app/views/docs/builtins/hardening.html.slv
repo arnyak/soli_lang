@@ -139,7 +139,7 @@ SOLI_TRUSTED_PROXIES=10.0.0.0/8,127.0.0.1,::1</code></pre>
             </p>
         </div>
         <p class="text-gray-400 mb-4">
-            The client is the TCP peer, or the right-most <code class="text-orange-400">X-Forwarded-For</code> entry when trust proxy is on &mdash; the same key the rate limiter uses. IPv6 clients are counted per <code class="text-orange-400">/64</code> (one host owns the whole prefix), and an IPv4-mapped IPv6 address counts as its IPv4 address.
+            The client is the TCP peer, or the right-most <code class="text-orange-400">X-Forwarded-For</code> entry when trust proxy is on &mdash; or, before it, the header named by <code class="text-orange-400">SOLI_CLIENT_IP_HEADER</code> (<code class="text-orange-400">cf-connecting-ip</code> behind Cloudflare) &mdash; the same key the rate limiter and <code class="text-orange-400">client_ip(req)</code> use. IPv6 clients are counted per <code class="text-orange-400">/64</code> (one host owns the whole prefix), and an IPv4-mapped IPv6 address counts as its IPv4 address.
         </p>
         <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
             <div class="p-4 overflow-x-auto"><pre><code class="language-bash text-sm">SOLI_BODY_BUDGET_PER_IP_BYTES=67108864   # 64 MiB per client</code></pre>

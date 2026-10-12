@@ -81,6 +81,7 @@ may still exist under another name — try a synonym before writing it by hand.
 | Cookies (signed / encrypted), CSRF | `set_cookie`, `read_cookie`, `csrf_token` | `docs/sessions.md`, `docs/forms.md` |
 | Security headers, trust proxy, body limits | builtins + env vars | `docs/security/defaults.md`, `docs/builtins/hardening.md` |
 | Rate limiting, circuit breaker, retry | `RateLimiter`, `CircuitBreaker`, `Retry.with_backoff` | `docs/builtins.md` |
+| Spam on public forms (no captcha) | `spam_check(req)` — honeypot + render time already in `csrf_field()`; `pow_field()`, `SpamFilter`, `/__soli/spam` | `docs/security/spam.md` |
 | Cache / key-value store | `Cache.set` / `Cache.get`, `KV` | `docs/builtins.md` → Cache, KV |
 | Feature flags | `FeatureFlags.enabled?`, rollouts, allowlists | `docs/feature-flags.md` |
 | Forms, validation errors, nested params | `form_with`, `permit` | `docs/forms.md`, `docs/request-params.md` |

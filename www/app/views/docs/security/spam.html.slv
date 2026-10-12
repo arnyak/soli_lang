@@ -1,0 +1,129 @@
+<div class="space-y-12">
+    <div class="border-b border-white/10 pb-8">
+        <h1 class="text-4xl font-extrabold tracking-tight lg:text-5xl mb-4">
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-400 animate-gradient-x">
+                Spam on public forms
+            </span>
+        </h1>
+        <p class="text-xl text-gray-400 max-w-3xl leading-relaxed">
+            Anything a stranger can post to gets spam. Soli stops most of it without a captcha, a third-party script or a cookie banner, in four layers, cheapest first.
+        </p>
+    </div>
+
+    <section>
+        <div class="overflow-x-auto rounded-xl border border-white/10">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-white/10 text-left text-gray-400">
+                        <th class="py-3 px-4">Layer</th>
+                        <th class="py-3 px-4">What it catches</th>
+                        <th class="py-3 px-4">Cost to a person</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5 text-gray-400">
+                    <tr><td class="py-3 px-4 text-white">Honeypot + signed render time</td><td class="py-3 px-4">bots that fill every field, post without loading the page, or answer within seconds</td><td class="py-3 px-4">none</td></tr>
+                    <tr><td class="py-3 px-4 text-white">Proof of work (opt-in)</td><td class="py-3 px-4">bulk posting: each post costs real CPU</td><td class="py-3 px-4">~0.1&nbsp;s in the background</td></tr>
+                    <tr><td class="py-3 px-4 text-white">Bayes score</td><td class="py-3 px-4">messages that read like the spam this app already saw</td><td class="py-3 px-4">none</td></tr>
+                    <tr><td class="py-3 px-4 text-white">Quarantine (<code>/__soli/spam</code>)</td><td class="py-3 px-4">where mistakes are seen and corrected &mdash; which trains the score</td><td class="py-3 px-4">&mdash;</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-4">Quick start</h2>
+        <p class="text-gray-400 mb-4"><code class="text-cyan-400">csrf_field()</code> &mdash; and so every <code class="text-cyan-400">form_with</code> and <code class="text-cyan-400">button_to</code> &mdash; already renders the honeypot and the signed render time. The honeypot sits in a <code class="text-cyan-400">hidden</code>, <code class="text-cyan-400">aria-hidden</code> block, with a <code class="text-cyan-400">&lt;label for&gt;</code> and an id of its own per form, so an accessibility check that wants every field labelled does not flag it. Check the post in the action:</p>
+        <pre data-filename="app/controllers/contacts_controller.sl"><code class="language-soli text-sm"># POST /contacts
+def create
+  refused = spam_check(req)
+  unless refused.nil?
+    # A bot gets the same answer as a person, and learns nothing.
+    return redirect("/contact#sent") unless refused["show"]
+
+    # A person can act on it: reload the page, wait, enable JavaScript.
+    return redirect("/contact#error")
+  end
+
+  ContactMailer.inquiry(params["email"], params["text"]).deliver_later
+  redirect("/contact#sent")
+end</code></pre>
+        <p class="text-gray-400 mt-4"><code class="text-cyan-400">spam_check(req)</code> answers <code>nil</code> when the post may go through, or a hash with <code>reason</code>, <code>show</code> (<code>true</code> when a person could have caused it and can fix it) and <code>score</code> (0 to 1). A hand-written form gets the fields from <code>&lt;%- csrf_field() %&gt;</code>, or from <code>&lt;%- spam_fields() %&gt;</code> alone.</p>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-4">The reasons</h2>
+        <div class="overflow-x-auto rounded-xl border border-white/10">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-white/10 text-left text-gray-400">
+                        <th class="py-3 px-4">Reason</th>
+                        <th class="py-3 px-4">Means</th>
+                        <th class="py-3 px-4">Shown</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5 text-gray-400">
+                    <tr><td class="py-3 px-4"><code>honeypot</code></td><td class="py-3 px-4">the hidden <code>_soli_url</code> field was filled</td><td class="py-3 px-4">no</td></tr>
+                    <tr><td class="py-3 px-4"><code>token</code></td><td class="py-3 px-4">no render time, or one this app did not sign: a post that never loaded the page</td><td class="py-3 px-4">yes</td></tr>
+                    <tr><td class="py-3 px-4"><code>fast</code></td><td class="py-3 px-4">posted less than <code>min_seconds</code> (3) after the render</td><td class="py-3 px-4">no</td></tr>
+                    <tr><td class="py-3 px-4"><code>expired</code></td><td class="py-3 px-4">the page was rendered more than <code>max_age</code> (two days) ago</td><td class="py-3 px-4">yes</td></tr>
+                    <tr><td class="py-3 px-4"><code>rate</code></td><td class="py-3 px-4">this client used up the <code>rate</code> budget on this path</td><td class="py-3 px-4">yes</td></tr>
+                    <tr><td class="py-3 px-4"><code>pow</code></td><td class="py-3 px-4">the proof of work is missing, wrong, expired or already spent</td><td class="py-3 px-4">yes</td></tr>
+                    <tr><td class="py-3 px-4"><code>links</code></td><td class="py-3 px-4">more than <code>max_links</code> (2) links</td><td class="py-3 px-4">no</td></tr>
+                    <tr><td class="py-3 px-4"><code>score</code></td><td class="py-3 px-4">the trained model gives <code>max_score</code> (0.9) or more</td><td class="py-3 px-4">no</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-4">Options</h2>
+        <pre><code class="language-soli text-sm">spam_check(req, {
+  "min_seconds": 3,          # faster than this after the render is a bot
+  "max_age": 172800,         # a page older than this must be reloaded
+  "max_links": 2,            # http://, https:// and [url count as links
+  "max_score": 0.9,          # once trained, refuse from this score
+  "stamp": true,             # false for a form without csrf_field()/spam_fields()
+  "pow": false,              # true: require a solved proof of work
+  "rate": {"limit": 5, "window": 3600},  # posts per client and path; off by default
+  "fields": ["text"],        # read only these fields as the message
+  "record": true,            # keep the post in the quarantine
+  "learn": true              # train the model on the certain cases
+})</code></pre>
+        <p class="text-gray-400 mt-4">An unknown option is an error. By default the message is every posted field except the framework's (<code>_</code>-prefixed) and private-looking ones (names containing <code>pass</code>, <code>token</code>, <code>secret</code>, <code>card</code>, <code>cvv</code>, <code>cvc</code>, <code>iban</code>, <code>csrf</code>); nested names such as <code>contact[text]</code> are read too.</p>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-4">Proof of work</h2>
+        <pre><code class="language-erb text-sm">&lt;%- form_with(contact, {"url": "/contacts", "pow": true}) do |f| -%&gt;</code></pre>
+        <p class="text-gray-400 mt-4">Or <code>&lt;%- pow_field() %&gt;</code> in a hand-written form (difficulty in bits: 17 by default, at most 24). The page then loads <code>/__soli/pow.js</code>, which starts solving as soon as the page shows &mdash; about 130&nbsp;000 SHA-256 hashes, well under a second, usually done before the visitor has finished typing; a submit before then waits for it. Check it with <code class="text-cyan-400">spam_check(req, {"pow": true})</code>; each solution is accepted once. It needs JavaScript: a visitor without it gets <code>pow</code>, which is shown.</p>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-4">The score</h2>
+        <p class="text-gray-400 mb-4">Every message is scored by a naive Bayes model learnt from this application's own posts; it refuses on the score once it has seen five posts of each kind. It learns the certain cases by itself &mdash; a honeypot or <code>fast</code> hit is spam, an accepted post is ham &mdash; and every correction on <code>/__soli/spam</code> teaches it.</p>
+        <pre><code class="language-soli text-sm">SpamFilter.train(text, "spam")     # or "ham"
+SpamFilter.untrain(text, "spam")   # take a train() back
+SpamFilter.score(text)             # 0.0 .. 1.0, 0.5 when nothing is known
+SpamFilter.trained?                # five of each kind seen
+SpamFilter.stats                   # {"spam": n, "ham": n, "words": n, "trained": bool}
+SpamFilter.reset                   # forget everything</code></pre>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-4">The quarantine: <code class="text-cyan-400">/__soli/spam</code></h2>
+        <p class="text-gray-400 mb-4">Every checked post is kept &mdash; refused ones under <strong class="text-white">refused</strong>, accepted ones under <strong class="text-white">accepted</strong> &mdash; with its fields (private ones left out), the client address, the reason and the score. &ldquo;not spam&rdquo; and &ldquo;spam&rdquo; move a post and retrain the model. The newest 1000 posts are kept, in the app's database (<code>_soli_spam</code>, <code>_soli_spam_model</code>).</p>
+        <p class="text-gray-400">Access works like <code>/__soli/errors</code>: open to this machine under <code>--dev</code>; otherwise <code>SOLI_SPAM_USER</code> + <code>SOLI_SPAM_PASSWORD</code>, <code>SOLI_SPAM_TOKEN</code> or the shared <code>SOLI_ADMIN_*</code>, and a 404 when none is set. <code>SOLI_SPAM=off</code> stops storing posts and the model; under <code>APP_ENV=test</code> nothing is stored unless <code>SOLI_SPAM=on</code>. The checks work either way.</p>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-4">The client address: <code class="text-cyan-400">client_ip(req)</code></h2>
+        <p class="text-gray-400 mb-4">The TCP peer, or &mdash; with trust proxy on &mdash; the right-most <code>X-Forwarded-For</code> entry. Behind a proxy that puts the client in a header of its own, name it; the header is read only with trust proxy on, since a client could otherwise send any address it likes.</p>
+        <pre data-filename=".env"><code class="language-bash text-sm">SOLI_TRUST_PROXY=1
+SOLI_CLIENT_IP_HEADER=cf-connecting-ip   # Cloudflare; or x-real-ip</code></pre>
+    </section>
+
+    <section>
+        <h2 class="text-2xl font-bold text-white mb-4">Keys</h2>
+        <p class="text-gray-400">The render time and the proof-of-work challenges are signed with keys derived from <code>SOLI_SESSION_SECRET</code>. Without a secret (a bare <code>soli serve --dev</code>), a key is drawn per process: a page rendered before a restart comes back as <code>token</code>.</p>
+    </section>
+</div>

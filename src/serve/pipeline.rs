@@ -282,8 +282,9 @@ const INITIAL_BODY_RESERVATION: usize = 64 * 1024;
 /// The client a request body's budget is charged to.
 ///
 /// The TCP peer, unless the application trusts its proxy — then the
-/// right-most `X-Forwarded-For` entry, the address the trusted hop recorded,
-/// exactly as the rate limiter (`rate_limit::extract_client_ip`) derives it.
+/// address in `SOLI_CLIENT_IP_HEADER` when it names one, else the right-most
+/// `X-Forwarded-For` entry, the address the trusted hop recorded, exactly as
+/// the rate limiter (`rate_limit::extract_client_ip`) derives it.
 /// Without that, every client behind a reverse proxy would share the proxy's
 /// one share of the budget. An unparsable or absent header falls back to the
 /// peer.
@@ -302,6 +303,17 @@ fn body_budget_client(
     trust_proxy::set_current_peer_ip(None);
     if !trusted {
         return peer_ip;
+    }
+    // `SOLI_CLIENT_IP_HEADER` (CF-Connecting-IP, X-Real-IP) first, as the
+    // rate limiter reads it.
+    let named = crate::platform::env::var("SOLI_CLIENT_IP_HEADER")
+        .ok()
+        .map(|name| name.trim().to_ascii_lowercase())
+        .filter(|name| !name.is_empty())
+        .and_then(|name| header_str(headers, &name).map(|v| v.trim().to_string()))
+        .and_then(|ip| ip.parse().ok());
+    if let Some(ip) = named {
+        return ip;
     }
     header_str(headers, "x-forwarded-for")
         .and_then(|xff| xff.rsplit(',').map(str::trim).find(|s| !s.is_empty()))

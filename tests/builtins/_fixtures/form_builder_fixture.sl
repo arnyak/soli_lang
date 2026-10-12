@@ -91,13 +91,14 @@ export class FormBuilder
         browser_method = "POST"
         browser_method = "GET" if this.http_method == "get"
         action = attr(_form_safe_url(this.url))
-        extra = this.attributes_without(this.form_attrs, [])
+        extra = this.attributes_without(this.form_attrs, ["pow"])
         html = "<form action=\"#{action}\" method=\"#{browser_method}\"#{extra}>"
         if !["get", "post"].includes?(this.http_method)
             override = this.http_method.upcase()
             html = html + "<input type=\"hidden\" name=\"_method\" value=\"#{override}\">"
         end
         html = html + csrf_field() unless this.http_method == "get"
+        html = html + pow_field() if this.form_attrs["pow"] == true && this.http_method != "get"
         html
     end
 
@@ -364,6 +365,7 @@ end
 #   "url"       override the derived action URL (required with no record)
 #   "method"    override the derived verb ("post"/"patch"/"put"/"delete"/"get")
 #   "multipart" true adds enctype="multipart/form-data" (for file_field)
+#   "pow" true adds a proof-of-work challenge (pow_field), checked by spam_check
 #   anything else becomes an attribute on the <form> tag
 export def form_with(record = null, options = null)
     opts = options ?? {}
@@ -405,9 +407,11 @@ end
 
 # Hidden input carrying the per-session CSRF token — embedded by
 # FormBuilder.open() and button_to(); use directly in hand-written forms.
+# Followed by spam_fields(): the honeypot and signed render time that
+# spam_check(req) reads.
 export def csrf_field()
     token = attr(csrf_token())
-    "<input type=\"hidden\" name=\"_csrf_token\" value=\"#{token}\">"
+    "<input type=\"hidden\" name=\"_csrf_token\" value=\"#{token}\">" + spam_fields()
 end
 
 # <meta> tag for layouts so JS (fetch/htmx) can send X-CSRF-Token.

@@ -93,6 +93,7 @@ def docs_nav_sections()
         { "path": "/docs/security/oauth-client", "label": "OAuth Client" },
         { "path": "/docs/security/sessions", "label": "Sessions" },
         { "path": "/docs/security/defaults", "label": "Production defaults" },
+        { "path": "/docs/security/spam", "label": "Spam on forms" },
         { "path": "/docs/builtins/validation", "label": "Validation" }
       ]
     },

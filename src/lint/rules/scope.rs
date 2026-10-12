@@ -313,6 +313,11 @@ const WELL_KNOWN_GLOBALS: &[&str] = &[
     "cors",
     // Request context and CSRF
     "csrf_token",
+    // Spam defences for form posts
+    "spam_fields",
+    "pow_field",
+    "spam_check",
+    "client_ip",
     "current_action",
     "forbidden",
     "content_type_for",

@@ -72,6 +72,19 @@ describe("form_with construction") do
     assert_contains(form_for({"title": "Hello"}).open(), "<input type=\"hidden\" name=\"_csrf_token\" value=\"")
   end
 
+  test("open embeds the spam honeypot and render time with the CSRF token") do
+    html = form_for({"title": "Hello"}).open()
+    assert_contains(html, "name=\"_soli_url\"")
+    assert_contains(html, "name=\"_soli_ts\"")
+  end
+
+  test("the pow option adds a proof-of-work challenge, not a pow attribute") do
+    html = form_with({"title": "Hello"}, {"url": "/posts", "pow": true}).open()
+    assert_contains(html, "data-soli-pow=\"")
+    assert_not(html.includes?(" pow=\""))
+    assert_not(form_for({"title": "Hello"}).open().includes?("data-soli-pow"))
+  end
+
   test("the get method renders GET and omits the CSRF field") do
     html = form_with({"title": "Hello"}, {"url": "/search", "method": "get"}).open()
     assert_contains(html, "<form action=\"/search\" method=\"GET\"")

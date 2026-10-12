@@ -18,6 +18,7 @@ use super::dev_bar::html_escape;
 pub(crate) enum Section {
     Errors,
     SlowQueries,
+    Spam,
     Jobs,
     Mobile,
     Inbox,
@@ -30,6 +31,7 @@ impl Section {
         match self {
             Section::Errors => "/__soli/errors",
             Section::SlowQueries => "/__soli/slow_queries",
+            Section::Spam => "/__soli/spam",
             Section::Jobs => "/__soli/jobs",
             Section::Mobile => "/__soli/mobile",
             Section::Inbox => "/__soli/inbox",
@@ -42,6 +44,7 @@ impl Section {
         match self {
             Section::Errors => "Errors",
             Section::SlowQueries => "Queries",
+            Section::Spam => "Spam",
             Section::Jobs => "Jobs",
             Section::Mobile => "Mobile",
             Section::Inbox => "Inbox",
@@ -58,9 +61,10 @@ impl Section {
     }
 }
 
-const SECTIONS: [Section; 7] = [
+const SECTIONS: [Section; 8] = [
     Section::Errors,
     Section::SlowQueries,
+    Section::Spam,
     Section::Jobs,
     Section::Mobile,
     Section::Inbox,

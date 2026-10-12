@@ -1020,6 +1020,9 @@ fn finish_html(body: String) -> (String, String) {
     // enabled them with `motion_sensors()` or reference `soli.sensors`.
     let body = crate::serve::sensors::inject_sensors_tag(body);
 
+    // Proof of work, for pages carrying a `pow_field()` challenge.
+    let body = crate::serve::pow::inject_pow_tag(body);
+
     // Compute a content-derived ETag so the shipped hover-prefetch feature
     // actually delivers "instant navigation": Chrome reuses the prefetched
     // body on the actual click as long as the server returns 304 on the

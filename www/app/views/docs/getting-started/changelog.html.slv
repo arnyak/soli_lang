@@ -22,6 +22,15 @@
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
         <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.24.0.</p>
 
+        <h3 id="unreleased-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Spam defences for public forms, without a captcha.</strong> <code class="text-cyan-400">csrf_field()</code> &mdash; and so <code class="text-cyan-400">form_with</code> and <code class="text-cyan-400">button_to</code> &mdash; now also renders a hidden honeypot and a signed render time; <code class="text-cyan-400">spam_check(req)</code> reads them and answers <code class="text-cyan-400">nil</code> or <code class="text-cyan-400">{"reason", "show", "score"}</code> (honeypot, token, fast, expired, rate, pow, links, score). <a href="/docs/security/spam" class="text-cyan-400 hover:underline">Spam on public forms</a></li>
+            <li><strong class="text-white">Proof of work.</strong> <code class="text-cyan-400">pow_field()</code> or <code class="text-cyan-400">form_with(..., {"pow": true})</code>: a signed challenge solved in the background by <code class="text-cyan-400">/__soli/pow.js</code>, verified once by <code class="text-cyan-400">spam_check(req, {"pow": true})</code>.</li>
+            <li><strong class="text-white"><code class="text-cyan-400">SpamFilter</code></strong> &mdash; a naive Bayes score learnt from the app&rsquo;s own posts, used by <code class="text-cyan-400">spam_check</code> once it has seen five of each kind.</li>
+            <li><strong class="text-white"><code class="text-cyan-400">/__soli/spam</code></strong> &mdash; the quarantine of refused and accepted posts; correcting one retrains the model. <a href="/docs/development-tools/observability#spam" class="text-cyan-400 hover:underline">Observability</a></li>
+            <li><strong class="text-white"><code class="text-cyan-400">client_ip(req)</code> and <code class="text-cyan-400">SOLI_CLIENT_IP_HEADER</code></strong> &mdash; the client&rsquo;s address as the rate limiter derives it; behind trust proxy, <code class="text-cyan-400">cf-connecting-ip</code> or <code class="text-cyan-400">x-real-ip</code> can be read first.</li>
+        </ul>
+
         <h3 id="unreleased-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">A method body may start with <code class="text-cyan-400">[</code> after a return type.</strong> <code class="text-cyan-400">def human?(r) -&gt; Bool</code> followed by <code class="text-cyan-400">["a", "b"].includes?(r)</code> was read as the type <code class="text-cyan-400">Bool[...]</code> and failed to parse, which stopped the whole app from loading. <code class="text-cyan-400">[]</code> is an array suffix only when written against the type.</li>

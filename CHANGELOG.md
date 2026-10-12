@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+* **security:** **Spam defences for public forms, without a captcha.** `csrf_field()` — and so `form_with` and `button_to` — now also renders a hidden honeypot (`_soli_url`) and a signed render time (`_soli_ts`). `spam_check(req, options = {})` reads them in the action and answers `nil` or `{"reason", "show", "score"}`: `honeypot`, `token` (no render time, or a forged one: the post never loaded the page), `fast` (under `min_seconds`, 3), `expired` (`max_age`, two days), `rate` (opt-in budget per client and path), `pow`, `links` (more than `max_links`, 2) and `score`. `show` says whether a person could have caused it — a bot gets the same answer as a success. Options: `min_seconds`, `max_age`, `max_links`, `max_score`, `stamp`, `pow`, `rate`, `fields`, `record`, `learn`; an unknown one raises. Private-looking fields (password, token, card…) are never read as the message nor stored. Keys derive from `SOLI_SESSION_SECRET` (HKDF, one per purpose).
+
+* **security:** **Proof of work for forms.** `pow_field(bits = 17)`, or `form_with(..., {"pow": true})`, renders a signed challenge that `/__soli/pow.js` — injected only into pages that carry one — solves in the background (a synchronous SHA-256, ~130 000 hashes, done before the visitor finishes typing; a submit before then waits). `spam_check(req, {"pow": true})` verifies it; a solution is spent once.
+
+* **security:** **`SpamFilter`, a naive Bayes score learnt from the app's own posts.** `train(text, "spam"|"ham")`, `untrain`, `score(text)`, `trained?`, `stats`, `reset`. `spam_check` refuses on the score (0.9) once five posts of each kind were seen, and learns the certain cases itself: a honeypot or `fast` hit is spam, an accepted post is ham.
+
+* **serve:** **`/__soli/spam`, the spam quarantine.** Every post `spam_check` saw, refused or accepted, with its fields, client, reason and score; "not spam" and "spam" move a post and retrain the model. Stored in `_soli_spam` (newest 1000) and `_soli_spam_model` by a background writer; `SOLI_SPAM=off` stops recording, off under `APP_ENV=test` unless `SOLI_SPAM=on`. Access like `/__soli/errors`: open under `--dev` to this machine, else `SOLI_SPAM_USER`/`PASSWORD`, `SOLI_SPAM_TOKEN` or `SOLI_ADMIN_*`, 404 otherwise.
+
+* **serve:** **`client_ip(req)` and `SOLI_CLIENT_IP_HEADER`.** The client's address as the rate limiter derives it — the TCP peer, or behind trust proxy the right-most `X-Forwarded-For` entry. `SOLI_CLIENT_IP_HEADER=cf-connecting-ip` (or `x-real-ip`) reads that header first, for `client_ip`, the rate limiter and the per-client body budget; it is ignored without trust proxy, where a client could send it.
+
 ### Fixed
 
 * **language:** **A method body may start with `[` after a return type.** `def human?(r) -> Bool` followed by a line `["a", "b"].includes?(r)` was read as the return type `Bool[...]` and failed with "expected ]" — and one such file stopped the whole app from loading. The `[]` array suffix must now touch the type and close at once (`Int[]`, `Int[][]`); after a space or a line break, `[` starts the next expression.

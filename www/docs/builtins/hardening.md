@@ -90,7 +90,9 @@ more than the global budget, and `0` when the global budget is disabled. Set it
 to `0` to disable the per-client cap.
 
 The client is the TCP peer, or the right-most `X-Forwarded-For` entry when trust
-proxy is on — the same key the rate limiter uses. IPv6 clients are counted per
+proxy is on — or, before it, the header named by `SOLI_CLIENT_IP_HEADER`
+(`cf-connecting-ip` behind Cloudflare) — the same key the rate limiter and
+`client_ip(req)` use. IPv6 clients are counted per
 `/64` (one host owns the whole prefix), and an IPv4-mapped IPv6 address counts
 as its IPv4 address.
 

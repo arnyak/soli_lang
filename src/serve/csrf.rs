@@ -129,6 +129,7 @@ fn is_operator_dashboard_path(path: &str) -> bool {
         "/__soli/jobs",
         "/__soli/errors",
         "/__soli/slow_queries",
+        "/__soli/spam",
         "/__soli/mobile",
         "/__soli/push",
     ]

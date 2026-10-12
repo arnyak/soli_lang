@@ -27,6 +27,7 @@ mod dev_mobile;
 mod dev_query_stats;
 mod dev_routes;
 mod dev_slow_queries;
+mod dev_spam;
 pub mod dev_store;
 mod error_response;
 #[cfg(not(target_arch = "wasm32"))]
@@ -48,6 +49,7 @@ mod origin;
 pub mod otel;
 pub mod phase_log;
 mod pipeline;
+pub mod pow;
 pub mod prefetch;
 mod probes;
 pub mod prod_log;
@@ -90,6 +92,7 @@ mod operator_push;
 pub(crate) mod query_stats;
 mod repl_session;
 pub(crate) mod slow_queries;
+pub(crate) mod spam;
 pub(crate) mod tailwind;
 mod tenant_writer;
 mod worker_pool;
@@ -2526,6 +2529,19 @@ async fn handle_hyper_request(
     // Slow-query dashboard: the queries `slow_queries` grouped, behind the
     // same gate. See `dev_slow_queries`.
     if let Some(resp) = dev_slow_queries::dispatch(
+        &method,
+        &path,
+        req.uri().query(),
+        req.headers(),
+        dev_mode,
+        peer_addr.ip(),
+    ) {
+        return Ok(resp);
+    }
+
+    // Spam dashboard: the posts `spam_check(req)` refused and accepted, and
+    // the model it scores with, behind the same gate. See `dev_spam`.
+    if let Some(resp) = dev_spam::dispatch(
         &method,
         &path,
         req.uri().query(),

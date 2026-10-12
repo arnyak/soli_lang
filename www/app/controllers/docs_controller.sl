@@ -294,6 +294,10 @@ def security_defaults
   render_docs("docs/security/defaults", "Production security defaults", "security", "defaults")
 end
 
+def security_spam
+  render_docs("docs/security/spam", "Spam on public forms", "security", "spam")
+end
+
 # ============================================================================
 # Internals (Markdown templates under docs/internals/)
 # ============================================================================

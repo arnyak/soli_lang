@@ -78,6 +78,7 @@ get("/docs/security/oidc-provider", "docs#security_oidc_provider")
 get("/docs/security/oauth-client", "docs#security_oauth_client")
 get("/docs/security/sessions", "docs#security_sessions")
 get("/docs/security/defaults", "docs#security_defaults")
+get("/docs/security/spam", "docs#security_spam")
 
 # Internals (Markdown views — www/docs/internals/*.md)
 get("/docs/internals", "docs#internals_index")

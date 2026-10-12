@@ -194,7 +194,7 @@
                 </thead>
                 <tbody class="divide-y divide-white/5 text-gray-400">
                     <tr><td class="px-4 py-3"><code class="text-amber-300">csrf_token()</code></td><td class="px-4 py-3">the per-session token — builtin, controllers and views, created on first use</td></tr>
-                    <tr><td class="px-4 py-3"><code class="text-amber-300">csrf_field()</code></td><td class="px-4 py-3">hidden input — <code>f.open()</code> and <code>button_to</code> embed it automatically</td></tr>
+                    <tr><td class="px-4 py-3"><code class="text-amber-300">csrf_field()</code></td><td class="px-4 py-3">hidden input — <code>f.open()</code> and <code>button_to</code> embed it automatically. It also renders the spam honeypot and signed render time that <code>spam_check(req)</code> reads: see <a href="/docs/security/spam" class="text-amber-400 hover:underline">Spam on public forms</a></td></tr>
                     <tr><td class="px-4 py-3"><code class="text-amber-300">csrf_meta_tag()</code></td><td class="px-4 py-3"><code>&lt;meta name="csrf-token"&gt;</code> for layouts, so fetch/htmx can send the header</td></tr>
                 </tbody>
             </table>

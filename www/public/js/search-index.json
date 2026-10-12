@@ -17519,6 +17519,95 @@
       ]
     },
     {
+      "title": "Spam on public forms",
+      "type": "page",
+      "category": "Security",
+      "path": "/docs/security/spam",
+      "signature": "",
+      "description": "Stop spam on contact forms and comment boxes without a captcha: honeypot and signed render time in every form, optional proof of work, a Bayes score learnt from the app's own posts, and a quarantine at /__soli/spam.",
+      "keywords": [
+        "spam",
+        "captcha",
+        "honeypot",
+        "bot",
+        "proof of work",
+        "bayes",
+        "quarantine",
+        "contact form"
+      ]
+    },
+    {
+      "title": "spam_check",
+      "type": "function",
+      "category": "Security",
+      "path": "/docs/security/spam",
+      "signature": "spam_check(req, options = {})",
+      "description": "nil when a form post may go through, otherwise {reason, show, score}: honeypot, token, fast, expired, rate, pow, links, score",
+      "keywords": [
+        "spam",
+        "bot",
+        "honeypot",
+        "form",
+        "captcha"
+      ]
+    },
+    {
+      "title": "spam_fields",
+      "type": "function",
+      "category": "Security",
+      "path": "/docs/security/spam",
+      "signature": "spam_fields()",
+      "description": "The hidden honeypot and the signed render time spam_check reads; csrf_field() already includes them",
+      "keywords": [
+        "spam",
+        "honeypot",
+        "form"
+      ]
+    },
+    {
+      "title": "pow_field",
+      "type": "function",
+      "category": "Security",
+      "path": "/docs/security/spam",
+      "signature": "pow_field(bits = 17)",
+      "description": "A proof-of-work challenge solved in the browser by /__soli/pow.js; form_with(..., {\"pow\": true}) adds it",
+      "keywords": [
+        "spam",
+        "proof of work",
+        "captcha",
+        "pow"
+      ]
+    },
+    {
+      "title": "SpamFilter",
+      "type": "class",
+      "category": "Security",
+      "path": "/docs/security/spam",
+      "signature": "SpamFilter.train(text, label)",
+      "description": "The naive Bayes model spam_check scores with: train, untrain, score, trained?, stats, reset",
+      "keywords": [
+        "spam",
+        "bayes",
+        "classifier",
+        "score"
+      ]
+    },
+    {
+      "title": "client_ip",
+      "type": "function",
+      "category": "Security",
+      "path": "/docs/security/spam",
+      "signature": "client_ip(req)",
+      "description": "The client's address: the TCP peer, or behind trust proxy the right-most X-Forwarded-For entry or SOLI_CLIENT_IP_HEADER",
+      "keywords": [
+        "ip",
+        "client",
+        "proxy",
+        "x-forwarded-for",
+        "cf-connecting-ip"
+      ]
+    },
+    {
       "title": "Rust internals",
       "type": "page",
       "category": "Internals",
