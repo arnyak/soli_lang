@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.23.0] - 2026-10-12
+
 ### Added
 
 * **language:** **`Error` carries a message and details; `DomainError` and `InvariantViolation` are built in.** `new InsufficientFunds("balance too low", {"needed": 30})` sets `message` and `details` (the built-in `Error` classes had no constructor, so `new ValueError("bad")` dropped its argument and `e.message` failed), `to_s` gives `"InsufficientFunds: balance too low"`, and a subclass with its own constructor reaches it with `super(message, details)` on both engines. `DomainError < Error` is the base for errors a domain rule raises, `InvariantViolation < DomainError` the one a broken invariant raises. The type checker knows the hierarchy, so `e.message` and `super(...)` check in scripts; `super` toward a parent it cannot see (declared in another file of the app) now types as `Any` instead of "Class 'X' has no superclass".
