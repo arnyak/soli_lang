@@ -793,11 +793,14 @@ Both `_` and `/` act as word separators when deriving the class name, so `admin/
 Reference nested controllers from `config/routes.sl` using the same `controller#action` syntax with a `/`-separated key:
 
 ```soli
-get("/admin/merchants", "admin/merchants#index");
-get("/admin/merchants/:id", "admin/merchants#show");
+get("/admin/merchants", "admin/merchants#index")
+get("/admin/merchants/:id", "admin/merchants#show")
 
-# Or with resources()
-resources("/admin/merchants", "admin/merchants");
+# Or let resources() write them, inside a namespace:
+# admin/merchants#index, admin_merchants_path, …
+namespace("admin", -> {
+  resources("merchants")
+})
 ```
 
 Subdirectories are watched recursively in dev mode, so adding or editing a nested controller triggers hot reload like any top-level controller.

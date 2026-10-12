@@ -151,10 +151,14 @@ Controllers nested in subdirectories of `app/controllers/` are addressed with a 
 
 ```soli
 # app/controllers/admin/merchants_controller.sl → AdminMerchantsController
-get("/admin/merchants", "admin/merchants#index");
-get("/admin/merchants/:id", "admin/merchants#show");
+get("/admin/merchants", "admin/merchants#index")
+get("/admin/merchants/:id", "admin/merchants#show")
 
-resources("/admin/merchants", "admin/merchants");
+# Or let resources() write them, inside a namespace:
+# admin/merchants#index, admin_merchants_path, …
+namespace("admin", -> {
+  resources("merchants")
+})
 ```
 
 See [Controllers → Nested Controller Directories](/docs/controllers#nested-controller-directories) for the full naming rules.
@@ -191,6 +195,21 @@ namespace("admin", -> {
 
 A block is a lambda in braces, `-> { … }`. Without the braces the routes file does
 not parse, and a trailing `do … end` block is not passed to `namespace`.
+
+`resources` inside a namespace route to the controllers in its directory, and their
+helpers carry its name, so they never replace a top-level resource's:
+
+```soli
+namespace("api/v1", -> {
+  resources("posts")
+})
+# GET /api/v1/posts     -> api/v1/posts#index   api_v1_posts_path
+# GET /api/v1/posts/:id -> api/v1/posts#show    api_v1_post_path
+```
+
+`api/v1/posts` is `app/controllers/api/v1/posts_controller.sl`, class
+`ApiV1PostsController`. Routes written out inside a namespace (`get`, `post`, …)
+keep the handler they name.
 
 ## Scoped Middleware
 

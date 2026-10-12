@@ -31,6 +31,7 @@
         <h3 id="unreleased-web" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Web</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">Controllers in a bounded context.</strong> <code class="text-cyan-400">module Billing</code> around <code class="text-cyan-400">class InvoicesController &lt; Controller</code> in <code class="text-cyan-400">app/controllers/billing/</code> answers <code class="text-cyan-400">billing/invoices#…</code> and reads the context&rsquo;s classes unqualified. <a href="/docs/language/modules#bounded-contexts" class="text-cyan-400 hover:underline">Guide</a>.</li>
+            <li><strong class="text-white"><code class="text-cyan-400">resources</code> inside <code class="text-cyan-400">namespace</code> route to its controllers.</strong> <code class="text-cyan-400">namespace("api/v1", -&gt; { resources("posts") })</code> answers <code class="text-cyan-400">api/v1/posts#index</code> with <code class="text-cyan-400">api_v1_posts_path</code>; it used to route to the top-level <code class="text-cyan-400">posts#…</code> and replace its <code class="text-cyan-400">posts_path</code>. <a href="/docs/core-concepts/routing" class="text-cyan-400 hover:underline">Routing</a></li>
         </ul>
 
         <h3 id="unreleased-orm" class="text-xl font-semibold text-white mb-4 scroll-mt-24">ORM</h3>

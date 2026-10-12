@@ -227,8 +227,11 @@ end</code></pre>
     <pre data-filename="config/routes.sl"><code class="language-soli text-sm">get("/admin/merchants", "admin/merchants#index")
 get("/admin/merchants/:id", "admin/merchants#show")
 
-# Or with resources()
-resources("/admin/merchants", "admin/merchants")</code></pre>
+# Or let resources() write them, inside a namespace:
+# admin/merchants#index, admin_merchants_path, …
+namespace("admin", -&gt; {
+  resources("merchants")
+})</code></pre>
 
     <div class="my-8 p-6 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-12">
         <h4 class="text-lg font-semibold text-amber-400 mb-2">Hot reload</h4>

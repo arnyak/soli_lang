@@ -427,7 +427,18 @@ post_comment_path(5, 9)</code></pre>
 })</code></pre>
         </div>
     </div>
-    <p class="text-gray-400 mb-12">A block is a lambda in braces, <code>-&gt; { … }</code>. Without the braces the routes file does not parse, and a trailing <code>do … end</code> block is not passed to <code>namespace</code>.</p>
+    <p class="text-gray-400 mb-6">A block is a lambda in braces, <code>-&gt; { … }</code>. Without the braces the routes file does not parse, and a trailing <code>do … end</code> block is not passed to <code>namespace</code>.</p>
+    <p class="text-gray-400 mb-6"><code>resources</code> inside a namespace route to the controllers in its directory, and their helpers carry its name, so they never replace a top-level resource&rsquo;s:</p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+<pre><code class="language-soli text-sm">namespace("api/v1", -&gt; {
+  resources("posts")
+})
+# GET /api/v1/posts     -&gt; api/v1/posts#index   api_v1_posts_path
+# GET /api/v1/posts/:id -&gt; api/v1/posts#show    api_v1_post_path</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-12"><code>api/v1/posts</code> is <code>app/controllers/api/v1/posts_controller.sl</code>, class <code>ApiV1PostsController</code>. Routes written out inside a namespace (<code>get</code>, <code>post</code>, …) keep the handler they name.</p>
 
     <h2 class="text-2xl font-bold text-white mb-6">Scoped Middleware</h2>
     <p class="text-gray-400 mb-6">Apply middleware only to specific route blocks:</p>
@@ -499,14 +510,14 @@ get("/about", "home#about")</code></pre>
 
     <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">
         <div class="p-4 overflow-x-auto">
-<pre><code class="language-soli text-sm">namespace("api", ->
-  resources("users", ->
-    resources("posts", ->
+<pre><code class="language-soli text-sm">namespace("api", -&gt; {
+  resources("users", -&gt; {
+    resources("posts", -&gt; {
       resources("comments")
-    )
-  )
-)
-# Creates: /api/users/:user_id/posts/:post_id/comments/:id</code></pre>
+    })
+  })
+})
+# Creates: /api/users/:user_id/posts/:post_id/comments/:id → api/comments#show</code></pre>
         </div>
     </div>
 
@@ -519,7 +530,11 @@ get("/about", "home#about")</code></pre>
 get("/admin/merchants", "admin/merchants#index")
 get("/admin/merchants/:id", "admin/merchants#show")
 
-resources("/admin/merchants", "admin/merchants")</code></pre>
+# Or let resources() write them, inside a namespace:
+# admin/merchants#index, admin_merchants_path, …
+namespace("admin", -&gt; {
+  resources("merchants")
+})</code></pre>
 
     <p class="text-gray-400 mb-12">
         See <a href="/docs/core-concepts/controllers" class="text-amber-400 hover:underline">Controllers &rarr; Nested Controller Directories</a> for the full naming rules.

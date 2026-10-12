@@ -308,6 +308,54 @@ resources("posts");
     }
 
     #[test]
+    fn resources_in_a_namespace_route_to_its_controller_directory() {
+        let app = write_app(
+            r#"
+resources("posts")
+namespace("api/v1", -> {
+  resources("posts", -> {
+    resources("comments")
+  })
+  get("/status", "status#show")
+})
+"#,
+        );
+        let listing = collect_routes(app.path()).unwrap();
+        let find = |method: &str, path: &str| {
+            listing
+                .routes
+                .iter()
+                .find(|r| r.method == method && r.path_pattern == path)
+                .unwrap_or_else(|| panic!("missing {} {}", method, path))
+        };
+        // The top-level resource keeps its handler and its helper.
+        assert_eq!(find("GET", "/posts").handler_name, "posts#index");
+        assert_eq!(find("GET", "/posts").name.as_deref(), Some("posts"));
+        assert_eq!(
+            find("GET", "/api/v1/posts").handler_name,
+            "api/v1/posts#index"
+        );
+        assert_eq!(
+            find("GET", "/api/v1/posts").name.as_deref(),
+            Some("api_v1_posts")
+        );
+        assert_eq!(
+            find("GET", "/api/v1/posts/:id").name.as_deref(),
+            Some("api_v1_post")
+        );
+        assert_eq!(
+            find("DELETE", "/api/v1/posts/:id").handler_name,
+            "api/v1/posts#destroy"
+        );
+        assert_eq!(
+            find("GET", "/api/v1/posts/:post_id/comments").handler_name,
+            "api/v1/comments#index"
+        );
+        // A route written out keeps the handler it names.
+        assert_eq!(find("GET", "/api/v1/status").handler_name, "status#show");
+    }
+
+    #[test]
     fn collects_namespace_and_middleware_scopes() {
         let app = write_app(
             r#"

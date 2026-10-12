@@ -16,6 +16,10 @@
 
 * **orm:** **Event-sourced aggregates: `class Account < EventSourced`.** State changes only in `apply(event)`; `emit(event)` applies a `DomainEvent` and keeps it pending, `save` appends the pending events to the aggregate's stream (`"Account:<id>"`, a UUID `id` when none is set) in one transaction and publishes them after the commit, and `Account.load(id)` replays the stream in order through `apply`, upcasting older event versions. The events live in `soli_event_store_records`, keyed by stream and version, so a second writer that loaded the same version gets `StaleRecord` (409) instead of appending, on SoliDB and the SQL adapters alike.
 
+### Changed
+
+* **routing:** **`resources` inside `namespace` route to the namespace's controllers.** `namespace("api/v1", -> { resources("posts") })` answers `api/v1/posts#index` (`app/controllers/api/v1/posts_controller.sl`, `ApiV1PostsController`) with `api_v1_posts_path` helpers, nested resources included (`api/v1/comments#…`, `api_v1_post_comments_path`). It used to route to the top-level `posts#…` and register `posts_path` again, replacing the top-level resource's helper. Routes written out inside a namespace keep the handler they name. The docs' `resources("/admin/merchants", "admin/merchants")` (the second argument is the block: "Cannot call non-function value") is now `namespace("admin", -> { resources("merchants") })`, and the routing page's nested-resources example, which did not parse, has its braces.
+
 ### Fixed
 
 * **orm:** **`Model.create(data, {"key": k})` refuses a taken key on the SQL adapters.** The docs promised it; Postgres, MySQL, SQLite, D1 and Hyperdrive replaced the existing row instead (their insert is an upsert, which the job store and the importers still use). The create now comes back with `_errors` `[{"field": "_key", "message": "has already been taken"}]`, as on SoliDB.

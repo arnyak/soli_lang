@@ -204,6 +204,10 @@ struct RouterScope {
     /// build Rails-style route names for nested resources (e.g. `post_comment`
     /// from `resources("posts") do resources("comments") end`).
     name_prefix: String,
+    /// Slash-joined chain of enclosing `namespace` names ("api/v1"): the
+    /// controller directory `resources` inside them route to
+    /// (`api/v1/posts#index`).
+    module_prefix: String,
 }
 
 impl Default for RouterScope {
@@ -216,6 +220,7 @@ impl Default for RouterScope {
             middleware: Vec::new(),
             middleware_names: Vec::new(),
             name_prefix: String::new(),
+            module_prefix: String::new(),
         }
     }
 }
@@ -296,7 +301,13 @@ pub fn register_router_builtins(env: &mut Environment) {
                         format!("{}/{}", current.path_prefix, name)
                     };
 
-                    let controller = name.clone(); // Default controller is resource name
+                    // The controller is the resource name, in the directory of
+                    // any enclosing namespace (`api/v1/posts`).
+                    let controller = if current.module_prefix.is_empty() {
+                        name.to_string()
+                    } else {
+                        format!("{}/{}", current.module_prefix, name)
+                    };
                     let middleware = current.middleware.clone();
                     let mw_names = current.middleware_names.clone();
 
@@ -432,6 +443,7 @@ pub fn register_router_builtins(env: &mut Environment) {
                         middleware: current.middleware.clone(),
                         middleware_names: current.middleware_names.clone(),
                         name_prefix: child_name_prefix,
+                        module_prefix: current.module_prefix.clone(),
                     });
                 });
 
@@ -533,6 +545,7 @@ pub fn register_router_builtins(env: &mut Environment) {
                     middleware: current.middleware,
                     middleware_names: current.middleware_names,
                     name_prefix: current.name_prefix,
+                    module_prefix: current.module_prefix.clone(),
                 });
             });
             Ok(Value::Null)
@@ -577,6 +590,7 @@ pub fn register_router_builtins(env: &mut Environment) {
                         middleware: current.middleware,
                         middleware_names: current.middleware_names,
                         name_prefix: current.name_prefix,
+                        module_prefix: current.module_prefix.clone(),
                     });
                 });
                 Ok(Value::Null)
@@ -617,14 +631,29 @@ pub fn register_router_builtins(env: &mut Environment) {
                         format!("{}/{}", current.path_prefix, name)
                     };
 
+                    // `resources` inside route to the namespace's controller
+                    // directory, and their helpers carry its name
+                    // (`api_v1_posts_path`), so they never replace the
+                    // top-level resource's.
+                    let module_prefix = if current.module_prefix.is_empty() {
+                        name.trim_matches('/').to_string()
+                    } else {
+                        format!("{}/{}", current.module_prefix, name.trim_matches('/'))
+                    };
+                    let name_prefix = compose_name(
+                        &current.name_prefix,
+                        &name.trim_matches('/').replace('/', "_"),
+                    );
+
                     stack.push(RouterScope {
                         path_prefix: new_prefix,
-                        controller: None, // Namespaces usually don't imply a controller unless explicit?
+                        controller: None,
                         is_member: false,
                         is_collection: false,
                         middleware: current.middleware,
                         middleware_names: current.middleware_names,
-                        name_prefix: current.name_prefix,
+                        name_prefix,
+                        module_prefix,
                     });
                 });
                 Ok(Value::Null)
@@ -662,6 +691,7 @@ pub fn register_router_builtins(env: &mut Environment) {
                         middleware: new_middleware,
                         middleware_names: new_names,
                         name_prefix: current.name_prefix,
+                        module_prefix: current.module_prefix.clone(),
                     });
                 });
 
