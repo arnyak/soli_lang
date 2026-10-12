@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.25.0] - 2026-10-12
+
 ### Added
 
 * **security:** **Spam defences for public forms, without a captcha.** `csrf_field()` — and so `form_with` and `button_to` — now also renders a hidden honeypot (`_soli_url`) and a signed render time (`_soli_ts`). `spam_check(req, options = {})` reads them in the action and answers `nil` or `{"reason", "show", "score"}`: `honeypot`, `token` (no render time, or a forged one: the post never loaded the page), `fast` (under `min_seconds`, 3), `expired` (`max_age`, two days), `rate` (opt-in budget per client and path), `pow`, `links` (more than `max_links`, 2) and `score`. `show` says whether a person could have caused it — a bot gets the same answer as a success. Options: `min_seconds`, `max_age`, `max_links`, `max_score`, `stamp`, `pow`, `rate`, `fields`, `record`, `learn`; an unknown one raises. Private-looking fields (password, token, card…) are never read as the message nor stored. Keys derive from `SOLI_SESSION_SECRET` (HKDF, one per purpose).
