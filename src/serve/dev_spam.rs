@@ -193,6 +193,47 @@ fn actions_for(key: &str, status: &str) -> String {
     )
 }
 
+/// The score's colour: what `spam_check` refuses at (0.9) is red, a lean to
+/// spam amber, 0.5 — no opinion, the model is untrained or the words are
+/// new — faint, a lean to ham green.
+fn score_level(score: f64) -> &'static str {
+    if score >= 0.9 {
+        "hi"
+    } else if score > 0.5 {
+        "mid"
+    } else if score == 0.5 {
+        "none"
+    } else {
+        "lo"
+    }
+}
+
+/// What a refusal reason means, for the tag's tooltip.
+fn reason_title(reason: &str) -> &'static str {
+    match reason {
+        "honeypot" => "The hidden field a person never sees was filled",
+        "token" => "No render time, or a forged one: the post never loaded the form",
+        "fast" => "Sent faster than a person fills the form (min_seconds)",
+        "expired" => "The form was rendered too long ago (max_age)",
+        "rate" => "Over the per-client budget for this path",
+        "pow" => "The proof of work is missing, wrong or spent",
+        "links" => "More links than max_links",
+        "score" => "The learnt spam score is over max_score",
+        _ => "",
+    }
+}
+
+/// `2026-10-12T13:54:02Z` → `Oct 12, 13:54 UTC`, under the relative time.
+fn absolute(iso: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(iso)
+        .map(|at| {
+            at.with_timezone(&chrono::Utc)
+                .format("%b %-d, %H:%M UTC")
+                .to_string()
+        })
+        .unwrap_or_default()
+}
+
 fn preview(text: &str) -> String {
     let one_line: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut out: String = one_line.chars().take(PREVIEW_CHARS).collect();
@@ -257,22 +298,33 @@ fn handle_index(query: Option<&str>) -> Response<ResponseBody> {
         let tag = if reason.is_empty() {
             String::new()
         } else {
-            format!("<span class=\"tag\">{}</span>", esc(reason))
+            format!(
+                "<span class=\"tag\" title=\"{}\">{}</span>",
+                reason_title(reason),
+                esc(reason)
+            )
         };
         let score = row.get("score").and_then(|v| v.as_f64()).unwrap_or(0.5);
         let created = str_field(row, "created_at");
         body.push_str(&format!(
-            "<article class=\"row\">\
+            // The shared row grid: count, main, trend, when, actions. The
+            // score sits where the errors page puts its count, the reason
+            // where it draws its trend.
+            "<article class=\"row spam-{level}\">\
+<div class=\"count score\" title=\"Learnt spam score: 0 is ham, 1 is spam\">{score:.2}</div>\
 <div class=\"main\"><a class=\"msg\" href=\"{BASE}/{key}\">{text}</a>\
-<div class=\"meta\">{tag}<span class=\"req\">{path}</span><span class=\"mono\">{ip}</span>\
-<span>score {score:.2}</span></div></div>\
-<div class=\"when\"><span title=\"{created_iso}\">{created_rel}</span></div>\
+<div class=\"meta\"><span class=\"req\">{path}</span><span>{ip}</span></div></div>\
+<div class=\"trend\">{tag}</div>\
+<div class=\"when\"><span title=\"{created_iso}\">{created_rel}</span>\
+<span class=\"first\">{created_abs}</span></div>\
 <div class=\"actions\">{actions}</div></article>",
+            level = score_level(score),
             text = esc(&preview(str_field(row, "text"))),
             path = esc(str_field(row, "path")),
             ip = esc(str_field(row, "ip")),
             created_iso = esc(created),
             created_rel = esc(&relative(created, now)),
+            created_abs = absolute(created),
             actions = actions_for(key, status),
         ));
     }
@@ -412,6 +464,26 @@ mod tests {
         assert_eq!(preview("a\n\n  b"), "a b");
         let long = "x".repeat(PREVIEW_CHARS + 10);
         assert_eq!(preview(&long).chars().count(), PREVIEW_CHARS + 1);
+    }
+
+    #[test]
+    fn the_score_colour_marks_the_refusal_line_and_no_opinion() {
+        assert_eq!(score_level(0.97), "hi");
+        assert_eq!(score_level(0.9), "hi");
+        assert_eq!(score_level(0.7), "mid");
+        assert_eq!(score_level(0.5), "none");
+        assert_eq!(score_level(0.1), "lo");
+    }
+
+    #[test]
+    fn every_refusal_reason_explains_itself() {
+        for reason in [
+            "honeypot", "token", "fast", "expired", "rate", "pow", "links", "score",
+        ] {
+            assert!(!reason_title(reason).is_empty(), "{reason}");
+        }
+        assert_eq!(absolute("2026-10-12T13:54:02Z"), "Oct 12, 13:54 UTC");
+        assert_eq!(absolute("garbage"), "");
     }
 
     #[test]

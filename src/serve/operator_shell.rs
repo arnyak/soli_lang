@@ -275,6 +275,13 @@ iframe.mail{width:100%;height:60vh;border:1px solid var(--line);border-radius:10
 pre,code,.mono,.meta,.msg.query{font-variant-ligatures:none}
 .ms{color:var(--text)}
 
+/* the spam list: the learnt score where an error has its count */
+.count.score{font-size:16px}
+.row.spam-mid .count{color:var(--amber)}
+.row.spam-none .count{color:var(--faint)}
+.row.spam-lo .count{color:var(--green)}
+.trend .tag{cursor:help}
+
 @media (max-width:760px){
   .top-in{padding:0 16px;gap:14px}
   .to-app{display:none}

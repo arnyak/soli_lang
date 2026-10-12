@@ -287,6 +287,12 @@ them with; "not spam" and "spam" correct a mistake and retrain it. Same access
 rules as the errors page, with `SOLI_SPAM_*` credentials; `SOLI_SPAM=off`
 stops recording. See [Spam on public forms](security/spam.md).
 
+Each post shows its learnt score where an error shows its count — red from
+0.9 (the line `spam_check` refuses at), amber leaning spam, faint at 0.5 (no
+opinion yet: the model is untrained, or the words are new), green leaning ham —
+then its message, path and client, the reason it was refused (hover the tag for
+what triggered it), and when it arrived.
+
 ## Notifications
 
 Errors and slow queries can tell someone instead of waiting to be looked at. Four events are sent, each after its group is stored:

@@ -345,6 +345,9 @@ SOLI_ADMIN_PASSWORD=&lt;long random string&gt;</code></pre>
     <p class="text-gray-400 mb-12">
         The posts <code>spam_check(req)</code> refused and accepted, with the model it scores them with; &ldquo;not spam&rdquo; and &ldquo;spam&rdquo; correct a mistake and retrain it. Same access rules as the errors page, with <code>SOLI_SPAM_*</code> credentials; <code>SOLI_SPAM=off</code> stops recording. See <a href="/docs/security/spam" class="text-amber-400 hover:underline">Spam on public forms</a>.
     </p>
+    <p class="text-gray-400 mb-12 -mt-8">
+        Each post shows its learnt score where an error shows its count &mdash; red from 0.9 (the line <code>spam_check</code> refuses at), amber leaning spam, faint at 0.5 (no opinion yet: the model is untrained, or the words are new), green leaning ham &mdash; then its message, path and client, the reason it was refused (hover the tag for what triggered it), and when it arrived.
+    </p>
 
     <h2 id="notifications" class="text-2xl font-bold text-white mb-6">Notifications</h2>
     <p class="text-gray-400 mb-4">

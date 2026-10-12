@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **serve:** **The `/__soli/spam` post card is laid out in its columns.** It put three cells into the five-column grid it shares with `/__soli/errors`, so the message landed in the 48 px count column and wrapped after a few letters, and the actions stacked. The score now takes the count column, coloured by the line `spam_check` refuses at (red from 0.9, amber leaning spam, faint at 0.5 — no opinion yet —, green leaning ham); the reason is a tag in the trend column whose tooltip says what triggered it; the exact UTC time sits under the relative one.
+
 ## [2.25.2] - 2026-10-12
 
 ### Changed
