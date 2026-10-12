@@ -141,7 +141,7 @@ b.stale?                # true — _errors names lock_version</code></pre>
             <pre><code class="language-soli text-sm">throw StaleRecord.new("order #{order.number} changed since you opened it") unless order.save</code></pre>
         </div>
     </div>
-    <p class="text-gray-400 mb-12">On a column-mode table (an existing SQL schema, <code>table "orders"</code>) the table needs a <code>lock_version</code> integer column; the update is one <code>UPDATE … WHERE id = ? AND lock_version = ?</code>. <code>increment</code> and <code>decrement</code> do not bump the version.</p>
+    <p class="text-gray-400 mb-12">On a column-mode table (an existing SQL schema, <code>table "orders"</code>) the table needs a <code>lock_version</code> integer column; the update is one <code>UPDATE … WHERE id = ? AND lock_version = ?</code>. <code>increment</code> and <code>decrement</code> bump the version too, so a save from a copy read before them is stale.</p>
 
     <h2 id="aggregate-roots" class="text-2xl font-bold text-white mb-6">Aggregate roots</h2>
     <p class="text-gray-400 mb-4">

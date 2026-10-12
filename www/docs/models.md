@@ -1203,8 +1203,8 @@ throw StaleRecord.new("order #{order.number} changed since you opened it") unles
 
 On a column-mode table (an existing SQL schema, `table "orders"`) the table
 needs a `lock_version` integer column; the update is one
-`UPDATE … WHERE id = ? AND lock_version = ?`. `increment` and `decrement` do
-not bump the version.
+`UPDATE … WHERE id = ? AND lock_version = ?`. `increment` and `decrement`
+bump the version too, so a save from a copy read before them is stale.
 
 ## Callbacks
 

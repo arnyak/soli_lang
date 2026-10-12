@@ -2021,17 +2021,32 @@ pub(super) fn apply_field_delta(args: &[Value], sign: i64, op_name: &str) -> Res
     drop(inst_ref);
 
     let delta = sign * amount;
-    match super::crud::cas_field_delta(&collection, &key_str, &field, delta) {
-        Ok((new_value, new_rev)) => {
-            let mut inst_mut = instance.borrow_mut();
-            inst_mut.set(field.to_string(), Value::Int(new_value));
-            inst_mut.set("_rev", Value::String(new_rev.into()));
-            super::dirty::sync_snapshot_field(&mut inst_mut, &field);
-            drop(inst_mut);
-            Ok(Value::Instance(instance))
-        }
-        Err(e) => Err(format!("{} failed: {}", op_name, e)),
+    let (new_value, mut new_rev) =
+        super::crud::cas_field_delta(&collection, &key_str, &field, delta)
+            .map_err(|e| format!("{} failed: {}", op_name, e))?;
+    // `optimistic_lock`: the record changed, so its version moves too — a
+    // save from a copy read before this one is then refused as stale.
+    let class_name = instance.borrow().class.name.clone();
+    let bumped_version = if field.as_str() != "lock_version"
+        && super::registry::is_optimistic_lock(&class_name)
+    {
+        let (version, rev) = super::crud::cas_field_delta(&collection, &key_str, "lock_version", 1)
+            .map_err(|e| format!("{} failed: {}", op_name, e))?;
+        new_rev = rev;
+        Some(version)
+    } else {
+        None
+    };
+    let mut inst_mut = instance.borrow_mut();
+    inst_mut.set(field.to_string(), Value::Int(new_value));
+    inst_mut.set("_rev", Value::String(new_rev.into()));
+    super::dirty::sync_snapshot_field(&mut inst_mut, &field);
+    if let Some(version) = bumped_version {
+        inst_mut.set("lock_version", Value::Int(version));
+        super::dirty::sync_snapshot_field(&mut inst_mut, "lock_version");
     }
+    drop(inst_mut);
+    Ok(Value::Instance(instance))
 }
 
 pub fn register_model_builtins(env: &mut Environment) {

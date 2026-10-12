@@ -675,3 +675,23 @@ print(line.save rescue "refused", Billing::Line.count)
     );
     assert_eq!(lines, vec!["refused", "true", "refused 1"]);
 }
+
+#[test]
+fn increment_moves_the_lock_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines = sqlite_script(
+        dir.path(),
+        r#"class Counter < Model
+  optimistic_lock
+end
+c = Counter.create({"hits": 0, "name": "a"})
+stale = Counter.find(c._key)
+fresh = Counter.find(c._key)
+fresh.increment(:hits)
+print(fresh.hits, fresh.lock_version)
+stale.name = "b"
+print(stale.save, stale.stale?)
+"#,
+    );
+    assert_eq!(lines, vec!["1 1", "false true"]);
+}
