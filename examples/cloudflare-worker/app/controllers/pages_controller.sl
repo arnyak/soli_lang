@@ -3,15 +3,15 @@ class PagesController < Controller
   def index(req)
     @title = "Soli on Cloudflare Workers"
     @description = "A Soli web app inside a Cloudflare Worker: the interpreter compiled to WebAssembly, your " +
-      "routes, controllers, views and models unchanged, and the data in Cloudflare D1."
+      "routes, controllers, views and models unchanged, on D1, Postgres through Hyperdrive, R2 and Queues."
     @runtime = RuntimeInfo.of(req)
   end
 
   # GET /guide — from an app to a deployed Worker
   def guide(req)
     @title = "Guide"
-    @description = "From a Soli app folder to a deployed Cloudflare Worker in five steps: build the edge runtime, " +
-      "package the app, run it on workerd, configure it, deploy."
+    @description = "From a Soli app to a deployed Cloudflare Worker in five steps: build the edge runtime, " +
+      "soli new --edge, soli edge dev, wire D1, Postgres, R2, Images and Queues, deploy."
     @runtime = RuntimeInfo.of(req)
   end
 

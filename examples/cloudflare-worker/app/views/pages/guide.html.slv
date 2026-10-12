@@ -5,55 +5,96 @@ everyday loop.</p>
 <ol class="steps">
   <li>
     <h2>Build the edge runtime</h2>
-    <p>In the Soli source tree. It needs the wasm32 target and the wasm-bindgen CLI at the
-       version <code>edge/Cargo.toml</code> pins; the script says which if they are missing.</p>
+    <p>In the Soli source tree: the release archives carry <code>soli</code> alone. It needs the
+       wasm32 target and the wasm-bindgen CLI at the version <code>edge/Cargo.toml</code> pins;
+       the script says which if they are missing.</p>
 <pre><code class="language-bash">rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
-./scripts/build-edge.sh          # → target/edge</code></pre>
+./scripts/build-edge.sh                      # → target/edge
+export SOLI_EDGE_RUNTIME=~/soli/target/edge  # where soli edge finds it</code></pre>
   </li>
   <li>
-    <h2>Package your app</h2>
-    <p>From the app folder. <code>app/</code>, <code>config/</code> and <code>lib/</code> go into
-       the Worker; <code>public/</code> becomes its static assets; <code>.env</code> stays out.</p>
-<pre><code class="language-bash">export SOLI_EDGE_RUNTIME=~/soli/target/edge
-soli edge build                  # → dist/edge</code></pre>
-    <p><code>dist/edge</code> is a plain Wrangler project. Its <code>wrangler.toml</code> is
-       written once; later builds keep your edits.</p>
+    <h2>Start an app for Workers</h2>
+<pre><code class="language-bash">soli new my_app --edge
+cd my_app</code></pre>
+    <p>The usual application, set up to deploy as a Worker:</p>
+    <ul>
+      <li><code>wrangler.toml</code> beside <code>app/</code>: models on D1, sessions in an encrypted
+          cookie, CSRF tokens required, and the R2, Images, Durable Objects, Queues and Hyperdrive
+          blocks ready to uncomment. Every build copies it in: commit it.</li>
+      <li><code>.env</code>, for <code>soli serve</code> on your machine: the same models on SQLite
+          (D1 is SQLite) and the same cookie sessions.</li>
+      <li><code>.dev.vars</code>, the session secret for local runs; never committed.</li>
+    </ul>
+    <p>An app you already have needs nothing but a <code>wrangler.toml</code> next to
+       <code>app/</code>: <code>app/</code>, <code>config/</code> and <code>lib/</code> go into the
+       Worker, <code>public/</code> becomes its static assets, <code>.env</code> stays out.</p>
   </li>
   <li>
-    <h2>Run it on workerd</h2>
-<pre><code class="language-bash">cd dist/edge
-npx wrangler dev                 # http://localhost:8787</code></pre>
-    <p>That is Cloudflare's own runtime, locally: what works here works deployed.</p>
+    <h2>Develop on workerd</h2>
+<pre><code class="language-bash">soli edge dev                    # http://localhost:8787</code></pre>
+    <p>That is Cloudflare's own runtime, locally: what works here works deployed. It repackages
+       the app on every change under <code>app/</code>, <code>config/</code>, <code>lib/</code> or
+       <code>public/</code>, and wrangler reloads the page. D1, R2, Queues and the Durable Objects
+       are local copies, in <code>dist/edge/.wrangler/state</code>.</p>
   </li>
   <li>
-    <h2>Configure it</h2>
-    <p>Everything your app reads with <code>getenv()</code> comes from the Worker's
-       bindings: plain values under <code>[vars]</code> in <code>wrangler.toml</code>, secrets
-       with Wrangler.</p>
-<pre><code class="language-toml">[vars]
-SOLIDB_HOST = "https://db.example.com"
-SOLIDB_DATABASE = "my_app"
-SOLIDB_USERNAME = "app"</code></pre>
-<pre><code class="language-bash">npx wrangler secret put SOLIDB_PASSWORD</code></pre>
-    <p>For data that lives with the Worker, use D1: create a database, bind it, and
-       point the models at it.</p>
-<pre><code class="language-bash">npx wrangler d1 create my-app-db     # prints the database_id</code></pre>
-<pre><code class="language-toml">[[d1_databases]]
-binding = "DB"
-database_name = "my-app-db"
-database_id = "…"
-
-[vars]
-SOLI_DB_ADAPTER = "d1"</code></pre>
+    <h2>Wire the services</h2>
+    <p>Create what the app uses, put the id or name Wrangler prints in its
+       <code>wrangler.toml</code> block, and uncomment it. Each one is detailed
+       <a href="/#gates-title">on the home page</a>.</p>
+    <table class="board wiring">
+      <thead>
+        <tr><th scope="col">For</th><th scope="col">Create it</th><th scope="col">Then</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="code"><a href="/#sqlite">D1</a></td>
+          <td><code>npx wrangler d1 create my_app-db</code></td>
+          <td>its <code>database_id</code> in <code>[[d1_databases]]</code></td>
+        </tr>
+        <tr>
+          <td class="code"><a href="/#postgres">Postgres</a></td>
+          <td><code>npx wrangler hyperdrive create my-db --connection-string="postgres://…"</code></td>
+          <td><code>[[hyperdrive]]</code>, <code>nodejs_compat</code>, <code>SOLI_DB_ADAPTER = "postgres"</code></td>
+        </tr>
+        <tr>
+          <td class="code"><a href="/#r2">R2</a></td>
+          <td><code>npx wrangler r2 bucket create my_app-files</code></td>
+          <td><code>[[r2_buckets]]</code>, and <code>"service": "r2"</code> on the attachment</td>
+        </tr>
+        <tr>
+          <td class="code"><a href="/#images">Images</a></td>
+          <td>nothing to create</td>
+          <td><code>[images]</code></td>
+        </tr>
+        <tr>
+          <td class="code"><a href="/#queues">Queues</a></td>
+          <td><code>npx wrangler queues create my_app-jobs</code></td>
+          <td><code>[[queues.producers]]</code> and <code>[[queues.consumers]]</code></td>
+        </tr>
+        <tr>
+          <td class="code"><a href="/#sqlite">Durable Objects</a></td>
+          <td>nothing to create: an object exists once named</td>
+          <td><code>[[durable_objects.bindings]]</code>, <code>[[migrations]]</code>, a <code>do://SITES/{tenant}</code> connection</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>Plain settings the app reads with <code>getenv()</code> go under <code>[vars]</code>;
+       secrets go to Cloudflare, never into the file.</p>
+<pre><code class="language-bash">npx wrangler secret put SOLI_SESSION_SECRET   # 32+ characters</code></pre>
     <p>The app can tell where it runs: <code>getenv("SOLI_RUNTIME")</code> is
        <code>"cloudflare-workers"</code> there.</p>
   </li>
   <li>
     <h2>Deploy</h2>
-<pre><code class="language-bash">npx wrangler deploy</code></pre>
+<pre><code class="language-bash">soli edge build                  # → dist/edge
+cd dist/edge && npx wrangler deploy</code></pre>
     <p>For your own domain, once its zone is on the same Cloudflare account, add to
-       <code>wrangler.toml</code>:</p>
+       <code>wrangler.toml</code>, above the <code>[assets]</code> table:</p>
 <pre><code class="language-toml">routes = [{ pattern = "app.example.com", custom_domain = true }]</code></pre>
+    <p>A Wrangler API token needs <em>Workers Scripts: Edit</em> on the account, and
+       <em>Workers Routes: Edit</em> on the zone for a custom domain. With access to several
+       accounts, set <code>account_id</code> in <code>wrangler.toml</code>.</p>
   </li>
 </ol>

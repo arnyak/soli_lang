@@ -9,9 +9,13 @@ server around them. What needs a socket, a thread, a subprocess or a disk stays 
     <ul>
       <li>Routes, controllers, <code>before_action</code>, middleware</li>
       <li>Views, layouts, partials, components, view helpers</li>
-      <li>Query strings, URL-encoded forms, JSON bodies and responses</li>
+      <li>Query strings, URL-encoded and multipart forms, JSON bodies and responses</li>
       <li>I18n from <code>config/locales</code></li>
-      <li>Models on Cloudflare D1 or on SoliDB over HTTPS: <code>find</code>, <code>where</code>, <code>create</code>, <code>update</code>…</li>
+      <li>Models on <a href="/#sqlite">D1</a> (or a Durable Object per tenant), on
+          <a href="/#postgres">Postgres through Hyperdrive</a> with transactions, or on SoliDB over HTTPS</li>
+      <li>Attachments in <a href="/#r2">R2</a>, with <code>Range</code>, and
+          <a href="/#images">image transforms</a> on read</li>
+      <li>Background jobs through <a href="/#queues">Cloudflare Queues</a></li>
       <li>The <code>HTTP</code> class, over the Worker's <code>fetch</code></li>
       <li>Static files from <code>public/</code>, served by Cloudflare</li>
     </ul>
@@ -20,11 +24,11 @@ server around them. What needs a socket, a thread, a subprocess or a disk stays 
     <h2>Stays with soli serve</h2>
     <ul>
       <li>WebSockets, LiveView, server-sent events and streamed bodies (answered with a 501)</li>
-      <li>Background jobs, cron, mailers that send</li>
-      <li>Multipart uploads and anything that writes files</li>
-      <li>PostgreSQL, MySQL, SQLite and the native SoliDB driver; transactions on D1</li>
+      <li>Cron (use a Cron Trigger), mailers that send, jobs delayed past 12 hours</li>
+      <li>Resumable and direct uploads, files over about 20 MB, anything that writes files</li>
+      <li>MySQL, SQLite files and the native SoliDB driver; transactions on D1</li>
       <li><code>--dev</code>: hot reload, the dev bar, the REPL</li>
-      <li>PDF, Office documents, lossy WebP encoding, subprocesses</li>
+      <li>PDF, Office documents, the <code>Image</code> class, subprocesses</li>
     </ul>
   </article>
 </div>
@@ -35,8 +39,8 @@ server around them. What needs a socket, a thread, a subprocess or a disk stays 
       its isolate; Cloudflare spreads load over more isolates.</li>
   <li><strong>A Rust panic ends the isolate</strong>, where <code>soli serve</code> would answer
       a 500 and carry on. The next request boots a fresh one.</li>
-  <li><strong>Size.</strong> About 3 MB compressed: inside the paid plan's limit, at the edge of
-      the free one.</li>
+  <li><strong>Size.</strong> About 2.9 MB compressed: inside the free plan's 3 MB, just. The
+      Postgres driver adds about 40 KB.</li>
   <li><strong>Sessions.</strong> The in-memory store lives as long as an isolate; use the
       <code>cookie</code> driver with <code>SOLI_SESSION_SECRET</code>.</li>
 </ul>

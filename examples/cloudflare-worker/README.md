@@ -6,8 +6,8 @@ its data in Cloudflare D1.
 
 ```bash
 soli serve .                                   # as usual, on your machine
+soli edge dev . --runtime ../../target/edge    # on workerd, rebuilt as you edit
 soli edge build . --runtime ../../target/edge  # the Worker, in dist/edge
-cd dist/edge && npx wrangler dev               # on workerd, locally
 ```
 
 `../../target/edge` is what `scripts/build-edge.sh` produces in the Soli
@@ -41,7 +41,8 @@ To run your own copy, change `name`, `account_id`, `routes` and the D1
 ## The D1 page
 
 `/d1` stores check-ins in a `CheckIn` model. On the Worker, models run on D1;
-create the database once and bind it in `dist/edge/wrangler.toml`:
+create the database once and bind it in this folder's `wrangler.toml` (each
+build copies it into `dist/edge`):
 
 ```bash
 npx wrangler d1 create soli-cf-demo          # prints the database_id

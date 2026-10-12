@@ -33,27 +33,32 @@
     </thead>
     <tbody>
       <tr>
-        <td class="code">D1</td>
-        <td>Models in SQLite, next to the Worker</td>
+        <td class="code"><a href="#sqlite">D1</a></td>
+        <td>Models in SQLite, next to the Worker; a <code>grouped</code> block's reads in one <code>batch()</code></td>
         <td><a class="status live" href="/d1">Live on this site</a></td>
       </tr>
       <tr>
-        <td class="code">R2</td>
+        <td class="code"><a href="#sqlite">Durable Objects</a></td>
+        <td>A SQLite database per tenant, created the first time it is named</td>
+        <td><span class="status">Soli 2.22</span></td>
+      </tr>
+      <tr>
+        <td class="code"><a href="#postgres">Hyperdrive</a></td>
+        <td>Your Postgres, with transactions and column-aware models</td>
+        <td><span class="status">Soli 2.21</span></td>
+      </tr>
+      <tr>
+        <td class="code"><a href="#r2">R2</a></td>
         <td>Uploads, and video that seeks: <code>Range</code>, <code>304</code></td>
         <td><span class="status">Soli 2.21</span></td>
       </tr>
       <tr>
-        <td class="code">Images</td>
+        <td class="code"><a href="#images">Images</a></td>
         <td>Resize and convert on read: <code>photo.jpg?w=400&amp;fmt=webp</code></td>
         <td><span class="status">Soli 2.21</span></td>
       </tr>
       <tr>
-        <td class="code">Hyperdrive</td>
-        <td>Your Postgres, transactions included</td>
-        <td><span class="status">Soli 2.21</span></td>
-      </tr>
-      <tr>
-        <td class="code">Queues</td>
+        <td class="code"><a href="#queues">Queues</a></td>
         <td><code>perform_later</code>, retried with backoff</td>
         <td><span class="status">Soli 2.21</span></td>
       </tr>
@@ -61,13 +66,120 @@
   </table>
 </section>
 
+<section class="gates" aria-labelledby="gates-title">
+  <h2 id="gates-title">Each service, wired</h2>
+  <p class="muted">A binding in <code>wrangler.toml</code>, and the app's code stays as it is under <code>soli serve</code>.
+     What each one keeps from you is listed with it.</p>
+
+  <div class="gate-grid">
+    <article class="gate" id="postgres">
+      <header><span class="gate-code">PG</span><h3>Postgres, through Hyperdrive</h3></header>
+      <p>Your existing database. Hyperdrive keeps the connections open next to it, so a request
+         does not pay a TLS handshake to reach it.</p>
+<pre><code class="language-toml">compatibility_flags = ["nodejs_compat"]
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "…"   # npx wrangler hyperdrive create
+
+[vars]
+SOLI_DB_ADAPTER = "postgres"</code></pre>
+      <ul>
+        <li>The same SQL as <code>soli serve</code>: document tables, column-aware models
+            (<code>table "orders"</code>), and <code>Model.transaction</code> — each request runs on one connection.</li>
+        <li><code>soli edge build</code> bundles the <code>pg</code> driver, about 40 KB, when the app names Postgres.</li>
+        <li>MySQL stays with <code>soli serve</code>: its driver does not fit under the free plan.</li>
+      </ul>
+    </article>
+
+    <article class="gate" id="r2">
+      <header><span class="gate-code">R2</span><h3>Uploads and video</h3></header>
+      <p>A multipart form reaches the action as it does on a server; the file is kept in R2,
+         through the binding — no keys in the app.</p>
+<pre><code class="language-soli">class Photo &lt; Model
+  has_one_attached("image", {"service": "r2", "max_size": 20_000_000})
+end</code></pre>
+<pre><code class="language-toml">[[r2_buckets]]
+binding = "ATTACHMENTS"
+bucket_name = "my-app-files"</code></pre>
+      <ul>
+        <li>Reads never cross wasm: the Worker answers from the bucket, <code>206</code> for a seek,
+            <code>304</code> for a revalidation, at flat memory.</li>
+        <li><code>soli serve</code> reaches the same objects through R2's S3 API, under the same keys.</li>
+        <li>The body arrives whole: keep <code>max_size</code> near 20 MB. No resumable or direct uploads.</li>
+      </ul>
+    </article>
+
+    <article class="gate" id="images">
+      <header><span class="gate-code">IMG</span><h3>Images, transformed on read</h3></header>
+      <p>The original is stored once; each URL asks for the size and format it needs.</p>
+<pre><code class="language-toml">[images]
+binding = "IMAGES"</code></pre>
+<pre><code class="language-soli">photo.image_url({"w": 400, "fmt": "webp"})</code></pre>
+      <ul>
+        <li>Width, thumb, square, crop, rotate, grey, quality; WebP and AVIF out.</li>
+        <li>Run on Cloudflare's machines, not in the Worker's CPU budget. Billed past the free monthly allowance.</li>
+        <li>Without the binding, the URL answers the stored bytes.</li>
+      </ul>
+    </article>
+
+    <article class="gate" id="queues">
+      <header><span class="gate-code">JOB</span><h3>Background jobs on Queues</h3></header>
+      <p><code>perform_later</code>, <code>perform_in</code> and <code>perform_at</code> send the job as a
+         message; the same Worker runs it with the job classes from <code>app/jobs/</code>.</p>
+<pre><code class="language-toml">[[queues.producers]]
+binding = "JOBS"
+queue = "my-app-jobs"
+
+[[queues.consumers]]
+queue = "my-app-jobs"
+max_retries = 100</code></pre>
+      <ul>
+        <li>A failure is retried with the server's backoff (5 s, 10 s, 20 s…, an hour at most) until its <code>max_retries</code>.</li>
+        <li>At least once: keep <code>perform</code> idempotent.</li>
+        <li>Delays up to 12 hours. Cron becomes a Cron Trigger.</li>
+      </ul>
+    </article>
+
+    <article class="gate gate-wide" id="sqlite">
+      <header><span class="gate-code">SQL</span><h3>SQLite: D1, or a Durable Object per tenant</h3></header>
+      <p>D1 holds the app's tables next to the Worker. For one database per customer, a Durable Object
+         with SQLite storage is created the first time its name is used — nothing to declare or
+         redeploy when a site is added.</p>
+      <div class="gate-pair">
+<pre><code class="language-toml"># config/database.toml
+[connections.primary]   # accounts, sites
+adapter = "d1"
+url = "d1://DB"
+
+[connections.site]      # each site's own data
+adapter = "d1"
+url = "do://SITES/{tenant}"</code></pre>
+<pre><code class="language-toml"># wrangler.toml
+[[durable_objects.bindings]]
+name = "SITES"
+class_name = "SoliSqlObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SoliSqlObject"]</code></pre>
+      </div>
+      <ul>
+        <li><code>switch_tenant(site.db_key)</code> in a middleware picks the database; <code>SoliSqlObject</code> ships in every Worker.</li>
+        <li>A <code>grouped</code> block's reads go in one round trip: one D1 <code>batch()</code>, or one call to the object.</li>
+        <li>No <code>Model.transaction</code> on either; a Durable Object holds up to 10 GB.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
 <section class="ship" aria-labelledby="ship-title">
   <h2 id="ship-title">From an app folder to a Worker</h2>
-  <pre><code class="language-bash">./scripts/build-edge.sh                  # once per Soli version
-soli edge build . --runtime target/edge  # your app → dist/edge
-cd dist/edge && npx wrangler dev         # on workerd, locally
-npx wrangler deploy                      # on Cloudflare</code></pre>
-  <p class="muted">Nothing in the app changes. Its configuration moves to <code>wrangler.toml</code>; the <a href="/guide">guide</a> walks through it, and <a href="/limits">limits</a> lists what stays with <code>soli serve</code>.</p>
+  <pre><code class="language-bash">./scripts/build-edge.sh                    # once per Soli version, in its source tree
+soli new my_app --edge &amp;&amp; cd my_app       # wrangler.toml, D1, cookie sessions
+soli edge dev                              # on workerd, rebuilt as you edit
+soli edge build &amp;&amp; cd dist/edge &amp;&amp; npx wrangler deploy</code></pre>
+  <p class="muted">An app you already have changes nothing but gaining a <code>wrangler.toml</code>; the <a href="/guide">guide</a> walks through it, and <a href="/limits">limits</a> lists what stays with <code>soli serve</code>.</p>
 </section>
 
 <section class="explore" aria-labelledby="explore-title">
