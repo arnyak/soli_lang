@@ -209,8 +209,10 @@ mod parser_tests {
         let source = "def human?(reason: Any) -> Bool\n  [\"a\", \"b\"].includes?(reason)\nend";
         match parse_stmt(source) {
             StmtKind::Function(f) => {
-                let return_type = f.return_type.expect("return type");
-                assert!(matches!(return_type.kind, TypeKind::Named(ref name) if name == "Bool"));
+                assert!(matches!(
+                    f.return_type.map(|t| t.kind),
+                    Some(TypeKind::Named(ref name)) if name == "Bool"
+                ));
                 assert_eq!(f.body.len(), 1);
             }
             other => panic!("Expected function, got {:?}", other),
@@ -219,8 +221,10 @@ mod parser_tests {
         // A space before the bracket also ends the type.
         match parse_stmt("def first(xs: Any) -> Int [1].first end") {
             StmtKind::Function(f) => {
-                let return_type = f.return_type.expect("return type");
-                assert!(matches!(return_type.kind, TypeKind::Named(ref name) if name == "Int"));
+                assert!(matches!(
+                    f.return_type.map(|t| t.kind),
+                    Some(TypeKind::Named(ref name)) if name == "Int"
+                ));
             }
             other => panic!("Expected function, got {:?}", other),
         }
@@ -228,12 +232,16 @@ mod parser_tests {
         // Written against the type, `[]` is still an array type.
         match parse_stmt("def all(xs: Int[]) -> Int[][]\n  [xs]\nend") {
             StmtKind::Function(f) => {
-                let return_type = f.return_type.expect("return type");
-                match return_type.kind {
-                    TypeKind::Array(inner) => assert!(matches!(inner.kind, TypeKind::Array(_))),
+                match f.return_type.map(|t| t.kind) {
+                    Some(TypeKind::Array(inner)) => {
+                        assert!(matches!(inner.kind, TypeKind::Array(_)))
+                    }
                     other => panic!("Expected Int[][], got {:?}", other),
                 }
-                assert!(matches!(f.params[0].type_annotation.kind, TypeKind::Array(_)));
+                assert!(matches!(
+                    f.params[0].type_annotation.kind,
+                    TypeKind::Array(_)
+                ));
                 assert_eq!(f.body.len(), 1);
             }
             other => panic!("Expected function, got {:?}", other),
