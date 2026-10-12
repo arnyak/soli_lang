@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [2.23.1] - 2026-10-12
+
+The v2.23.0 tag failed CI and published no binaries; 2.23.1 is the same release with the two failures fixed. Installing 2.23.1 brings everything listed under 2.23.0.
+
+### Fixed
+
+* **edge:** the Worker build compiles again: event streams (`EventStreamJob`, `EventStream.consume`) called the es client, which the edge build leaves out (`es` feature). Without it they now raise "event streams need es support, which this build of soli leaves out".
+* **tests:** the typed-catch spec finds the `soli` binary when it is not on `PATH` (`cargo run -- test` in CI).
+
 ## [2.23.0] - 2026-10-12
 
 ### Added

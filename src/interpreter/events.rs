@@ -290,9 +290,22 @@ pub fn perform_event_stream(args: &[Value]) -> Result<Value, String> {
     let event = get("event").unwrap_or(Value::Null);
     let value = serde_json::to_string(&crate::interpreter::value::value_to_json(&event)?)
         .map_err(|e| e.to_string())?;
-    crate::interpreter::builtins::es::emit_record(&topic, key, value)?;
+    emit_to_stream(&topic, key, value)?;
     Ok(Value::Null)
 }
+
+#[cfg(feature = "es")]
+fn emit_to_stream(topic: &str, key: Option<String>, value: String) -> Result<(), String> {
+    crate::interpreter::builtins::es::emit_record(topic, key, value)
+}
+
+#[cfg(not(feature = "es"))]
+fn emit_to_stream(_topic: &str, _key: Option<String>, _value: String) -> Result<(), String> {
+    Err(NO_ES.to_string())
+}
+
+#[cfg(not(feature = "es"))]
+const NO_ES: &str = "event streams need es support, which this build of soli leaves out";
 
 fn run_blocks(class: &Class, event: &Value) -> Result<(), RuntimeError> {
     let depth = DEPTH.with(|d| d.get());
@@ -442,10 +455,25 @@ pub fn consume_stream(args: &[Value]) -> Result<Value, String> {
     }
     let group =
         group.ok_or_else(|| format!("EventStream.consume needs a consumer group: {usage}"))?;
+    consume_records(topic, &group, partitions, max_records)
+}
+
+#[cfg(not(feature = "es"))]
+fn consume_records(_: &str, _: &str, _: u64, _: u64) -> Result<Value, String> {
+    Err(NO_ES.to_string())
+}
+
+#[cfg(feature = "es")]
+fn consume_records(
+    topic: &str,
+    group: &str,
+    partitions: u64,
+    max_records: u64,
+) -> Result<Value, String> {
     let mut published = 0i64;
     for partition in 0..partitions {
         let page =
-            crate::interpreter::builtins::es::group_page(&group, topic, partition, max_records)?;
+            crate::interpreter::builtins::es::group_page(group, topic, partition, max_records)?;
         let records = page
             .get("records")
             .and_then(|r| r.as_array())
@@ -457,7 +485,7 @@ pub fn consume_stream(args: &[Value]) -> Result<Value, String> {
                 publish_with(&event, false).map_err(|e| e.to_string())?;
                 published += 1;
             }
-            crate::interpreter::builtins::es::commit_offset(&group, topic, partition, offset + 1)?;
+            crate::interpreter::builtins::es::commit_offset(group, topic, partition, offset + 1)?;
         }
     }
     Ok(Value::Int(published))
@@ -465,6 +493,7 @@ pub fn consume_stream(args: &[Value]) -> Result<Value, String> {
 
 /// A stream record (`{"type", "data", …}` as a stream subscription writes
 /// it) as its domain event, when this application declares that class.
+#[cfg_attr(not(feature = "es"), allow(dead_code))]
 fn event_from_record(record: &serde_json::Value) -> Option<Value> {
     let value = record.get("value")?;
     let envelope: serde_json::Value = match value {
