@@ -3017,7 +3017,19 @@ impl Vm {
                     self.stack.push(Value::String(result));
                 }
                 Op::Spread => {
-                    // Spread is handled by the array/hash/call compilation
+                    // `[..., ...xs]`: append xs's elements to the array being
+                    // built below it. Stack: [..., array, xs] -> [..., array].
+                    let spread = self.stack.pop().unwrap();
+                    let Value::Array(items) = spread else {
+                        return Err(RuntimeError::type_error(
+                            "cannot spread non-array value",
+                            self.current_span(),
+                        ));
+                    };
+                    let arr_idx = self.stack.len() - 1;
+                    if let Some(Value::Array(arr)) = self.stack.get(arr_idx) {
+                        arr.borrow_mut().extend(items.borrow().iter().cloned());
+                    }
                 }
 
                 // --- Properties ---

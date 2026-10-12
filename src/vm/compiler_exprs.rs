@@ -270,9 +270,13 @@ impl Compiler {
             } => {
                 self.compile_sdql_block(query, interpolations, line)?;
             }
-            ExprKind::Spread(inner) => {
-                self.compile_expr(inner)?;
-                self.emit(Op::Spread, line);
+            ExprKind::Spread(_) => {
+                // Only an array literal holds a spread (`compile_array`); the
+                // parser produces it nowhere else.
+                return Err(CompileError::new(
+                    "spread (...) is only valid inside an array literal",
+                    crate::span::Span::new(0, 0, line, 0),
+                ));
             }
             ExprKind::Throw(inner) => {
                 self.compile_expr(inner)?;
@@ -987,10 +991,29 @@ impl Compiler {
     }
 
     fn compile_array(&mut self, elements: &[Expr], line: usize) -> CompileResult<()> {
-        for elem in elements {
+        // `[a, ...xs, b]`: the elements before the first spread build the
+        // array, then each later one is pushed onto it — or, spread, has its
+        // elements appended (`Op::Spread`), as the tree-walker does.
+        let leading = elements
+            .iter()
+            .position(|elem| matches!(elem.kind, ExprKind::Spread(_)))
+            .unwrap_or(elements.len());
+        for elem in &elements[..leading] {
             self.compile_expr(elem)?;
         }
-        self.emit(Op::Array(elements.len() as u16), line);
+        self.emit(Op::Array(leading as u16), line);
+        for elem in &elements[leading..] {
+            match &elem.kind {
+                ExprKind::Spread(inner) => {
+                    self.compile_expr(inner)?;
+                    self.emit(Op::Spread, line);
+                }
+                _ => {
+                    self.compile_expr(elem)?;
+                    self.emit(Op::ArrayPush, line);
+                }
+            }
+        }
         Ok(())
     }
 

@@ -1095,10 +1095,9 @@ fn stack_effect(op: Op) -> i32 {
         // Collections.
         Array(n) | BuildString(n) | HashWithKeys(_, n) => 1 - n as i32,
         Hash(n) => 1 - 2 * n as i32,
-        ArrayPush => -1,
+        ArrayPush | Spread => -1,
         Range | GetIndex => -1,
         SetIndex => -2,
-        Spread => 0,
         // Objects.
         GetProperty(_) | GetPropertyOrNull(_) => 0,
         SetProperty(_) => -1,

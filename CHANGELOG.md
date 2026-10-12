@@ -30,6 +30,8 @@
 
 * **docs(search):** **the site search finds `D1`, `R2` and `Cloudflare`.** `www/public/js/search-index.json` had no entry for the Cloudflare Workers page (`/docs/development-tools/edge`) or the ES page, and the modal's Fuse scored a match by its distance from the start of a field, so a term past the 30th character of a description counted as none. The two pages are indexed, with section entries for D1, SQLite in Durable Objects, Hyperdrive, R2 and Cloudflare Queues; the SQLite, multi-database, PostgreSQL, S3, uploader, `grouped` and `Job` entries carry the matching keywords; Fuse runs with `ignoreLocation`, so short terms such as `S3`, `KV` and `ES` match anywhere in an entry. Blog posts are searchable through `GET /docs/blog/search-index`, built from the blog manifest (scheduled posts stay out). `www/tests/search_index_spec.sl` fails when a routed docs page has no entry.
 
+* **vm:** **`[...a, ...b]` splices on the VM.** `Op::Spread` did nothing, so scripts and served actions built `[[1, 2], [3]]` while the tree-walker (and every `.sl` spec) built `[1, 2, 3]`. An array literal with a spread now builds the array from the elements before the first spread, then pushes or appends each later one; spreading a non-array raises "cannot spread non-array value" on both engines.
+
 ## [2.23.0] - 2026-10-12
 
 ### Added

@@ -121,7 +121,8 @@ pub enum Op {
     SetIndex,
     /// Build a string from N parts on the stack (for interpolation).
     BuildString(u16),
-    /// Spread an iterable's elements onto the stack.
+    /// Append an array's elements to the array below it: [array, xs] ->
+    /// [array] (`[a, ...xs]`).
     Spread,
 
     // --- Objects ---

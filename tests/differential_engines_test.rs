@@ -311,6 +311,25 @@ catch DomainError err
 end"##,
     ),
     (
+        // `...xs` in an array literal appends xs's elements (the VM used to
+        // push the array itself: `[0, ...a]` was `[0, [1, 2]]`).
+        "array_literal_spread",
+        r##"a = [1, 2]
+b = [3]
+print([0, ...a])
+print([...a, ...b, 4])
+print([...[]], [...a, ...a])
+c = [...a]
+c.push(9)
+print(a, c)
+def wrap(xs)
+  [:start, ...xs, :end]
+end
+print(wrap([1]))
+print([1, 2].map { |x| [...a, x] })
+print([...nil] rescue "refused")"##,
+    ),
+    (
         // `Klass.new(...)` is `new Klass(...)` on a class with a constructor,
         // whatever the arguments — none, one hash, named only. A class
         // without one keeps the attribute form; a module is not instantiated.
