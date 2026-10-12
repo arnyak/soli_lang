@@ -4957,23 +4957,18 @@ fn call_oop_controller_action(
     // Check if this is an OOP controller (has a class definition)
     // Convert controller_key (e.g., "posts") to PascalCase class name (e.g., "PostsController")
     // For nested paths like "dashboard/cluster", also try the simple class name "ClusterController"
-    let class_name = to_pascal_case_controller(controller_key);
-
-    // Look up the class in the environment - try both full-path and simple names
+    // Look up the class: the full-path name first (cached per thread — the
+    // common case), then in its context's module, or the simple name.
+    let full_name = to_pascal_case_controller(controller_key);
     let class_value = interpreter
         .environment
         .borrow()
-        .get(&class_name)
+        .get(&full_name)
+        .filter(|v| matches!(v, Value::Class(_)))
         .or_else(|| {
-            // For nested controllers, try the simple class name (last segment)
-            if controller_key.contains('/') {
-                controller_key.rsplit('/').next().and_then(|simple| {
-                    let simple_class = to_pascal_case_controller(simple);
-                    interpreter.environment.borrow().get(&simple_class)
-                })
-            } else {
-                None
-            }
+            crate::serve::router::lookup_controller_class(controller_key, |name| {
+                interpreter.environment.borrow().get(name)
+            })
         });
 
     // Look up the class in the environment
@@ -4989,6 +4984,7 @@ fn call_oop_controller_action(
         Value::Class(class_rc) => class_rc,
         _ => return None,
     };
+    let class_name = class_rc.name.clone();
 
     // A private or protected method is not an action, even when a route names
     // it: the request answers as if the action did not exist.
@@ -5017,7 +5013,10 @@ fn call_oop_controller_action(
         .unwrap_or_else(|| Value::Hash(Rc::new(RefCell::new(HashPairs::default()))));
 
     // Instantiate the controller
-    let controller_instance = match create_controller_instance(&class_name, interpreter) {
+    // The class found above — `Billing::InvoicesController` is no global.
+    let controller_instance = match Ok::<Value, String>(Value::Instance(Rc::new(RefCell::new(
+        crate::interpreter::value::Instance::new(class_rc.clone()),
+    )))) {
         Ok(inst) => inst,
         Err(e) => {
             let stack_trace = interpreter.get_stack_trace();
@@ -5829,17 +5828,6 @@ fn try_render_template(
 /// Extract response from a value returned by after action.
 fn extract_response_from_value(value: &Value) -> Option<ResponseData> {
     check_for_response(value)
-}
-
-/// Create a new controller instance.
-fn create_controller_instance(
-    class_name: &str,
-    interpreter: &mut Interpreter,
-) -> Result<Value, String> {
-    crate::interpreter::builtins::controller::registry::create_controller_instance(
-        class_name,
-        interpreter,
-    )
 }
 
 /// Set up the controller context (inject req, params, session, headers).

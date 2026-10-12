@@ -486,7 +486,7 @@ fn contexts_app(root: &Path) {
     write(
         root,
         "config/routes.sl",
-        "get(\"/up\", \"contexts#up\")\npost(\"/run\", \"contexts#run\")\n",
+        "get(\"/up\", \"contexts#up\")\npost(\"/run\", \"contexts#run\")\nget(\"/billing/invoices\", \"billing/invoices#index\")\n",
     );
     write(
         root,
@@ -502,6 +502,12 @@ fn contexts_app(root: &Path) {
         root,
         "app/models/shipping/invoice.sl",
         "module Shipping\n  class Invoice < Model\n  end\nend\n",
+    );
+    // A controller of the context: app/controllers/billing/, in the module.
+    write(
+        root,
+        "app/controllers/billing/invoices_controller.sl",
+        "module Billing\n  class InvoicesController < Controller\n    # GET /billing/invoices\n    def index(req)\n      render_json({\"count\": Invoice.count, \"controller\": self.class})\n    end\n  end\nend\n",
     );
     // A service of the context names its models unqualified.
     write(
@@ -551,6 +557,13 @@ fn bounded_contexts_keep_their_models_apart() {
     assert_eq!(json["label"], "billing", "{body}");
     assert_eq!(json["first_shipping"], "S-1", "{body}");
     assert_eq!(json["ledger"], 1, "{body}");
+    let (status, body) = call(&server, "GET", "/billing/invoices", None);
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body.contains(r#""controller":"Billing::InvoicesController""#)
+            && body.contains(r#""count":1"#),
+        "{body}"
+    );
     drop(server);
     let conn = rusqlite::Connection::open(dir.path().join("app.sqlite3")).unwrap();
     let mut tables: Vec<String> = conn

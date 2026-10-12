@@ -408,14 +408,23 @@ A few building blocks the billing example did not need:
   equal amount.
 - **Locking existing tables.** `optimistic_lock` works on column-mode models
   over an existing SQL schema too, given a `lock_version` column.
+- **Private classes.** `private class Ledger` inside `module Billing` is
+  out of reach for the other contexts: they go through Billing's public
+  classes and its events.
+- **Aggregate roots.** `part_of :invoice` on an invoice line refuses to write
+  it outside `Invoice.transaction do … end` — the aggregate changes through
+  its root.
+- **Versioned events.** `static version: Int = 2` and a `static def
+  upcast(data, from_version)` bring older stream records up to date when
+  they are consumed.
 - **The consuming side of a stream.** Another app reacts to `InvoicePaid` by
   declaring the same event class and calling
   `EventStream.consume("billing", {"group": "shipping"})` from a cron job:
   each record is published to its own subscribers, and the group's offset is
   committed record by record.
 
-What stays as it was: controllers are top-level, namespaced by folder, while
-contexts hold models, services, events and errors.
+Controllers can join their context as well: `module Billing` around
+`class InvoicesController < Controller` in `app/controllers/billing/`.
 
 The reference: [value objects](/docs/language/value-objects),
 [value fields and invariants](/docs/database/validations#value-fields-and-invariants),

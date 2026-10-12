@@ -12,7 +12,7 @@ use crate::serve::middleware::{
     clear_middleware, extract_middleware_functions, register_middleware_with_options,
     scan_middleware_files,
 };
-use crate::serve::router::{derive_routes_from_controller, to_pascal_case_controller};
+use crate::serve::router::derive_routes_from_controller;
 use crate::span::Span;
 
 /// Scan for all controller files in the controllers directory, walking
@@ -586,42 +586,14 @@ pub(crate) fn load_controller(
     // Execute the controller file to define functions
     execute_file(interpreter, controller_path)?;
 
-    // Check if this is an OOP controller (class-based)
-    // Try both the full-path class name and the simple class name (last segment).
-    // For "dashboard/cluster", the class might be "ClusterController" or "DashboardClusterController".
-    let class_name = to_pascal_case_controller(&controller_key);
-    let simple_class_name = controller_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .map(|s| s.trim_end_matches("_controller"))
-        .map(|s| {
-            let mut result = String::new();
-            let mut capitalize_next = true;
-            for c in s.chars() {
-                if c == '_' {
-                    capitalize_next = true;
-                } else if capitalize_next {
-                    result.push(c.to_ascii_uppercase());
-                    capitalize_next = false;
-                } else {
-                    result.push(c);
-                }
-            }
-            result.push_str("Controller");
-            result
-        });
-
-    let is_oop_controller = interpreter
-        .environment
-        .borrow()
-        .get(&class_name)
-        .map(|v| matches!(v, Value::Class(_)))
-        .unwrap_or(false)
-        || simple_class_name
-            .as_ref()
-            .and_then(|n| interpreter.environment.borrow().get(n))
-            .map(|v| matches!(v, Value::Class(_)))
-            .unwrap_or(false);
+    // Check if this is an OOP controller (class-based): for
+    // "dashboard/cluster", `DashboardClusterController`,
+    // `Dashboard::ClusterController` or `ClusterController`.
+    let is_oop_controller =
+        crate::serve::router::lookup_controller_class(&controller_key, |name| {
+            interpreter.environment.borrow().get(name)
+        })
+        .is_some();
 
     // Register routes using the interpreter's environment
     for route in routes {
@@ -878,15 +850,12 @@ pub(crate) fn load_controllers_in_worker(
 
         // Also register controller actions in this worker (only for function-based controllers)
         let controller_key = controller_key_from_path(controllers_dir, path);
-        let class_name = to_pascal_case_controller(&controller_key);
-
         // Check if this is an OOP controller (class-based)
-        let is_oop_controller = interpreter
-            .environment
-            .borrow()
-            .get(&class_name)
-            .map(|v| matches!(v, Value::Class(_)))
-            .unwrap_or(false);
+        let is_oop_controller =
+            crate::serve::router::lookup_controller_class(&controller_key, |name| {
+                interpreter.environment.borrow().get(name)
+            })
+            .is_some();
 
         // Only register actions for function-based controllers
         // OOP controllers have their methods resolved at runtime

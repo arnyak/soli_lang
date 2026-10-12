@@ -245,6 +245,34 @@ fn derive_route(base_path: &str, func_name: &str, _has_params: bool) -> Option<C
 /// Convert a controller key (e.g., "posts", "user_profiles", "admin/merchants")
 /// to PascalCase class name (e.g., "PostsController", "UserProfilesController",
 /// "AdminMerchantsController"). Both `_` and `/` act as word separators.
+/// The class a controller key names, `get` looking up a global: for
+/// `billing/invoices`, `BillingInvoicesController`, then
+/// `Billing::InvoicesController` (a controller in its bounded context's
+/// module), then `InvoicesController`.
+pub fn lookup_controller_class(
+    controller_key: &str,
+    get: impl Fn(&str) -> Option<crate::interpreter::value::Value>,
+) -> Option<crate::interpreter::value::Value> {
+    use crate::interpreter::value::Value;
+    let is_class = |v: &Value| matches!(v, Value::Class(_));
+    if let Some(class) = get(&to_pascal_case_controller(controller_key)).filter(is_class) {
+        return Some(class);
+    }
+    let (namespace, simple) = controller_key.rsplit_once('/')?;
+    let simple_class = to_pascal_case_controller(simple);
+    let module = namespace
+        .split('/')
+        .map(|segment| {
+            let mut name = to_pascal_case_controller(segment);
+            name.truncate(name.len() - "Controller".len());
+            name
+        })
+        .collect::<Vec<_>>()
+        .join("::");
+    crate::interpreter::domain::resolve_in_namespace(&module, &simple_class, &get)
+        .or_else(|| get(&simple_class).filter(is_class))
+}
+
 pub fn to_pascal_case_controller(controller_key: &str) -> String {
     let mut result = String::new();
     let mut capitalize_next = true;

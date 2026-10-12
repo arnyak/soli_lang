@@ -3850,6 +3850,13 @@ Billing::Ledger.balance           # error: Billing::Ledger is private to Billing
  A declared return type may name a class of the module by
 its short name (`-> Invoice`).
 
+A controller can live in its context too: `module Billing` wrapping
+`class InvoicesController < Controller` in
+`app/controllers/billing/invoices_controller.sl` answers
+`billing/invoices#index` (the router tries `BillingInvoicesController`, then
+`Billing::InvoicesController`, then `InvoicesController`) and reads the
+context's classes unqualified.
+
 A model in a context gets its own collection (`billing_invoices`), and its
 relations name models of the same context unless `class_name:` says
 otherwise (`belongs_to("user", {"class_name": "User"})`). Two files that

@@ -8,6 +8,8 @@
 
 * **orm:** **`part_of :invoice`: aggregate roots.** On a child model, its `create`, `save`, `update`, `delete`, `upsert` and `create_many` are refused unless the root's `transaction` is running (`Invoice.transaction do … end`, or one it joins) — an aggregate changes through its root. The name resolves in the model's context (`Billing::Invoice`). Free until a model declares it (one relaxed load per write).
 
+* **serve:** **Controllers in a bounded context.** `module Billing` around `class InvoicesController < Controller` in `app/controllers/billing/invoices_controller.sl` answers `billing/invoices#…`: the router tries `BillingInvoicesController`, then `Billing::InvoicesController`, then `InvoicesController` (the first, the common case, still from the per-thread name cache), and the request instantiates the class it found. The controller reads its context's classes unqualified, on the VM.
+
 * **orm:** **`increment` / `decrement` bump `lock_version`** on an `optimistic_lock` model (a second atomic delta), so a save from a copy read before them is refused as stale instead of writing the counter back.
 
 * **orm:** **Versioned domain events.** `static version: Int = 2` on a `DomainEvent`; stream records carry `"version"`. `EventStream.consume` passes an older record through the class's `static def upcast(data, from_version)`, and stops with an error, before committing, on an older record without `upcast` or one from a newer version than the class.

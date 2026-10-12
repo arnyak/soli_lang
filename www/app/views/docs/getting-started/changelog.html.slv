@@ -27,9 +27,15 @@
             <li><strong class="text-white"><code class="text-cyan-400">private class</code> in a module.</strong> Reachable only from code inside the module; from outside, <code class="text-cyan-400">Billing::Ledger</code> is an error &mdash; a bounded context&rsquo;s boundary is enforced. <a href="/docs/language/modules#bounded-contexts" class="text-cyan-400 hover:underline">Guide</a>.</li>
         </ul>
 
+        <h3 id="unreleased-web" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Web</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Controllers in a bounded context.</strong> <code class="text-cyan-400">module Billing</code> around <code class="text-cyan-400">class InvoicesController &lt; Controller</code> in <code class="text-cyan-400">app/controllers/billing/</code> answers <code class="text-cyan-400">billing/invoices#…</code> and reads the context&rsquo;s classes unqualified. <a href="/docs/language/modules#bounded-contexts" class="text-cyan-400 hover:underline">Guide</a>.</li>
+        </ul>
+
         <h3 id="unreleased-orm" class="text-xl font-semibold text-white mb-4 scroll-mt-24">ORM</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white"><code class="text-cyan-400">part_of :invoice</code>: aggregate roots.</strong> A child entity is written only inside its root&rsquo;s <code class="text-cyan-400">Invoice.transaction do … end</code>. <a href="/docs/database/domain-events#aggregate-roots" class="text-cyan-400 hover:underline">Guide</a>.</li>
+            <li><strong class="text-white"><code class="text-cyan-400">increment</code> / <code class="text-cyan-400">decrement</code> bump <code class="text-cyan-400">lock_version</code></strong> on locked models, so a stale save after them is refused.</li>
             <li><strong class="text-white">Versioned domain events.</strong> <code class="text-cyan-400">static version: Int = 2</code> and <code class="text-cyan-400">static def upcast(data, from_version)</code>: older stream records are brought up to date when consumed, and unknown versions stop the run instead of being dropped. <a href="/docs/database/domain-events#versioning" class="text-cyan-400 hover:underline">Guide</a>.</li>
         </ul>
     </section>
