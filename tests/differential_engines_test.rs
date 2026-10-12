@@ -311,6 +311,67 @@ catch DomainError err
 end"##,
     ),
     (
+        // A method of a top-level class reads its nested classes unqualified,
+        // in both spellings, at any depth (the tree-walker raised "Undefined
+        // variable 'Inner'"); `super` still reaches the parent.
+        "nested_class_read_unqualified_in_its_outer_class",
+        r##"class Shape
+  def kind
+    "shape"
+  end
+end
+class Outer < Shape
+  outer_value: Int
+
+  new(value: Int)
+    @outer_value = value
+  end
+
+  def create_inner(x: Int)
+    Inner.new(this, x)
+  end
+
+  def create_old(x: Int)
+    new Inner(this, x)
+  end
+
+  def parent_kind
+    super.kind() + "!"
+  end
+
+  class Inner
+    outer: Any
+    inner_value: Int
+
+    new(outer, value: Int)
+      @outer = outer
+      @inner_value = value
+    end
+
+    def combined -> Int
+      @outer.outer_value + @inner_value
+    end
+
+    def deeper
+      Deep.new(@inner_value)
+    end
+
+    class Deep
+      v: Int
+      new(v)
+        @v = v
+      end
+    end
+  end
+end
+outer = Outer.new(10)
+print(outer.create_inner(20).combined())
+print(outer.create_old(1).combined())
+print(outer.parent_kind())
+print(outer.create_inner(3).deeper().v)
+print(Inner.new(1, 2)) rescue print("Inner is not global")"##,
+    ),
+    (
         // A call to a method an instance does not have reaches its
         // `method_missing` (inherited too); reflection reads see the VM's
         // compiled methods. The VM raised "Cannot access property" on all of

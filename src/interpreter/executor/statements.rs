@@ -643,21 +643,25 @@ impl Interpreter {
         let extends_model = superclass.as_ref().is_some_and(|sc| sc.is_model_subclass());
 
         // Create environment for methods (with potential super binding). A
-        // top-level module's methods read its nested classes unqualified.
-        let method_env = if decl.is_module && !decl.nested_classes.is_empty() {
+        // top-level class or module reads its nested classes unqualified
+        // (`Inner.new(...)` in a method of `Outer`); a nested one already
+        // reads them through the namespace its declaration bound.
+        let binds_namespace = !decl.nested_classes.is_empty() && self.current_namespace().is_none();
+        let method_env = if binds_namespace || superclass.is_some() {
             let mut env = Environment::with_enclosing(self.environment.clone());
-            env.define(
-                crate::interpreter::domain::NAMESPACE_BINDING.to_string(),
-                Value::String(qualified.clone().into()),
-            );
-            Rc::new(RefCell::new(env))
-        } else if let Some(ref sc) = superclass {
-            let mut env = Environment::with_enclosing(self.environment.clone());
+            if binds_namespace {
+                env.define(
+                    crate::interpreter::domain::NAMESPACE_BINDING.to_string(),
+                    Value::String(qualified.clone().into()),
+                );
+            }
             // Store the superclass for super calls within methods of this class
-            env.define(
-                "__defining_superclass__".to_string(),
-                Value::Class(sc.clone()),
-            );
+            if let Some(ref sc) = superclass {
+                env.define(
+                    "__defining_superclass__".to_string(),
+                    Value::Class(sc.clone()),
+                );
+            }
             Rc::new(RefCell::new(env))
         } else {
             self.environment.clone()

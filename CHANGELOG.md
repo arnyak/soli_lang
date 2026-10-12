@@ -34,6 +34,8 @@
 
 * **vm:** **Instance `method_missing` and reflection on the VM.** A call to a method an instance does not have reaches its `method_missing` (own or inherited, a last parameter named `args` taking the arguments as an array, as on the tree-walker), and `respond_to?`, `inspect`, `methods`, `instance_variables`, `instance_variable_get` and `instance_variable_set` answer — they raised "Cannot access property", which demoted a script to the tree-walker and could turn a served action that had already written into a 500. `respond_to?` and `methods` see methods the VM compiled.
 
+* **language:** **A method reads its class's nested classes unqualified on the tree-walker.** `Inner.new(...)` (or `new Inner(...)`) in a method of a top-level `class Outer` raised "Undefined variable 'Inner'" on the tree-walker; the VM already resolved it. Classes nested at any depth resolve, and `super` still reaches the parent.
+
 ## [2.23.0] - 2026-10-12
 
 ### Added
