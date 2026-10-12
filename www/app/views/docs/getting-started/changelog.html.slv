@@ -20,8 +20,13 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.25.1.</p>
-        <h3 id="unreleased-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.25.2.</p>
+    </section>
+
+    <section id="v2-25-2" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.25.2 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-12</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">YAML read and written by Soli&rsquo;s own safe-Rust parser: <code class="text-cyan-400">serde_yaml</code> and <code class="text-cyan-400">unsafe-libyaml</code> are gone, and with them the RUSTSEC-2024-0449 waiver.</p>
+        <h3 id="v2-25-2-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">YAML is read by Soli&rsquo;s own parser, in safe Rust.</strong> <code class="text-cyan-400">Yaml.parse</code>, <code class="text-cyan-400">Yaml.stringify</code> and the <code class="text-cyan-400">config/locales/*.yml</code> files no longer go through <code class="text-cyan-400">serde_yaml</code> and its unmaintained, machine-translated C parser (RUSTSEC-2024-0449, whose waiver is gone). They read and write what they did &mdash; the YAML 1.2 core schema, every scalar style, block scalars, flow collections &mdash; 2.8&times; faster on locale files. Anchors, aliases (so <code class="text-cyan-400">&lt;&lt;: *defaults</code>), tags and <code class="text-cyan-400">? complex</code> keys are now refused with an error naming the line and column, and a locale file using them is skipped at boot with a warning; nesting stops at 128 levels instead of overflowing the stack. <a href="/docs/builtins/toml-yaml#def-yaml-subset" class="text-cyan-400 hover:underline">What Yaml.parse reads</a></li>
         </ul>
