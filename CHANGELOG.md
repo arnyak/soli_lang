@@ -32,6 +32,8 @@
 
 * **vm:** **`[...a, ...b]` splices on the VM.** `Op::Spread` did nothing, so scripts and served actions built `[[1, 2], [3]]` while the tree-walker (and every `.sl` spec) built `[1, 2, 3]`. An array literal with a spread now builds the array from the elements before the first spread, then pushes or appends each later one; spreading a non-array raises "cannot spread non-array value" on both engines.
 
+* **vm:** **Instance `method_missing` and reflection on the VM.** A call to a method an instance does not have reaches its `method_missing` (own or inherited, a last parameter named `args` taking the arguments as an array, as on the tree-walker), and `respond_to?`, `inspect`, `methods`, `instance_variables`, `instance_variable_get` and `instance_variable_set` answer — they raised "Cannot access property", which demoted a script to the tree-walker and could turn a served action that had already written into a 500. `respond_to?` and `methods` see methods the VM compiled.
+
 ## [2.23.0] - 2026-10-12
 
 ### Added

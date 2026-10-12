@@ -2185,7 +2185,29 @@ impl Vm {
             }
         }
         let object = self.stack[receiver_idx].clone();
-        let method_val = self.op_get_property(&object, name, span)?;
+        let method_val = match self.op_get_property(&object, name, span) {
+            Ok(method_val) => method_val,
+            Err(err) => {
+                // No such method: an instance `method_missing` takes the call,
+                // as on the tree-walker.
+                if let Value::Instance(inst) = &object {
+                    let class = inst.borrow().class.clone();
+                    let found = match class.find_vm_method_with_class("method_missing") {
+                        Some(found) => Some(found),
+                        None => self.compile_tree_walking_method(&class, "method_missing")?,
+                    };
+                    if let Some((closure, defining_class)) = found {
+                        return self.call_instance_method_missing(
+                            closure,
+                            defining_class,
+                            receiver_idx,
+                            name,
+                        );
+                    }
+                }
+                return Err(err);
+            }
+        };
         if argc == 0 && !method_val.is_callable() {
             self.stack.truncate(receiver_idx);
             self.stack.push(method_val);
@@ -2193,6 +2215,41 @@ impl Vm {
             self.stack[receiver_idx] = method_val;
             self.call_value(argc, span)?;
         }
+        Ok(())
+    }
+
+    /// `obj.name(args…)` answered by the instance's `method_missing`, the
+    /// receiver at `receiver_idx` and the arguments above it. Its parameters
+    /// bind as on the tree-walker (`bind_instance_method_missing_params`):
+    /// the method name first, then the arguments by position; a last
+    /// parameter named `args` takes every argument as an array, and one the
+    /// call did not supply is `nil`.
+    fn call_instance_method_missing(
+        &mut self,
+        closure: Rc<VmClosure>,
+        defining_class: Rc<Class>,
+        receiver_idx: usize,
+        name: &str,
+    ) -> Result<(), RuntimeError> {
+        let mut mm_args = vec![Value::String(name.into())];
+        mm_args.extend(self.stack.drain(receiver_idx + 1..));
+        let params = closure.proto.param_names.len();
+        for i in 0..params {
+            let value = if i > 0 && i + 1 == params && closure.proto.param_names[i] == "args" {
+                Value::Array(Rc::new(RefCell::new(mm_args[1..].to_vec())))
+            } else {
+                mm_args.get(i).cloned().unwrap_or(Value::Null)
+            };
+            self.stack.push(value);
+        }
+        self.ensure_call_depth(&closure.proto, self.current_span())?;
+        self.frames.push(CallFrame::new(
+            closure,
+            receiver_idx,
+            self.iter_stack.len(),
+            Some(defining_class),
+            crate::vm::vm::positional_supplied_mask(params),
+        ));
         Ok(())
     }
 

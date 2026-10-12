@@ -311,6 +311,44 @@ catch DomainError err
 end"##,
     ),
     (
+        // A call to a method an instance does not have reaches its
+        // `method_missing` (inherited too); reflection reads see the VM's
+        // compiled methods. The VM raised "Cannot access property" on all of
+        // them.
+        "instance_method_missing_and_reflection",
+        r##"class Base
+  def inherited
+    0
+  end
+
+  def method_missing(name, args)
+    "#{name}/#{args.length}"
+  end
+end
+class Plain < Base
+  x: Int
+  new
+    @x = 5
+  end
+  def real
+    1
+  end
+end
+class Two
+  def method_missing(name, a, b)
+    "#{name}:#{a}:#{b}"
+  end
+end
+p = Plain.new()
+print(p.anything(1, 2, 3), p.nothing(), p.real())
+print(Two.new().foo(1), Two.new().foo(1, 2, 3))
+print(p.respond_to?("real"), p.respond_to?("inherited"), p.respond_to?("nope"))
+print(p.inspect(), p.methods().sort(), p.instance_variables())
+print(p.instance_variable_get("x"))
+p.instance_variable_set("x", 7)
+print(p.x)"##,
+    ),
+    (
         // `...xs` in an array literal appends xs's elements (the VM used to
         // push the array itself: `[0, ...a]` was `[0, [1, 2]]`).
         "array_literal_spread",

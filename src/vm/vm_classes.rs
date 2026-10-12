@@ -405,6 +405,18 @@ impl Vm {
                             },
                         )));
                     }
+                    // Reflection reads the class and the fields, never the
+                    // interpreter's state: the tree-walker's definitions
+                    // answer for both engines (they see the VM's methods too).
+                    "inspect"
+                    | "respond_to?"
+                    | "methods"
+                    | "instance_variables"
+                    | "instance_variable_get"
+                    | "instance_variable_set" => {
+                        drop(inst_ref);
+                        return Self::model_instance_member(inst, name, span);
+                    }
                     _ => {}
                 }
                 Err(RuntimeError::NoSuchProperty {

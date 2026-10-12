@@ -840,6 +840,7 @@ impl Interpreter {
                         };
                         let inst_ref = inst_clone.borrow();
                         let has_method = inst_ref.class.find_method(&method_name).is_some()
+                            || inst_ref.class.find_vm_method(&method_name).is_some()
                             || inst_ref.class.find_native_method(&method_name).is_some();
                         // Also check universal methods (handled inline, not in class methods)
                         let is_universal = matches!(
@@ -1216,6 +1217,21 @@ impl Interpreter {
                             method_names.push(Value::String(k.clone().into()));
                         }
                     }
+                }
+                // Methods the VM compiled live in `vm_methods` only (the
+                // constructor is registered there as "init").
+                let mut class_in_chain = Some(inst_ref.class.clone());
+                while let Some(class) = class_in_chain {
+                    for k in class.vm_methods.borrow().keys() {
+                        if k != "init"
+                            && !method_names
+                                .iter()
+                                .any(|v| matches!(v, Value::String(s) if **s == **k))
+                        {
+                            method_names.push(Value::String(k.clone().into()));
+                        }
+                    }
+                    class_in_chain = class.superclass.clone();
                 }
                 // Add universal methods that are handled inline, not in class methods
                 let universal_methods = [
