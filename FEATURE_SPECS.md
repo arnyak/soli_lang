@@ -809,65 +809,39 @@ Base64.encode("foo/bar?query=value");
 
 ## 17. State Machines
 
-### StateMachine Class
+A state machine drives an `enum_field` column of a model, declared in the class
+body. (The `stdlib/state_machine.sl` `StateMachine` class this section used to
+describe was removed with `stdlib/`.) Full reference: `www/docs/state-machines.md`.
+
 ```soli
-import "stdlib/state_machine.sl";
+enum OrderState
+  Pending,
+  Paid,
+  Shipped,
+  Cancelled
+end
 
-let states = ["pending", "processing", "completed", "failed"];
-let transitions = [
-    {"event": "start", "from": "pending", "to": "processing"},
-    {"event": "finish", "from": "processing", "to": "completed"},
-    {"event": "fail", "from": "processing", "to": "failed"},
-    {"event": "retry", "from": "failed", "to": "processing"},
-];
+class Order < Model
+  enum_field :status, OrderState
 
-let machine = new StateMachine("pending", states, transitions);
+  state_machine :status do
+    initial OrderState.Pending
 
-// Check state
-machine.current_state();  // "pending"
-machine.is("pending");    // true
-machine.is_in(["pending", "processing"]); // true
+    event :pay do
+      transition from: OrderState.Pending, to: OrderState.Paid
+      guard fn() { this.total > 0 }
+    end
 
-// Check available transitions
-machine.can("start");         // true
-machine.can("finish");        // false
-machine.available_events();   // ["start"]
+    event :cancel do
+      transition from: [OrderState.Pending, OrderState.Paid], to: OrderState.Cancelled
+    end
+  end
+end
 
-// Transition
-let result = machine.transition("start");
-// {"success": true, "from": "pending", "to": "processing", "event": "start"}
-machine.current_state();  // "processing"
-
-// Context storage
-machine.set("user_id", "123");
-machine.get("user_id");   // "123"
-
-// History
-machine.history();         // all transitions
-machine.last_transition(); // last transition details
-```
-
-### StateMachineBuilder
-```soli
-import "stdlib/state_machine.sl";
-
-let machine = state_machine()
-    .initial("pending")
-    .states_list(["pending", "active", "done"])
-    .transition("activate", "pending", "active")
-    .transition("complete", "active", "done")
-    .build();
-```
-
-### StateMachineBuilder API
-```soli
-let builder = state_machine();
-
-builder.initial("off");                    // Set initial state
-builder.states_list(["off", "on"]);        // Define all states
-builder.transition("turn_on", "off", "on"); // Single source
-builder.transition(["off", "broken"], "on", "off"); // Multiple sources
-builder.build();                           // Create StateMachine instance
+order.pay          # raises on an illegal move or a failed guard
+order.can_pay?     # never raises
+order.paid?        # one predicate per state
+Order.events()     # reflection
 ```
 
 ---
@@ -1015,40 +989,6 @@ fn process_config(user_config) {
         "name": trimmed_name,
         "first_tag": first_tag,
     };
-}
-```
-
-### State Machine + Constants + Nullish Coalescing
-```soli
-import "stdlib/state_machine.sl";
-
-// Constants for state machine configuration
-const INITIAL_STATE = "idle";
-const FINAL_STATES = ["completed", "cancelled"];
-
-fn create_order_machine() {
-    let states = ["idle", "pending", "processing", "shipped", "completed", "cancelled"];
-    let transitions = [
-        {"event": "submit", "from": "idle", "to": "pending"},
-        {"event": "process", "from": "pending", "to": "processing"},
-        {"event": "ship", "from": "processing", "to": "shipped"},
-        {"event": "deliver", "from": "shipped", "to": "completed"},
-        {"event": "cancel", "from": ["idle", "pending"], "to": "cancelled"},
-    ];
-
-    let machine = new StateMachine(INITIAL_STATE, states, transitions);
-    machine.set("order_id", generate_order_id());
-    machine.set("created_at", current_timestamp());
-
-    return machine;
-}
-
-// Usage with nullish coalescing
-fn get_order_status(machine) {
-    let state = machine.current_state();
-    let order_id = machine.get("order_id") ?? "unknown";
-
-    return "Order \(order_id) is \(state)";
 }
 ```
 

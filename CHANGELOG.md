@@ -42,6 +42,8 @@
 
 * **scaffold:** **`soli generate scaffold` builds a resource that answers.** `scaffold invoice` wrote `invoice_controller.sl` / `InvoiceController` while its routes named `invoices#…`, so every route answered 500 ("Action 'index' not found"); its migration was `<unix>create_invoices_<unix>.sl`, which `soli db:migrate` never saw; a plural name built `class Invoices < Model` and `@invoicess`; `update` redirected over validation errors; and there was no `patch` route for a `form_with` edit form. The name may now be singular or plural: the model is singular (`Invoice`), the controller, collection (`@invoices`, real plurals: `@categories`), views and routes plural; the migration is `<YYYYmmddHHMMSS>_create_invoices.sl`; `update` re-renders the form with 422; `patch` routes to `update`.
 
+* **docs:** `FEATURE_SPECS.md` §17 described a `StateMachine` class from the removed `stdlib/`; it now shows the model `state_machine` DSL.
+
 ## [2.23.0] - 2026-10-12
 
 ### Added
