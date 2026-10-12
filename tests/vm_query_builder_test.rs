@@ -46,32 +46,31 @@ fn run_script(source: &str, vm: bool) -> Run {
     }
 }
 
-/// A model chain, the shape every app writes.
+/// A model chain, the shape every app writes. No database here, and a read
+/// with none raises, so the chain is built and not run: what is under test is
+/// that each link resolves.
 const CHAIN: &str = r#"
 class Thing < Model
   static def newest() -> Any
-    return Thing.where({"a": 1}).limit(1).all
+    return Thing.where({"a": 1}).limit(1)
   end
 end
-print("rows=" + str(Thing.newest().length()))
+print("rows=" + type(Thing.newest()))
 "#;
 
-/// The tree-walker runs it. No database here, so the result is empty — what
-/// matters is that it is a result and not an error.
+/// The tree-walker builds it.
 #[test]
 fn the_interpreter_runs_a_query_builder_chain() {
     let run = run_script(CHAIN, false);
     assert!(
-        run.stdout.contains("rows="),
+        run.stdout.contains("rows=QueryBuilder"),
         "stdout: {}\nstderr: {}",
         run.stdout,
         run.stderr
     );
 }
 
-/// The VM runs the chain itself. No database here either, so — as for the
-/// tree-walker — only a result is required: a failed read comes back in-band
-/// as an error string whose wording (and length) depends on why it failed.
+/// The VM builds the chain itself, without demoting to the interpreter.
 #[test]
 fn the_vm_runs_a_query_builder_chain() {
     let run = run_script(CHAIN, true);
@@ -85,7 +84,7 @@ fn the_vm_runs_a_query_builder_chain() {
         !all.contains("Cannot access property"),
         "a query-builder member must not read as a missing property: {all}"
     );
-    assert!(run.stdout.contains("rows="), "stdout: {all}");
+    assert!(run.stdout.contains("rows=QueryBuilder"), "stdout: {all}");
 }
 
 /// The bug in one test.
@@ -100,13 +99,13 @@ fn user_code_cannot_swallow_the_vms_refusal() {
     let source = r#"
 class Thing < Model
   static def newest() -> Any
-    return Thing.where({"a": 1}).limit(1).all
+    return Thing.where({"a": 1}).limit(1)
   end
 end
 
 try {
   let rows = Thing.newest()
-  print("rows=" + str(rows.length()))
+  print("rows=" + type(rows))
 } catch e {
   print("SWALLOWED: " + str(e))
 }
@@ -166,8 +165,7 @@ end
 print("seen=" + str(Thing.walk()))
 "#;
 
-/// The interpreter must *dispatch* it. Unlike `.all`, which reports a failed
-/// read in-band as an "Error: …" string, `find_each` raises — so with no
+/// The interpreter must *dispatch* it. A read raises when it fails — so with no
 /// database reachable this run legitimately ends in a connection error. What
 /// must never appear is a dispatch error: that would mean the method is not
 /// wired into the query-builder path at all.

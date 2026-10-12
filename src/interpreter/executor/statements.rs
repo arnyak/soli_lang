@@ -464,10 +464,14 @@ impl Interpreter {
         let iter_value = self.evaluate(iterable)?;
         // QueryBuilder is iterable: materialize it into an Array up front.
         let iter_value = match iter_value {
-            Value::QueryBuilder(qb) => {
+            Value::QueryBuilder(qb) => crate::interpreter::builtins::model::raise_if_error_value(
                 crate::interpreter::builtins::model::execute_query_builder(&qb.borrow())
-                    .force_deferred()
-            }
+                    .force_deferred(),
+            )
+            .map_err(|message| RuntimeError::General {
+                message,
+                span: iterable.span,
+            })?,
             // A read inside `grouped(fn() { ... })` hands back a Deferred
             // placeholder. Resolve it here (flushing the batch if it is still
             // pending) so `for x in @posts` iterates the rows. Without this the
@@ -1150,6 +1154,10 @@ impl Interpreter {
                         .private_members
                         .borrow_mut()
                         .insert(nested_decl.name.clone());
+                    crate::interpreter::domain::note_private_class(
+                        &parent_class,
+                        &nested_decl.name,
+                    );
                 }
             }
 

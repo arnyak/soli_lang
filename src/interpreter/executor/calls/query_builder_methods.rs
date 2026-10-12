@@ -116,9 +116,13 @@ impl Interpreter {
             | "flatten" | "last" | "empty?" | "includes?" | "contains" | "contains?" | "sample"
             | "shuffle" | "take" | "drop" | "zip" | "to_string" | "to_json" | "is_a?" | "to_a"
             | "to_array" => {
-                let materialized =
+                // A failed read raises here: its "Error: …" string would
+                // otherwise answer `length`, `each`… as if it were the rows.
+                let materialized = crate::interpreter::builtins::model::raise_if_error_value(
                     crate::interpreter::builtins::model::execute_query_builder(&qb.borrow())
-                        .force_deferred();
+                        .force_deferred(),
+                )
+                .map_err(|message| RuntimeError::General { message, span })?;
                 let method = Rc::new(crate::interpreter::value::ValueMethod {
                     receiver: Box::new(materialized),
                     method_name: method_name.to_string(),
@@ -1122,7 +1126,10 @@ persisted record (e.g. user.posts.create({...})) — use Model.create for plain 
         } else if qb_ref.time_bucket_info.is_some() {
             Ok(crate::interpreter::builtins::model::execute_query_builder_time_bucket(&qb_ref))
         } else {
-            Ok(execute_query_builder(&qb_ref))
+            crate::interpreter::builtins::model::raise_if_error_value(execute_query_builder(
+                &qb_ref,
+            ))
+            .map_err(|message| RuntimeError::General { message, span })
         }
     }
 
@@ -1249,7 +1256,10 @@ persisted record (e.g. user.posts.create({...})) — use Model.create for plain 
         if !arguments.is_empty() {
             return Err(RuntimeError::wrong_arity(0, arguments.len(), span));
         }
-        Ok(execute_query_builder_count(&qb.borrow()))
+        crate::interpreter::builtins::model::raise_if_error_value(execute_query_builder_count(
+            &qb.borrow(),
+        ))
+        .map_err(|message| RuntimeError::General { message, span })
     }
 
     fn qb_paginate(

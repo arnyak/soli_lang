@@ -155,6 +155,7 @@ Portable surface (hash filters, not raw SDBQL):
 | Soft-delete scope | ✓ |
 | `pluck` / `select` (client projection) | ✓ |
 | Batched `.includes` (belongs_to / has_many / has_one) | ✓ |
+| Relation readers (`owner.posts` and its chains, `post.author`, has_one, HABTM) and `dependent:` cascades | ✓ (after 2.24.0; they raised on SQL before) |
 | Multi-row `group_by` + multi-agg | ✓ |
 | Batched HABTM `.includes` + `includes_count` | ✓ (two queries: the join table, then the targets) |
 | `index` declarations / `soli db:indexes` | ✓ expression index on the JSON field (generated column on MySQL) |

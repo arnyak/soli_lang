@@ -8,7 +8,9 @@
 //! Bulk writes (`Model.delete_all`, `QueryBuilder.delete_all`) never cascade.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+#[cfg(test)]
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::error::RuntimeError;
@@ -122,35 +124,23 @@ fn relation_query_builder(
     rel: &RelationDef,
     owner_key: &str,
     fallback_class: &Rc<crate::interpreter::value::Class>,
-) -> QueryBuilder {
+    span: Span,
+) -> RuntimeResult<QueryBuilder> {
     let related_class = get_model_class(&rel.class_name).unwrap_or_else(|| fallback_class.clone());
     let mut qb = QueryBuilder::new_with_class(
         rel.class_name.clone(),
         rel.collection.clone(),
         related_class,
     );
-    let mut binds = HashMap::new();
-    binds.insert(
-        "__rel_fk".to_string(),
+    // A hash filter, so the cascade reaches the SQL adapters too (see
+    // `seed_relation_filter`).
+    crate::interpreter::builtins::model::relations::seed_relation_filter(
+        &mut qb,
+        rel,
         serde_json::Value::String(owner_key.to_string()),
-    );
-    // `as:` inverse of a polymorphic belongs_to: only rows pointing back at
-    // THIS owner type belong to the relation.
-    let type_guard = match (&rel.polymorphic_type_field, &rel.polymorphic_type_value) {
-        (Some(field), Some(value)) => {
-            binds.insert(
-                "__rel_type".to_string(),
-                serde_json::Value::String(value.clone()),
-            );
-            format!(" AND {} == @__rel_type", field)
-        }
-        _ => String::new(),
-    };
-    qb.set_filter(
-        format!("{} == @__rel_fk{}", rel.foreign_key, type_guard),
-        binds,
-    );
-    qb
+    )
+    .map_err(|e| RuntimeError::new(e, span))?;
+    Ok(qb)
 }
 
 /// Load children for `dependent: "delete"`. Test hooks skip the database.
@@ -159,8 +149,6 @@ fn load_cascade_children(
     owner_key: &str,
     span: Span,
 ) -> RuntimeResult<Vec<Value>> {
-    use crate::interpreter::builtins::model::crud;
-
     #[cfg(test)]
     if let Some(children) = TEST_CASCADE_CHILDREN.with(|m| m.borrow().get(owner_key).cloned()) {
         return Ok(children);
@@ -179,48 +167,25 @@ fn load_cascade_children(
         }
     };
 
-    let soft_guard = if crate::interpreter::builtins::model::is_soft_delete(&rel.class_name) {
-        " AND doc.deleted_at == null"
-    } else {
-        ""
-    };
-    let limit = if rel.relation_type == crate::interpreter::builtins::model::RelationType::HasOne {
-        " LIMIT 1"
-    } else {
-        ""
-    };
-    let mut binds = HashMap::new();
-    binds.insert(
-        "fk".to_string(),
-        serde_json::Value::String(owner_key.to_string()),
-    );
-    let type_guard = match (&rel.polymorphic_type_field, &rel.polymorphic_type_value) {
-        (Some(field), Some(value)) => {
-            binds.insert(
-                "rel_type".to_string(),
-                serde_json::Value::String(value.clone()),
-            );
-            format!(" AND doc.{} == @rel_type", field)
-        }
-        _ => String::new(),
-    };
-    let query = format!(
-        "FOR doc IN {} FILTER doc.{} == @fk{}{}{} RETURN doc",
-        rel.collection, rel.foreign_key, type_guard, soft_guard, limit
-    );
-
-    let docs =
-        crud::exec_with_auto_collection(query, Some(binds), &rel.collection).map_err(|e| {
-            RuntimeError::new(
-                format!("dependent: \"delete\" on \"{}\" failed: {}", rel.name, e),
-                span,
-            )
-        })?;
-
-    Ok(docs
-        .iter()
-        .map(|doc| crud::json_doc_to_instance(&child_class, doc))
-        .collect())
+    // The relation's builder: soft-deleted children stay out (the builder's
+    // default scope), and it runs on whichever adapter holds the children.
+    let mut qb = relation_query_builder(rel, owner_key, &child_class, span)?;
+    if rel.relation_type == crate::interpreter::builtins::model::RelationType::HasOne {
+        qb.set_limit(1);
+    }
+    let rows = crate::interpreter::builtins::model::raise_if_error_value(
+        crate::interpreter::builtins::model::execute_query_builder(&qb).force_deferred(),
+    )
+    .map_err(|e| {
+        RuntimeError::new(
+            format!("dependent: \"delete\" on \"{}\" failed: {}", rel.name, e),
+            span,
+        )
+    })?;
+    Ok(match rows {
+        Value::Array(arr) => arr.borrow().clone(),
+        _ => Vec::new(),
+    })
 }
 
 /// Run every `dependent:` strategy. `delete_child` is the instance-delete
@@ -261,7 +226,7 @@ pub(crate) fn run_dependent_cascades_with(
     for rel in dependents {
         match rel.dependent.expect("filtered on is_some") {
             DependentStrategy::DeleteAll => {
-                let qb = relation_query_builder(&rel, &owner_key, &fallback_class);
+                let qb = relation_query_builder(&rel, &owner_key, &fallback_class, span)?;
                 let result =
                     crate::interpreter::builtins::model::execute_query_builder_delete_all(&qb);
                 if let Value::String(s) = &result {
@@ -274,7 +239,7 @@ pub(crate) fn run_dependent_cascades_with(
                 }
             }
             DependentStrategy::Nullify => {
-                let qb = relation_query_builder(&rel, &owner_key, &fallback_class);
+                let qb = relation_query_builder(&rel, &owner_key, &fallback_class, span)?;
                 let mut patch = serde_json::Map::new();
                 patch.insert(rel.foreign_key.clone(), serde_json::Value::Null);
                 if let Some(type_field) = &rel.polymorphic_type_field {

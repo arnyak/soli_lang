@@ -233,6 +233,10 @@ end</code></pre>
                     <td class="py-3 px-4 text-green-400">✓</td>
                 </tr>
                 <tr>
+                    <td class="py-3 px-4">Relation readers (<code>owner.posts</code> and its chains, <code>post.author</code>, has_one, HABTM) and <code>dependent:</code> cascades</td>
+                    <td class="py-3 px-4 text-green-400">✓ (after 2.24.0; they raised on SQL before)</td>
+                </tr>
+                <tr>
                     <td class="py-3 px-4">Multi-row <code>group_by</code></td>
                     <td class="py-3 px-4 text-green-400">✓</td>
                 </tr>

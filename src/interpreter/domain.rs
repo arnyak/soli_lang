@@ -46,6 +46,39 @@ thread_local! {
 
     /// Value-object classes by name, for `value_field` reads.
     static CLASSES: RefCell<HashMap<String, Rc<Class>>> = RefCell::new(HashMap::new());
+
+    /// `private class` declarations by qualified name (`Billing::Ledger`), so
+    /// a relation can be refused without resolving the module it sits in.
+    static PRIVATE_CLASSES: RefCell<std::collections::HashSet<String>> =
+        RefCell::new(std::collections::HashSet::new());
+}
+
+/// `name`, nested in `parent`, was declared `private class` (both engines).
+pub fn note_private_class(parent: &Class, name: &str) {
+    PRIVATE_CLASSES.with(|p| p.borrow_mut().insert(format!("{}::{}", parent.name, name)));
+}
+
+/// A relation of `owner` (`Shipping::Parcel`) toward `target`
+/// (`Billing::Ledger`): refused when the target is a private class of a
+/// context the owner is not in — the rule `Billing::Ledger` read by name
+/// follows, which a `class_name:` would otherwise walk around.
+pub fn check_relation_target(owner: &str, target: &str) -> Result<(), String> {
+    if !PRIVATE_CLASSES.with(|p| p.borrow().contains(target)) {
+        return Ok(());
+    }
+    let Some((context, _)) = target.rsplit_once("::") else {
+        return Ok(());
+    };
+    let inside = owner
+        .rsplit_once("::")
+        .is_some_and(|(ns, _)| ns == context || ns.starts_with(&format!("{context}::")));
+    if inside {
+        return Ok(());
+    }
+    Err(format!(
+        "{owner} cannot reach {target} through a relation: {target} is private to {context} \
+         — go through {context}'s public classes, or declare it without `private`"
+    ))
 }
 
 /// Remember a defined class if it is a value object, so a `value_field` read

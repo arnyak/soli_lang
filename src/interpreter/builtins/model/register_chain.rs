@@ -52,6 +52,10 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                             format!("No relation '{}' defined on {}", rel_name, class_name)
                         })?;
                         super::relations::reject_through_on_solidb("includes", &rel)?;
+                        crate::interpreter::domain::check_relation_target(
+                            &class_name,
+                            &rel.class_name,
+                        )?;
                         super::relations::reject_polymorphic_relation("includes", &rel)?;
                         let fields = match v {
                             Value::Array(arr) => {
@@ -98,6 +102,7 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                     format!("No relation '{}' defined on {}", rel_name, class_name)
                 })?;
                 super::relations::reject_through_on_solidb("includes", &rel)?;
+                crate::interpreter::domain::check_relation_target(&class_name, &rel.class_name)?;
                 super::relations::reject_polymorphic_relation("includes", &rel)?;
 
                 let filter = if arguments.len() >= 3 {
@@ -189,6 +194,10 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                         format!("No relation '{}' defined on {}", rel_name, class_name)
                     })?;
                     super::relations::reject_through_on_solidb("includes", &rel)?;
+                    crate::interpreter::domain::check_relation_target(
+                        &class_name,
+                        &rel.class_name,
+                    )?;
                     super::relations::reject_polymorphic_relation("includes", &rel)?;
                     qb.add_include(
                         rel_name.to_string(),
@@ -235,6 +244,7 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                     format!("No relation '{}' defined on {}", rel_name, class_name)
                 })?;
                 super::relations::reject_through_on_solidb("includes", &rel)?;
+                crate::interpreter::domain::check_relation_target(&class_name, &rel.class_name)?;
                 super::relations::reject_polymorphic_relation("includes", &rel)?;
                 qb.add_include_count(rel_name.to_string(), rel)?;
             }
@@ -293,6 +303,7 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
             let rel = get_relation(&class_name, &rel_name)
                 .ok_or_else(|| format!("No relation '{}' defined on {}", rel_name, class_name))?;
             super::relations::reject_through_on_solidb("join", &rel)?;
+            crate::interpreter::domain::check_relation_target(&class_name, &rel.class_name)?;
             super::relations::reject_polymorphic_relation("join", &rel)?;
 
             let (filter, bind_vars, hash_filter) =

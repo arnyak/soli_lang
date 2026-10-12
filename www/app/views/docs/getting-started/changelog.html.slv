@@ -21,6 +21,14 @@
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
         <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.24.0.</p>
+
+        <h3 id="unreleased-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Relations work on PostgreSQL, MySQL, SQLite and D1.</strong> <code class="text-cyan-400">owner.pets</code>, <code class="text-cyan-400">pet.owner</code>, <code class="text-cyan-400">has_one</code>, has_and_belongs_to_many and <code class="text-cyan-400">dependent:</code> cascades built SoliDB-only queries, so every relation read raised on SQL &mdash; or answered the error text as if it were the rows. <a href="/docs/database/multi-database" class="text-cyan-400 hover:underline">Multiple databases</a></li>
+            <li><strong class="text-white">A failed query read raises.</strong> <code class="text-cyan-400">.all</code>, <code class="text-cyan-400">.count</code>, <code class="text-cyan-400">each</code>/<code class="text-cyan-400">map</code>/<code class="text-cyan-400">length</code>, <code class="text-cyan-400">for x in query</code> and <code class="text-cyan-400">query[0]</code> returned the <code class="text-cyan-400">"Error: …"</code> string in place of the rows.</li>
+            <li><strong class="text-white"><code class="text-cyan-400">belongs_to</code> and <code class="text-cyan-400">has_one</code> hydrate the related model</strong> &mdash; on SoliDB, <code class="text-cyan-400">pet.owner</code> came back as a <code class="text-cyan-400">Pet</code> holding the owner&rsquo;s fields.</li>
+            <li><strong class="text-white">A relation cannot reach another context&rsquo;s private model.</strong> <code class="text-cyan-400">private class Ledger &lt; Model</code> was refused by name from <code class="text-cyan-400">Shipping</code>, but a <code class="text-cyan-400">belongs_to</code> with <code class="text-cyan-400">class_name: "Billing::Ledger"</code> read its rows; it raises now. <a href="/docs/language/modules#bounded-contexts" class="text-cyan-400 hover:underline">Bounded contexts</a></li>
+        </ul>
     </section>
 
     <section id="v2-24-0" class="mb-16 scroll-mt-24">

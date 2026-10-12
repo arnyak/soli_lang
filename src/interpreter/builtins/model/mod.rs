@@ -307,7 +307,7 @@ pub use core::{
     duration_to_cutoff_rfc3339, ensure_scalar_bind_value, ensure_string_form_bind_value,
     get_model_engine_context, get_or_create_metadata, get_translated_fields, init_db_config,
     init_jwt_token, is_translated_field, parse_hash_filter, parse_hash_filter_avoiding,
-    parse_join_filter_args, register_model_builtins, register_translation,
+    parse_join_filter_args, raise_if_error_value, register_model_builtins, register_translation,
     set_model_engine_context, timeseries_insert_only_error, update_metadata, validate_field_name,
     validate_order_direction, validate_retention_duration, EngineContextGuard, Model,
     ModelMetadata, MODEL_REGISTRY,

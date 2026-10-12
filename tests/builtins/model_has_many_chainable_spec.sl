@@ -51,7 +51,7 @@ describe("has_many chainable (DB)") do
   test("a saved owner filters on its foreign key") do
     author = HmAuthor.create({"name": "Octavia"})
 
-    assert_contains(author.hm_books.to_query, "FILTER doc.hm_author_id == @__rel_fk RETURN doc")
+    assert_contains(author.hm_books.to_query, "FILTER doc.hm_author_id == @hm_author_id__eq_1 RETURN doc")
   end
 
   test("count reflects child rows") do

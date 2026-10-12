@@ -282,6 +282,26 @@ Shipping::Invoice.create({"number": "S-1"})</code></pre>
 end
 
 Billing::Ledger.balance             # error: Billing::Ledger is private to Billing</code></pre>
+                <p class="text-gray-400 mt-3">A model can be private too. Billing&rsquo;s code and Billing&rsquo;s relations use it &mdash; <code>account.ledgers</code>, and writes through that relation &mdash; while another context reaches it neither by name nor through a relation of its own: a <code>belongs_to</code>, <code>has_many</code> or <code>.includes</code> toward it from <code>Shipping</code> raises the same way.</p>
+<pre data-filename="app/models/billing/ledger.sl"><code class="language-soli text-sm">module Billing
+  private class Ledger &lt; Model        # table billing_ledgers
+  end
+
+  class Account &lt; Model
+    has_many("ledgers")
+  end
+end
+
+module Shipping
+  class Parcel &lt; Model
+    belongs_to("ledger", {"class_name": "Billing::Ledger"})
+  end
+end
+
+account.ledgers.create({"amount": 30})   # through Billing's public class
+account.ledgers.count                     # 1
+parcel.ledger                             # error: Shipping::Parcel cannot reach Billing::Ledger
+                                          # through a relation: Billing::Ledger is private to Billing</code></pre>
             </div>
         </section>
 

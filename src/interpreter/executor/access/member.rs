@@ -653,6 +653,71 @@ impl Interpreter {
     /// from the type string at runtime, and hydrate the row (which resolves
     /// its concrete class from `_id`). Either field missing/null → null,
     /// matching a plain belongs_to with a null FK.
+    /// A `belongs_to`, `has_one` or has_and_belongs_to_many read on a SQL
+    /// adapter, through the adapter, hydrated into the related model.
+    fn fetch_relation_sql(
+        &mut self,
+        owner_class: &Rc<Class>,
+        relation: &crate::interpreter::builtins::model::RelationDef,
+        fk: &str,
+        span: Span,
+    ) -> RuntimeResult<Value> {
+        use crate::interpreter::builtins::model::{crud, RelationType};
+        let related_class =
+            crate::interpreter::builtins::model::get_model_class(&relation.class_name)
+                .unwrap_or_else(|| owner_class.clone());
+        let fail = |e: String| RuntimeError::new(format!("Error fetching relation: {}", e), span);
+        match relation.relation_type {
+            RelationType::BelongsTo => Ok(
+                match crud::exec_get_sql(&relation.collection, fk).map_err(fail)? {
+                    Some(doc) => crud::json_doc_to_instance(&related_class, &doc),
+                    None => Value::Null,
+                },
+            ),
+            RelationType::HasOne => {
+                let mut qb = crate::interpreter::builtins::model::QueryBuilder::new_with_class(
+                    relation.class_name.clone(),
+                    relation.collection.clone(),
+                    related_class,
+                );
+                crate::interpreter::builtins::model::relations::seed_relation_filter(
+                    &mut qb,
+                    relation,
+                    serde_json::Value::String(fk.to_string()),
+                )
+                .map_err(fail)?;
+                qb.set_limit(1);
+                let rows = crate::interpreter::builtins::model::raise_if_error_value(
+                    crate::interpreter::builtins::model::execute_query_builder(&qb)
+                        .force_deferred(),
+                )
+                .map_err(fail)?;
+                Ok(match rows {
+                    Value::Array(arr) => arr.borrow().first().cloned().unwrap_or(Value::Null),
+                    _ => Value::Null,
+                })
+            }
+            RelationType::HasAndBelongsToMany => {
+                let docs = crud::habtm_targets_sql(
+                    relation.join_table.as_deref().unwrap_or(""),
+                    &relation.foreign_key,
+                    relation.association_foreign_key.as_deref().unwrap_or(""),
+                    fk,
+                    &relation.collection,
+                )
+                .map_err(fail)?;
+                let instances = docs
+                    .iter()
+                    .map(|doc| crud::json_doc_to_instance(&related_class, doc))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(instances))))
+            }
+            // has_many returns a builder and a polymorphic target is read by
+            // `fetch_polymorphic_target`, both before this point.
+            RelationType::HasMany | RelationType::Polymorphic => Ok(Value::Null),
+        }
+    }
+
     fn fetch_polymorphic_target(
         &mut self,
         inst: &Rc<RefCell<Instance>>,
@@ -690,6 +755,22 @@ impl Interpreter {
                 )
             })?;
         let collection = crate::interpreter::builtins::model::class_name_to_collection(&type_value);
+
+        if crate::interpreter::builtins::model::crud::collection_is_sql(&collection) {
+            return match crate::interpreter::builtins::model::crud::exec_get_sql(&collection, &fk) {
+                Ok(Some(doc)) => Ok(
+                    crate::interpreter::builtins::model::crud::json_doc_to_instance(
+                        &target_class,
+                        &doc,
+                    ),
+                ),
+                Ok(None) => Ok(Value::Null),
+                Err(e) => Err(RuntimeError::new(
+                    format!("Error fetching polymorphic relation \"{}\": {}", name, e),
+                    span,
+                )),
+            };
+        }
 
         let sdbql = format!(
             "FOR doc IN {} FILTER doc._key == @fk LIMIT 1 RETURN doc",
@@ -1268,6 +1349,8 @@ impl Interpreter {
         if inst_ref.class.is_model_subclass() {
             let class_name = &inst_ref.class.name;
             if let Some(relation) = get_relation(class_name, name) {
+                crate::interpreter::domain::check_relation_target(class_name, &relation.class_name)
+                    .map_err(|e| RuntimeError::type_error(e, span))?;
                 // has_many through: — resolve the intermediate + source
                 // relations lazily and return a QueryBuilder on the target
                 // collection whose FOR-head carries the membership subquery.
@@ -1427,22 +1510,6 @@ impl Interpreter {
                         relation.collection.clone(),
                         related_class,
                     );
-                    let mut binds = std::collections::HashMap::new();
-                    // `as:` inverse of a polymorphic belongs_to — only rows
-                    // pointing back at THIS owner type belong to the relation.
-                    let type_guard = match (
-                        &relation.polymorphic_type_field,
-                        &relation.polymorphic_type_value,
-                    ) {
-                        (Some(field), Some(value)) => {
-                            binds.insert(
-                                "__rel_type".to_string(),
-                                serde_json::Value::String(value.clone()),
-                            );
-                            format!(" AND {} == @__rel_type", field)
-                        }
-                        _ => String::new(),
-                    };
                     // Association write seed for `.create(hash)` / `<<`: the
                     // FK (plus the polymorphic type pair on `as:` relations)
                     // stamped onto new children.
@@ -1456,34 +1523,26 @@ impl Interpreter {
                         }
                         seed
                     };
-                    match fk_value {
+                    let owner_key = match &fk_value {
                         Some(Value::String(s)) => {
-                            binds.insert(
-                                "__rel_fk".to_string(),
-                                serde_json::Value::String(s.to_string()),
-                            );
-                            qb.set_filter(
-                                format!("{} == @__rel_fk{}", relation.foreign_key, type_guard),
-                                binds,
-                            );
-                            qb.assoc_seed = Some(build_seed(s.to_string()));
+                            Some((serde_json::Value::String(s.to_string()), s.to_string()))
                         }
-                        Some(Value::Int(n)) => {
-                            binds.insert(
-                                "__rel_fk".to_string(),
-                                serde_json::Value::String(n.to_string()),
-                            );
-                            qb.set_filter(
-                                format!("{} == @__rel_fk{}", relation.foreign_key, type_guard),
-                                binds,
-                            );
-                            qb.assoc_seed = Some(build_seed(n.to_string()));
+                        Some(Value::Int(n)) => Some((serde_json::Value::from(*n), n.to_string())),
+                        _ => None,
+                    };
+                    match owner_key {
+                        Some((json_key, seed_key)) => {
+                            crate::interpreter::builtins::model::relations::seed_relation_filter(
+                                &mut qb, &relation, json_key,
+                            )
+                            .map_err(|e| RuntimeError::new(e, span))?;
+                            qb.assoc_seed = Some(build_seed(seed_key));
                         }
                         // Owner not yet persisted (or FK missing): build a
                         // QueryBuilder that yields no rows. Chaining still
                         // works (count → 0, delete_all → no-op, iteration
                         // → empty).
-                        _ => {
+                        None => {
                             qb.set_filter("1 == 0".to_string(), std::collections::HashMap::new());
                             qb.never_matches = true;
                         }
@@ -1508,6 +1567,13 @@ impl Interpreter {
 
                 // Build the query based on relation type
                 let related_collection = &relation.collection;
+                // On a SQL adapter, the same read through the adapter: the
+                // SDBQL below is SoliDB's.
+                if crate::interpreter::builtins::model::crud::collection_is_sql(related_collection)
+                {
+                    let owner_class = inst.borrow().class.clone();
+                    return self.fetch_relation_sql(&owner_class, &relation, &fk, span);
+                }
                 let sdbql = match relation.relation_type {
                     RelationType::HasMany => {
                         // Handled above; unreachable here.
@@ -1576,7 +1642,14 @@ impl Interpreter {
                                 if results.is_empty() {
                                     Ok(Value::Null)
                                 } else {
-                                    let class = inst.borrow().class.clone();
+                                    // The related model's class: the owner's
+                                    // made `pet.owner` a Pet holding the
+                                    // owner's fields, without Owner's methods.
+                                    let class =
+                                        crate::interpreter::builtins::model::get_model_class(
+                                            &relation.class_name,
+                                        )
+                                        .unwrap_or_else(|| inst.borrow().class.clone());
                                     Ok(
                                     crate::interpreter::builtins::model::crud::json_doc_to_instance(
                                         &class,

@@ -1939,26 +1939,70 @@ pub fn exec_get(collection: &str, key: &str) -> Result<serde_json::Value, String
     // state that read could miss). Inside a SQL transaction, with_conn in the
     // adapter reuses the held tx connection, so uncommitted writes are seen.
     if collection_is_sql(collection) {
-        return super::registry::run_on_collection_connection(collection, || {
-            if let Some(schema) = super::column_mode::require_schema(collection)? {
-                let pk = super::column_mode::pk_value(&schema, key)?;
-                return match crate::db::columns::get_row(&schema, &pk)? {
-                    Some(row) => Ok(row),
-                    None => Err(format!("Document '{}/{}' not found", collection, key)),
-                };
-            }
-            match crate::db::sql::get(collection, key) {
-                Ok(Some(doc)) => Ok(doc),
-                Ok(None) => Err(format!("Document '{}/{}' not found", collection, key)),
-                Err(e) => Err(e),
-            }
-        });
+        return exec_get_sql(collection, key)?
+            .ok_or_else(|| format!("Document '{}/{}' not found", collection, key));
     }
     // Read through the active transaction so it sees uncommitted writes.
     if get_current_tx_id().is_some() {
         return exec_get_tx(collection, key);
     }
     exec_get_committed(collection, key)
+}
+
+/// The row of a SQL-bound collection under `key` — a document, or a
+/// column-aware model's row by its primary key — or `None`.
+pub(crate) fn exec_get_sql(
+    collection: &str,
+    key: &str,
+) -> Result<Option<serde_json::Value>, String> {
+    super::registry::run_on_collection_connection(collection, || {
+        if let Some(schema) = super::column_mode::require_schema(collection)? {
+            let pk = super::column_mode::pk_value(&schema, key)?;
+            return crate::db::columns::get_row(&schema, &pk);
+        }
+        crate::db::sql::get(collection, key)
+    })
+}
+
+/// The targets of a has_and_belongs_to_many relation on SQL, in join-row
+/// order: the join rows naming `owner_key`, then the documents they point at
+/// (each table on its own connection). A dangling join row contributes nothing.
+pub(crate) fn habtm_targets_sql(
+    join_table: &str,
+    owner_fk: &str,
+    assoc_fk: &str,
+    owner_key: &str,
+    collection: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let owner = [owner_key.to_string()];
+    let join_rows = super::registry::run_on_collection_connection(join_table, || {
+        crate::db::sql::select_json_text_in(join_table, owner_fk, &owner)
+    })?;
+    let mut keys: Vec<String> = Vec::with_capacity(join_rows.len());
+    for row in &join_rows {
+        let key = match row.get(assoc_fk) {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(serde_json::Value::Number(n)) => n.to_string(),
+            _ => continue,
+        };
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    let targets = super::registry::run_on_collection_connection(collection, || {
+        crate::db::sql::select_by_keys(collection, &keys)
+    })?;
+    let key_of =
+        |doc: &serde_json::Value| doc.get("_key").and_then(|v| v.as_str()).map(String::from);
+    Ok(keys
+        .iter()
+        .filter_map(|key| {
+            targets
+                .iter()
+                .find(|doc| key_of(doc).as_deref() == Some(key))
+                .cloned()
+        })
+        .collect())
 }
 
 /// A SoliDB document as committed, whatever transaction is open.

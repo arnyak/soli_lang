@@ -542,6 +542,29 @@ pub fn reject_polymorphic_relation(op: &str, relation: &RelationDef) -> Result<(
 }
 
 /// Register a relation for a model class in the MODEL_REGISTRY.
+/// Seed `qb` with a relation's owner filter — the foreign key, plus the type
+/// pair of an `as:` relation — as a hash filter: the SQL adapters compile the
+/// predicate, SoliDB runs its SDBQL echo, as for `.where({ ... })`. The string
+/// filter it replaces (`fk == @__rel_fk`) reached SoliDB only: on SQL, every
+/// `owner.posts` read and `dependent:` cascade raised, or answered the error
+/// text as if it were the rows.
+pub fn seed_relation_filter(
+    qb: &mut super::query::QueryBuilder,
+    rel: &RelationDef,
+    owner_key: serde_json::Value,
+) -> Result<(), String> {
+    let mut map = serde_json::Map::new();
+    map.insert(rel.foreign_key.clone(), owner_key);
+    if let (Some(field), Some(value)) = (&rel.polymorphic_type_field, &rel.polymorphic_type_value) {
+        map.insert(field.clone(), serde_json::Value::String(value.clone()));
+    }
+    let pred = crate::db::hash_filter::HashFilter::from_json_map(&map, &rel.name)?;
+    let (sdbql, binds) = pred.to_sdbql();
+    qb.hash_filter = Some(pred);
+    qb.set_filter(sdbql, binds);
+    Ok(())
+}
+
 pub fn register_relation(class_name: &str, relation: RelationDef) {
     MODEL_REGISTRY.write(|registry| {
         let metadata = registry.entry(class_name.to_string()).or_default();

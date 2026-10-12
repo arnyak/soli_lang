@@ -1872,6 +1872,7 @@ impl Vm {
                 Op::MarkPrivate(name_idx) => {
                     let name = self.read_string_constant_owned(name_idx);
                     if let Some(Value::Class(class)) = self.stack.last() {
+                        crate::interpreter::domain::note_private_class(class, &name);
                         class.private_members.borrow_mut().insert(name);
                         crate::interpreter::value::note_restricted_methods_declared();
                     }

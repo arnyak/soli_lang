@@ -117,7 +117,7 @@ describe("polymorphic runtime behavior") do
   test("the as: inverse binds the owner's key and class") do
     post = PolyPost.create({"title": "shape probe"})
     query = post.poly_comments.to_query
-    assert_contains(query, "FILTER doc.poly_commentable_id == @__rel_fk AND doc.poly_commentable_type == @__rel_type")
+    assert_contains(query, "FILTER doc.poly_commentable_id == @poly_commentable_id__eq_1 AND doc.poly_commentable_type == @poly_commentable_type__eq_2")
     bind_vars = query.split(" | bind_vars:")[1]
     assert_contains(bind_vars, "PolyPost")
     assert_contains(bind_vars, post._key)

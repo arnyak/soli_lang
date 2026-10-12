@@ -3890,6 +3890,33 @@ end
 Billing::Report.total             # 42
 Billing::Ledger.balance           # error: Billing::Ledger is private to Billing
 ```
+
+A model can be private too. Billing's code and Billing's relations use it —
+`account.ledgers`, and writes through that relation — while another context
+reaches it neither by name nor through a relation of its own: a `belongs_to`,
+`has_many` or `.includes` toward it from `Shipping` raises the same way.
+
+```soli
+module Billing
+  private class Ledger < Model      # table billing_ledgers
+  end
+
+  class Account < Model
+    has_many("ledgers")
+  end
+end
+
+module Shipping
+  class Parcel < Model
+    belongs_to("ledger", {"class_name": "Billing::Ledger"})
+  end
+end
+
+account.ledgers.create({"amount": 30})   # through Billing's public class
+account.ledgers.count                     # 1
+parcel.ledger                             # error: Shipping::Parcel cannot reach Billing::Ledger
+                                          # through a relation: Billing::Ledger is private to Billing
+```
  A declared return type may name a class of the module by
 its short name (`-> Invoice`).
 

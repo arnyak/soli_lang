@@ -53,9 +53,9 @@ fn run_script(source: &str, vm: bool) -> Run {
     }
 }
 
-/// No database here: a read comes back in-band as an empty result or an error
-/// string, so only reaching each `print` is asserted — the lookup is what
-/// failed, not the read.
+/// No database here: each scope's builder is built, never run (a read with
+/// no database raises), so what is asserted is that every lookup answers a
+/// builder — the lookup is what failed, not the read.
 const SCOPES: &str = r#"
 module Scoped
   included do
@@ -68,15 +68,15 @@ class Thing < Model
   include Scoped
 end
 
-print("bare=" + str(Thing.t.where({"b": 2}).limit(1).all.length()))
-print("parens=" + str(Thing.t().limit(1).all.length()))
-print("args=" + str(Thing.by(3).limit(1).all.length()))
+print("bare=" + type(Thing.t.where({"b": 2}).limit(1)))
+print("parens=" + type(Thing.t().limit(1)))
+print("args=" + type(Thing.by(3).limit(1)))
 "#;
 
 fn assert_every_scope_read(run: &Run) {
     for marker in ["bare=", "parens=", "args="] {
         assert!(
-            run.stdout.contains(marker),
+            run.stdout.contains(&format!("{marker}QueryBuilder")),
             "missing {marker}\nstdout: {}\nstderr: {}",
             run.stdout,
             run.stderr
@@ -119,7 +119,7 @@ class Thing < Model
 end
 
 print("label=" + Thing.label())
-print("scoped=" + str(Thing.t.limit(1).all.length()))
+print("scoped=" + type(Thing.t.limit(1)))
 "#,
         true,
     );
@@ -130,7 +130,7 @@ print("scoped=" + str(Thing.t.limit(1).all.length()))
         run.stderr
     );
     assert!(
-        run.stdout.contains("scoped="),
+        run.stdout.contains("scoped=QueryBuilder"),
         "stdout: {}\nstderr: {}",
         run.stdout,
         run.stderr

@@ -1249,7 +1249,7 @@ pub(super) fn build_uploader_config_from_args(
 /// `Value::String("Error: …")` rather than an `Err`. That is fine where the
 /// caller renders the value, but for a scalar result — a count, an aggregate —
 /// it hands back a String where a number belongs, and `try`/`catch` never fires.
-pub(super) fn raise_if_error_value(value: Value) -> Result<Value, String> {
+pub fn raise_if_error_value(value: Value) -> Result<Value, String> {
     if let Value::String(text) = &value {
         if let Some(message) = text.strip_prefix("Error: ") {
             return Err(message.to_string());

@@ -493,9 +493,14 @@ A few building blocks the billing example did not need:
   equal amount.
 - **Locking existing tables.** `optimistic_lock` works on column-mode models
   over an existing SQL schema too, given a `lock_version` column.
-- **Private classes.** `private class Ledger` inside `module Billing` is
-  out of reach for the other contexts: they go through Billing's public
-  classes and its events.
+- **Private classes, models included.** `private class Ledger < Model`
+  inside `module Billing` is Billing's alone: its code and its relations use
+  it (`account.ledgers`), and another context reaches it neither by name nor
+  through a relation — a `belongs_to("ledger", {"class_name":
+  "Billing::Ledger"})` declared in Shipping raises *Shipping::Parcel cannot
+  reach Billing::Ledger through a relation: Billing::Ledger is private to
+  Billing*. The other contexts go through Billing's public classes and its
+  events.
 - **Aggregate roots.** `part_of :invoice` on an invoice line refuses to write
   it outside `Invoice.transaction do … end` — the aggregate changes through
   its root.
