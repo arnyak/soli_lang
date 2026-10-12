@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 576" width="1024" height="576" role="img" aria-label="A post to /contacts goes through spam_check, cheapest check first: the honeypot field, the signed render time (at least 3 seconds, at most two days), an optional proof of work and rate budget, at most two links, and the learnt score under 0.9. Any failed check refuses the post with a reason; the bot gets the same answer a person would, and a honeypot or fast hit is learnt as spam. A post that passes every check is accepted and learnt as ham. Every post lands in the /__soli/spam quarantine, where not spam and spam correct the model.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d0f12"/>
+      <stop offset="1" stop-color="#08090b"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4b5260"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#ef4444"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#22c55e"/>
+    </marker>
+  </defs>
+  <rect width="1024" height="576" fill="url(#bg)"/>
+
+  <text x="40" y="62" font-family="ui-sans-serif,system-ui,sans-serif" font-size="26" font-weight="700" fill="#e5e7eb">Spam without a captcha</text>
+  <text x="40" y="88" font-family="ui-sans-serif,system-ui,sans-serif" font-size="15" fill="#8b929e">spam_check(req): cheapest check first, and the same answer to a bot as to a person</text>
+
+  <!-- the post -->
+  <rect x="40" y="250" width="128" height="76" rx="14" fill="#101319" stroke="#2b3038"/>
+  <text x="104" y="282" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="14" fill="#f59e0b">POST</text>
+  <text x="104" y="304" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="14" fill="#e5e7eb">/contacts</text>
+  <path d="M168 288 H206" stroke="#4b5260" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- the checks, top to bottom -->
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+    <rect x="212" y="122" width="404" height="56" rx="12" fill="#101319" stroke="#2b3038"/>
+    <text x="230" y="146" font-size="14" fill="#e5e7eb">_soli_url left empty</text>
+    <text x="230" y="166" font-size="12" fill="#8b929e">the honeypot nobody sees</text>
+    <text x="600" y="166" text-anchor="end" font-size="12" fill="#ef4444">honeypot</text>
+
+    <rect x="212" y="188" width="404" height="56" rx="12" fill="#101319" stroke="#2b3038"/>
+    <text x="230" y="212" font-size="14" fill="#e5e7eb">_soli_ts signed, 3 s to 2 days</text>
+    <text x="230" y="232" font-size="12" fill="#8b929e">the form was loaded and read</text>
+    <text x="600" y="232" text-anchor="end" font-size="12" fill="#ef4444">token fast expired</text>
+
+    <rect x="212" y="254" width="404" height="56" rx="12" fill="#101319" stroke="#2b3038" stroke-dasharray="5 4"/>
+    <text x="230" y="278" font-size="14" fill="#e5e7eb">proof of work, rate</text>
+    <text x="230" y="298" font-size="12" fill="#8b929e">opt-in</text>
+    <text x="600" y="298" text-anchor="end" font-size="12" fill="#ef4444">pow rate</text>
+
+    <rect x="212" y="320" width="404" height="56" rx="12" fill="#101319" stroke="#2b3038"/>
+    <text x="230" y="344" font-size="14" fill="#e5e7eb">at most 2 links</text>
+    <text x="230" y="364" font-size="12" fill="#8b929e">http://, https:// and [url</text>
+    <text x="600" y="364" text-anchor="end" font-size="12" fill="#ef4444">links</text>
+
+    <rect x="212" y="386" width="404" height="56" rx="12" fill="#101319" stroke="#f59e0b"/>
+    <text x="230" y="410" font-size="14" fill="#e5e7eb">learnt score under 0.9</text>
+    <text x="230" y="430" font-size="12" fill="#8b929e">naive Bayes on this app's posts</text>
+    <text x="600" y="430" text-anchor="end" font-size="12" fill="#ef4444">score</text>
+  </g>
+  <path d="M206 288 H200 V150 H212 M200 216 H212 M200 282 H212 M200 348 H212 M200 288 V414 H212" stroke="#4b5260" stroke-width="2" fill="none"/>
+
+  <!-- any failed check: refused -->
+  <path d="M616 150 H640 M616 216 H640 M616 282 H640 M616 348 H640 M616 414 H640 M640 150 V414" stroke="#ef4444" stroke-width="2" fill="none" opacity="0.8"/>
+  <path d="M640 182 H670" stroke="#ef4444" stroke-width="2" fill="none" marker-end="url(#arrow-red)"/>
+
+  <!-- every check passed: accepted -->
+  <path d="M414 442 V470 H656 V330 H670" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#arrow-green)"/>
+
+  <g font-family="ui-sans-serif,system-ui,sans-serif">
+    <rect x="676" y="122" width="308" height="122" rx="14" fill="#1a1012" stroke="#ef4444"/>
+    <text x="694" y="150" font-size="16" font-weight="600" fill="#ef4444">refused: a reason</text>
+    <text x="694" y="174" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" fill="#e5e7eb">{reason, show, score}</text>
+    <text x="694" y="196" font-size="13" fill="#e5e7eb">a bot sees the page a person sees</text>
+    <text x="694" y="216" font-size="13" fill="#e5e7eb">a person can fix token, expired</text>
+    <text x="694" y="236" font-size="13" fill="#8b929e">honeypot, fast: learnt as spam</text>
+
+    <rect x="676" y="290" width="308" height="80" rx="14" fill="#0f1a13" stroke="#22c55e"/>
+    <text x="694" y="318" font-size="16" font-weight="600" fill="#22c55e">nil: accepted</text>
+    <text x="694" y="340" font-size="13" fill="#e5e7eb">the action goes on</text>
+    <text x="694" y="358" font-size="13" fill="#8b929e">learnt as ham</text>
+
+    <rect x="676" y="414" width="308" height="94" rx="14" fill="#101319" stroke="#2b3038"/>
+    <text x="694" y="442" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15" fill="#f59e0b">/__soli/spam</text>
+    <text x="694" y="466" font-size="13" fill="#e5e7eb">every post, refused or accepted</text>
+    <text x="694" y="484" font-size="13" fill="#8b929e">"not spam" and "spam" move a post</text>
+    <text x="694" y="502" font-size="13" fill="#8b929e">and retrain the score</text>
+  </g>
+  <path d="M830 370 V408" stroke="#4b5260" stroke-width="2" fill="none" stroke-dasharray="3 4" marker-end="url(#arrow)"/>
+  <path d="M984 183 H1000 V461 H990" stroke="#4b5260" stroke-width="2" fill="none" stroke-dasharray="3 4" marker-end="url(#arrow)"/>
+</svg>
