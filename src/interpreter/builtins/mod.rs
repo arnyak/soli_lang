@@ -898,6 +898,22 @@ fn register_event_builtins(env: &mut Environment) {
         })),
     );
     env.define(
+        "__rebuild_event".to_string(),
+        Value::NativeFunction(NativeFunction::new(
+            "__rebuild_event",
+            None,
+            crate::interpreter::events::rebuild_event_native,
+        )),
+    );
+    env.define(
+        "__event_version".to_string(),
+        Value::NativeFunction(NativeFunction::new(
+            "__event_version",
+            Some(1),
+            crate::interpreter::events::event_version_native,
+        )),
+    );
+    env.define(
         "after_commit".to_string(),
         Value::NativeFunction(NativeFunction::new("after_commit", None, |_args| {
             Err("after_commit expects a block: after_commit { … }".to_string())

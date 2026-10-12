@@ -1839,7 +1839,22 @@ pub fn exec_insert(
     key: Option<&str>,
     document: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let result = exec_insert_inner(collection, key, document);
+    let result = exec_insert_inner(collection, key, document, false);
+    if result.is_ok() {
+        mark_durable_write();
+    }
+    result
+}
+
+/// `exec_insert` under a key the caller chose, refused when a row already
+/// holds it — `Model.create(data, {"key": k})`. SoliDB refuses a taken key
+/// on its own; the SQL adapters' plain insert replaces the row instead.
+pub fn exec_insert_new(
+    collection: &str,
+    key: &str,
+    document: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let result = exec_insert_inner(collection, Some(key), document, true);
     if result.is_ok() {
         mark_durable_write();
     }
@@ -1850,6 +1865,7 @@ fn exec_insert_inner(
     collection: &str,
     key: Option<&str>,
     mut document: serde_json::Value,
+    exclusive: bool,
 ) -> Result<serde_json::Value, String> {
     // Encrypt declared `encrypts` fields before the write (covers tx and
     // non-tx paths; the tx delegation below carries the already-encrypted doc).
@@ -1872,7 +1888,10 @@ fn exec_insert_inner(
                 }
                 return crate::db::columns::insert_row(&schema, &doc);
             }
-            crate::db::sql::insert(collection, key, document.clone())
+            match key {
+                Some(k) if exclusive => crate::db::sql::insert_new(collection, k, document.clone()),
+                _ => crate::db::sql::insert(collection, key, document.clone()),
+            }
         });
     }
     // When a transaction is open on this thread, route the write through the
@@ -2342,7 +2361,17 @@ pub fn exec_insert_tx(
             "/_api/database/{}/transaction/{}/document/{}",
             database, tx_id, collection
         ));
-        let result = exec_document_request(reqwest::Method::POST, url, Some(document));
+        let result =
+            match exec_document_request(reqwest::Method::POST, url.clone(), Some(document.clone()))
+            {
+                // The first write to a collection inside a transaction: create
+                // it (outside the transaction, as collections are) and retry.
+                Err(e) if is_missing_collection_or_database_error(&e) => {
+                    create_collection_sync(collection)?;
+                    exec_document_request(reqwest::Method::POST, url, Some(document))
+                }
+                other => other,
+            };
         if result.is_ok() {
             record_tx_write(collection);
         }

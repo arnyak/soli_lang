@@ -205,6 +205,7 @@ const PRELUDE_NAMES: &[&[&str]] = &[
         "detach_all_uploads",
         "AttachmentsController",
     ],
+    &["SoliEventStoreRecord", "EventSourced"],
 ];
 
 /// Preludes the runtime evaluates as Soli source.
@@ -217,6 +218,7 @@ const SOLI_PRELUDES: &[&str] = &[
     crate::interpreter::builtins::mock::MOCK_SOURCE,
     crate::serve::uploads_prelude::UPLOADS_PRELUDE_SOURCE,
     crate::serve::uploads_prelude::UPLOADS_HELPERS_SOURCE,
+    crate::interpreter::events::EVENT_SOURCED_PRELUDE,
 ];
 
 /// The top-level functions and classes one Soli prelude declares.

@@ -4096,6 +4096,26 @@
       ]
     },
     {
+      "title": "EventSourced",
+      "type": "class",
+      "category": "Database",
+      "path": "/docs/database/domain-events#event-sourcing",
+      "signature": "class Account < EventSourced; emit(event); save; Account.new().load(id)",
+      "description": "Event-sourced aggregates: state rebuilt from an append-only stream of domain events, concurrent appends refused with StaleRecord",
+      "keywords": [
+        "event sourcing",
+        "EventSourced",
+        "emit",
+        "apply",
+        "replay",
+        "event store",
+        "stream",
+        "aggregate",
+        "ddd",
+        "StaleRecord"
+      ]
+    },
+    {
       "title": "private class",
       "type": "keyword",
       "category": "Language",

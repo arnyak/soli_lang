@@ -17,7 +17,8 @@ as part of the language and the ORM, with no framework on the side:
 - **domain events** published after the commit, to in-process subscribers,
   to jobs through a transactional outbox, and to an
   [es](/docs/builtins/es) stream;
-- **bounded contexts**: modules with their own models, tables and names.
+- **bounded contexts**: modules with their own models, tables and names;
+- **event-sourced aggregates**, rebuilt from their own stream of events.
 
 This post builds one small billing domain with all of it — accounts with
 prepaid credit, invoices paid from that credit, a shipping context that
@@ -397,6 +398,90 @@ throws `StaleRecord` and the client retries on fresh data. A form can do the
 same: a hidden `lock_version` field makes `Model.update` refuse a submission
 made after someone else's edit.
 
+## When the history is the state
+
+An `Account` row says how much credit is left; it does not say how it got
+there. When that question matters — a prepaid wallet, a ledger, anything an
+auditor will ask about — store the events and let the state follow from
+them. `EventSourced` is the base class for that:
+
+```soli
+# app/models/billing/wallet.sl
+module Billing
+  class Credited < DomainEvent
+    cents: Int
+    reason: String
+  end
+
+  class Spent < DomainEvent
+    cents: Int
+    invoice: String
+  end
+
+  class Wallet < EventSourced
+    balance: Int = 0
+
+    def credit(cents: Int, reason: String)
+      @emit(Credited.new(cents, reason))
+    end
+
+    def spend(cents: Int, invoice: String)
+      throw InsufficientFunds.new("#{@balance} left, #{cents} asked") if cents > @balance
+
+      @emit(Spent.new(cents, invoice))
+    end
+
+    def apply(event)
+      match event.class {
+        "Billing::Credited" => @balance = @balance + event.cents,
+        "Billing::Spent" => @balance = @balance - event.cents,
+        _ => nil
+      }
+    end
+  end
+end
+```
+
+The methods decide; `apply` is the only place the state changes, and it runs
+both when an event is emitted and when the stream is replayed:
+
+```soli
+wallet = Billing::Wallet.new()
+wallet.credit(5000, "top-up")
+wallet.save                         # version 1, balance 5000
+
+wallet = Billing::Wallet.load(wallet.id)
+wallet.spend(3000, "F-001")
+wallet.save                         # version 2, balance 2000
+```
+
+`save` appends the new events to the wallet's stream in one transaction and
+publishes them after the commit, so the subscribers, the outbox and the es
+stream from earlier see them like any other event. The stream itself is
+plain rows:
+
+```text
+1 Billing::Credited {cents => 5000, reason => top-up}
+2 Billing::Spent    {cents => 3000, invoice => F-001}
+```
+
+Each row's key is the stream and the version, which is what makes the
+concurrency check free. Two requests that loaded version 2 both try to
+append version 3; the second one cannot:
+
+```soli
+first = Billing::Wallet.load(wallet.id)
+second = Billing::Wallet.load(wallet.id)
+first.spend(1500, "F-002")
+first.save
+second.spend(1500, "F-003")
+second.save
+# StaleRecord: Billing::Wallet:6cdc…b048 changed since it was loaded at version 2
+```
+
+In a served app that is a 409, and the wallet never goes below zero —
+`Billing::Wallet.load(wallet.id).balance` is 500.
+
 ## Also in the box
 
 A few building blocks the billing example did not need:
@@ -428,6 +513,6 @@ Controllers can join their context as well: `module Billing` around
 
 The reference: [value objects](/docs/language/value-objects),
 [value fields and invariants](/docs/database/validations#value-fields-and-invariants),
-[domain events, after-commit and locking](/docs/database/domain-events),
+[domain events, after-commit, locking and event sourcing](/docs/database/domain-events),
 [bounded contexts](/docs/language/modules#bounded-contexts) and
 [error classes](/docs/language/error-handling#error-classes).

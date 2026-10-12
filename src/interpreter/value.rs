@@ -1426,6 +1426,10 @@ pub struct Function {
     /// Int/Float/Bool end to end (see `crate::native`). Tried first on each
     /// call; a declined call runs the body as usual.
     pub kernel: Option<crate::native::KernelRef>,
+    /// A `static def` whose body reads `this`: reading it off a class binds
+    /// `this` to that class. The others skip the binding, which costs an
+    /// environment and a function per access.
+    pub binds_this: bool,
 }
 
 impl Default for Function {
@@ -1442,6 +1446,7 @@ impl Default for Function {
             return_type: None,
             cached_env: RefCell::new(None),
             jit_cache: RefCell::new(None),
+            binds_this: false,
             kernel: None,
         }
     }
@@ -1465,6 +1470,7 @@ impl Function {
             return_type: decl.return_type.clone(),
             cached_env: RefCell::new(None),
             jit_cache: RefCell::new(None),
+            binds_this: false,
             kernel: None,
         }
     }
@@ -1486,6 +1492,7 @@ impl Function {
             return_type: decl.return_type.clone(),
             cached_env: RefCell::new(None),
             jit_cache: RefCell::new(None),
+            binds_this: false,
             kernel: None,
         }
     }
@@ -1684,6 +1691,9 @@ pub struct Class {
     /// Memoized [`Class::is_value_object`]. Same contract as
     /// `model_subclass_memo`: always `Cell::new(None)` outside this module.
     pub value_object_memo: Cell<Option<bool>>,
+    /// Memo for [`Class::inherits_field_defaults`]: always `Cell::new(None)`
+    /// outside this module.
+    pub field_defaults_memo: Cell<Option<bool>>,
     /// The instance fields this class declares (`cents: Int`), in order. A
     /// value object's implicit constructor binds positional arguments to
     /// them, and `to_h` lists them in this order. Inherited ones live on the
@@ -1792,6 +1802,7 @@ impl Default for Class {
             vm_static_methods: Rc::new(RefCell::new(HashMap::default())),
             model_subclass_memo: Cell::new(None),
             value_object_memo: Cell::new(None),
+            field_defaults_memo: Cell::new(None),
             declared_fields: Rc::new(RefCell::new(Vec::new())),
             is_module: false,
             included_modules: Rc::new(RefCell::new(Vec::new())),
@@ -1841,6 +1852,7 @@ impl Class {
             vm_static_methods: Rc::new(RefCell::new(HashMap::default())),
             model_subclass_memo: Cell::new(None),
             value_object_memo: Cell::new(None),
+            field_defaults_memo: Cell::new(None),
             declared_fields: Rc::new(RefCell::new(Vec::new())),
             is_module: false,
             included_modules: Rc::new(RefCell::new(Vec::new())),
@@ -2178,6 +2190,29 @@ impl Class {
                 .is_some_and(|superclass| superclass.is_model_subclass())
         };
         self.model_subclass_memo.set(Some(result));
+        result
+    }
+
+    /// Whether this class or one of its ancestors declares field defaults a
+    /// VM constructor does not set on its own: a defaults-only compiled
+    /// `init`, or a literal default on a class the tree-walker defined (see
+    /// `Vm::apply_field_defaults`).
+    pub fn inherits_field_defaults(&self) -> bool {
+        if let Some(cached) = self.field_defaults_memo.get() {
+            return cached;
+        }
+        let own = self
+            .vm_methods
+            .borrow()
+            .get("init")
+            .is_some_and(|init| init.proto.defaults_only)
+            || self.fields.values().any(Option::is_some);
+        let result = own
+            || self
+                .superclass
+                .as_ref()
+                .is_some_and(|superclass| superclass.inherits_field_defaults());
+        self.field_defaults_memo.set(Some(result));
         result
     }
 

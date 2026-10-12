@@ -3260,36 +3260,9 @@ impl Vm {
                     self.stack.push(Value::Null);
                 }
                 Op::CallSuperInit(argc) => {
-                    let argc = argc as usize;
                     let span = self.current_span();
-                    let receiver_idx = self.stack.len() - 1 - argc;
                     let superclass = self.frame_superclass(span)?;
-                    // Compiled superclass constructor — `this` is already in
-                    // the callee slot; "init" returns `this`.
-                    if let Some((init, defining_class)) =
-                        superclass.find_vm_method_with_class("init")
-                    {
-                        self.call_closure_in_class(init, argc, span, Some(defining_class))?;
-                    } else if let Some(ctor) = superclass.find_constructor() {
-                        // Tree-walking superclass constructor: JIT-compile,
-                        // run to completion, evaluate to `this`.
-                        let this_val = self.stack[receiver_idx].clone();
-                        self.run_jit_method_to_completion(&ctor, argc, span)?;
-                        self.push(this_val);
-                    } else if let Some(init) =
-                        superclass.find_native_method(crate::interpreter::value::NATIVE_CONSTRUCTOR)
-                    {
-                        // A native superclass constructor — `super(message)`
-                        // in an `Error` subclass. It takes `this` first, then
-                        // the arguments; the expression evaluates to `this`.
-                        let call_args: Vec<Value> = self.stack[receiver_idx..].to_vec();
-                        self.stack.truncate(receiver_idx + 1);
-                        (init.func)(&call_args).map_err(|e| RuntimeError::new(e, span))?;
-                    } else {
-                        // No superclass constructor: drop args, evaluate to
-                        // `this` (matching tree-walker behavior).
-                        self.stack.truncate(receiver_idx + 1);
-                    }
+                    self.call_init_of(&superclass, argc as usize, span)?;
                 }
                 Op::CallSuperMethod(name_idx, argc) => {
                     let argc = argc as usize;

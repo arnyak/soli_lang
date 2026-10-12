@@ -677,6 +677,8 @@ impl Interpreter {
         for method_decl in &decl.methods {
             let func = Function::from_method(method_decl, method_env.clone(), source_path.clone());
             if method_decl.is_static {
+                let mut func = func;
+                func.binds_this = !decl.is_module && reads_this(&method_decl.body);
                 static_methods.insert(method_decl.name.clone(), Rc::new(func));
             } else {
                 match method_decl.visibility {
@@ -736,6 +738,7 @@ impl Interpreter {
                 return_type: None,
                 cached_env: RefCell::new(None),
                 jit_cache: RefCell::new(None),
+                binds_this: false,
                 kernel: None,
             })
         });
@@ -1224,4 +1227,12 @@ impl Drop for NamespaceGuard {
             ns.borrow_mut().pop();
         });
     }
+}
+
+/// Whether a method body reads `this` (or `@field`, which parses to it).
+/// Asked once per `static def` when its class is defined: the serialized
+/// AST names the `This` node — a string literal spelling it errs toward
+/// binding, which is harmless.
+fn reads_this(body: &[crate::ast::Stmt]) -> bool {
+    serde_json::to_string(body).map_or(true, |json| json.contains("\"This\""))
 }

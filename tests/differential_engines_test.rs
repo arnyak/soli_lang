@@ -1635,6 +1635,77 @@ end"##,
         "contains_predicate",
         "print(\"soli lang\".contains?(\"lang\"))\nprint(\"soli\".contains?(\"x\"))\nprint([1, 2, 3].contains?(2))\nprint([1, 2].contains?(5))",
     ),
+    (
+        // A subclass keeps its superclass's field defaults, with a `new` that
+        // does not call `super` too, and with field defaults and no `new` its
+        // superclass's constructor. On the VM the defaults-only `init` hid
+        // that constructor ("expected 0, got 1") and the superclass's fields
+        // stayed unset.
+        "subclass_field_defaults_keep_the_superclass",
+        r##"class Base
+  x: Int = 5
+  list: Array = []
+end
+class Child < Base
+  y: Int = 1
+end
+c = new Child()
+c.list.push(1)
+print(c.x, c.list, c.y, new Child().list)
+class Named
+  name: Any = nil
+  new(name)
+    @name = name
+  end
+end
+class Tagged < Named
+  tag: String = "t"
+end
+t = new Tagged("a")
+print(t.name, t.tag)
+class Deeper < Tagged
+  depth: Int = 2
+end
+d = new Deeper("b")
+print(d.name, d.tag, d.depth)
+class Own < Base
+  a: Any = nil
+  new(a)
+    @a = a
+  end
+end
+o = new Own(3)
+print(o.x, o.list, o.a)"##,
+    ),
+    (
+        // `this` in a `static def` is the class it was called on, a
+        // subclass's too. The tree-walker raised "'this' outside of class".
+        "this_in_a_static_method",
+        r##"class Base
+  def hello
+    "hi"
+  end
+  static def build
+    this.new()
+  end
+  static def twice(n)
+    this.helper(n) * 2
+  end
+  static def helper(n)
+    n + 1
+  end
+end
+class Sub < Base
+end
+print(Base.build().hello, Sub.build().class, Sub.twice(2))
+print(Sub.build.class, Base.build.hello)
+module Util
+  def shout(s)
+    s.upcase
+  end
+end
+print(Util.shout("a"))"##,
+    ),
 ];
 /// Cases that currently diverge because of an unfixed VM bug. Keep this list in
 /// sync with reality: when a fix lands, the corresponding case starts matching

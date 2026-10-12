@@ -356,16 +356,23 @@ describe("this in inherited code") do
     assert_eq(new NameMiddle().get_name, "default")
   end
 
-  test("this in a static method raises") do
+  test("this in a static method is the class it was called on") do
     class StaticThis
-      static def bad
+      static def build
+        this.new()
+      end
+
+      static def itself
         this
       end
     end
 
-    assert_raises("'this' outside of class") do
-      StaticThis.bad
+    class StaticThisChild < StaticThis
     end
+
+    assert_eq(StaticThis.build.class, "StaticThis")
+    assert_eq(StaticThisChild.build.class, "StaticThisChild")
+    assert_eq(StaticThisChild.itself(), StaticThisChild)
   end
 end
 

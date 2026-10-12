@@ -184,7 +184,11 @@ pub(super) fn register(native_static_methods: &mut HashMap<String, Rc<NativeFunc
                 instance.borrow_mut().set("lock_version", Value::Int(0));
             }
 
-            match exec_insert(&collection, chosen_key.as_deref(), data_value) {
+            let inserted = match chosen_key.as_deref() {
+                Some(key) => super::crud::exec_insert_new(&collection, key, data_value),
+                None => exec_insert(&collection, None, data_value),
+            };
+            match inserted {
                 Ok(id) => {
                     let mut inst_mut = instance.borrow_mut();
                     if let serde_json::Value::Object(ref id_map) = id {

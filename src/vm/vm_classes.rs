@@ -826,14 +826,23 @@ impl Vm {
         }
         // A zero-parameter static method read bare (`Assistant.history_messages`)
         // is called, as the tree-walker's member auto-invoke does for methods.
-        if let Value::Class(_) = object {
-            let zero_arg_static = match &val {
-                Value::VmClosure(closure) => closure.proto.param_names.is_empty(),
-                Value::Function(func) => func.is_method && func.params.is_empty(),
-                _ => false,
-            };
-            if zero_arg_static {
-                return self.invoke_callable(val, &[], span);
+        // The class is its `this`, as in a call with parentheses.
+        if let Value::Class(class) = object {
+            match &val {
+                Value::VmClosure(closure) if closure.proto.param_names.is_empty() => {
+                    let closure = closure.clone();
+                    self.push(object.clone());
+                    return self.run_to_completion(|vm| {
+                        vm.call_closure_in_class(closure, 0, span, Some(class.clone()))
+                    });
+                }
+                Value::Function(func) if func.is_method && func.params.is_empty() => {
+                    if func.binds_this {
+                        return self.call_method_bound_args(func, object.clone(), &[], span);
+                    }
+                    return self.invoke_callable(val, &[], span);
+                }
+                _ => {}
             }
         }
         let invoke = match &val {

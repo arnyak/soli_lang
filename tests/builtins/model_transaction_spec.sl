@@ -184,7 +184,6 @@ describe("Model.transaction") do
 
   describe("on a collection that does not exist yet") do
     test("a create inside the block creates the collection like a plain create") do
-      pending("bug: a create in a transaction on a missing collection fails: CollectionNotFound")
       record = TxFreshAccount.transaction do
         TxFreshAccount.create({"name": "first"})
       end

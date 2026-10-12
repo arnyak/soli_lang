@@ -14,6 +14,18 @@
 
 * **orm:** **Versioned domain events.** `static version: Int = 2` on a `DomainEvent`; stream records carry `"version"`. `EventStream.consume` passes an older record through the class's `static def upcast(data, from_version)`, and stops with an error, before committing, on an older record without `upcast` or one from a newer version than the class.
 
+* **orm:** **Event-sourced aggregates: `class Account < EventSourced`.** State changes only in `apply(event)`; `emit(event)` applies a `DomainEvent` and keeps it pending, `save` appends the pending events to the aggregate's stream (`"Account:<id>"`, a UUID `id` when none is set) in one transaction and publishes them after the commit, and `Account.load(id)` replays the stream in order through `apply`, upcasting older event versions. The events live in `soli_event_store_records`, keyed by stream and version, so a second writer that loaded the same version gets `StaleRecord` (409) instead of appending, on SoliDB and the SQL adapters alike.
+
+### Fixed
+
+* **orm:** **`Model.create(data, {"key": k})` refuses a taken key on the SQL adapters.** The docs promised it; Postgres, MySQL, SQLite, D1 and Hyperdrive replaced the existing row instead (their insert is an upsert, which the job store and the importers still use). The create now comes back with `_errors` `[{"field": "_key", "message": "has already been taken"}]`, as on SoliDB.
+
+* **orm:** **The first `create` inside `Model.transaction` on a new SoliDB collection works.** It failed with `CollectionNotFound`, the transaction endpoint not creating collections; the collection is now created (outside the transaction, as collections are) and the write retried.
+
+* **language:** **`this` in a `static def` is the class it was called on, on both engines.** The tree-walker (scripts with models, model files) raised "'this' outside of class", and the VM gave a tree-walker class's static method — a model's, in a served app — the function itself; `Sub.build` with `static def build; this.new(); end` on the parent now builds a `Sub` everywhere. Only a static method whose body reads `this` is bound, so static calls keep their speed.
+
+* **language:** **VM: a subclass keeps its superclass's field defaults and constructor.** With field defaults of its own and no `new`, `new Child(5)` failed on the VM with "expected 0, got 1" (the defaults-only `init` hid the superclass's constructor), and the superclass's defaults stayed unset — with a `new` that does not call `super` too. The VM now sets every class's defaults, the farthest first, then runs the nearest real constructor, as the tree-walker does. Instantiation speed is unchanged.
+
 ## [2.23.0] - 2026-10-12
 
 ### Added

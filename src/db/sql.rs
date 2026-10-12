@@ -240,6 +240,20 @@ pub fn insert(
     )
 }
 
+/// `insert` refusing a taken key (see `postgres::insert_new`).
+pub fn insert_new(
+    table: &str,
+    key: &str,
+    document: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    route_sql!(
+        super::postgres::insert_new(table, key, document),
+        super::mysql::insert_new(table, key, document),
+        super::sqlite::insert_new(table, key, document),
+        super::d1::insert_new(table, key, document)
+    )
+}
+
 pub fn get(table: &str, key: &str) -> Result<Option<serde_json::Value>, String> {
     route_sql!(
         super::postgres::get(table, key),

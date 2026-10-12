@@ -491,6 +491,31 @@ pub fn replace_if_version(
     Ok(!rows.rows.is_empty())
 }
 
+/// `insert` that refuses a key already taken instead of replacing that row
+/// — what `Model.create(data, {"key": k})` promises.
+pub fn insert_new(
+    table: &str,
+    key: &str,
+    mut document: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if let Some(obj) = document.as_object_mut() {
+        obj.insert("_key".to_string(), serde_json::json!(key));
+    }
+    super::ensured::write_with_table(table, false, ensure_table, |_| {
+        let table_q = Dialect::Sqlite.quote_ident(table)?;
+        let sql = format!("INSERT INTO {table_q} (_key, doc) VALUES (?, json(?)) RETURNING doc");
+        let rows = exec(
+            "insert",
+            &sql,
+            &[
+                SqlBind::Text(key.to_string()),
+                SqlBind::Text(document.to_string()),
+            ],
+        )?;
+        one_doc("insert", rows)?.ok_or_else(|| "d1 insert: row missing after write".to_string())
+    })
+}
+
 /// One `INSERT … ON CONFLICT … RETURNING doc`: an insert, a replace, or (with
 /// `merge`) an RFC 7396 patch via `json_patch`, as in the SQLite adapter.
 fn upsert(

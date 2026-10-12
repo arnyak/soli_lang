@@ -255,6 +255,9 @@ print(MathUtils.cube(3.0))    # 27.0</code></pre>
                 <p class="text-gray-400 mt-3">
                     <code class="text-orange-400">fn self.foo</code> works the same way (<code class="text-orange-400">def</code> and <code class="text-orange-400">fn</code> are interchangeable). Combining both — <code class="text-orange-400">static def self.foo</code> — is allowed and stays static.
                 </p>
+                <p class="text-gray-400 mt-3">
+                    Inside a static method, <code class="text-orange-400">this</code> is the class it was called on &mdash; a subclass when called on one, so a factory written once builds the right class: <code class="text-orange-400">static def build; this.new(); end</code> makes <code class="text-orange-400">Sub.build</code> a <code class="text-orange-400">Sub</code>.
+                </p>
             </div>
         </section>
 

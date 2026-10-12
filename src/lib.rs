@@ -162,6 +162,7 @@ pub(crate) fn run_migration_source(
     let program = parser::Parser::new(tokens).parse()?;
     let mut interpreter = interpreter::Interpreter::new_for_migrations();
     interpreter::builtins::mailer::ensure_prelude(&mut interpreter);
+    crate::interpreter::events::ensure_prelude(&mut interpreter);
     // Models load before the migration body, and without type-checking: a model
     // class is application code the migration merely borrows, and `soli check`
     // is where it gets checked.
@@ -224,6 +225,7 @@ pub fn parse_resolve_check(
 fn script_interpreter() -> interpreter::Interpreter {
     let mut interpreter = interpreter::Interpreter::new();
     interpreter::builtins::mailer::ensure_prelude(&mut interpreter);
+    crate::interpreter::events::ensure_prelude(&mut interpreter);
     interpreter
 }
 
@@ -762,6 +764,7 @@ fn run_with_path_and_coverage_inner(
         interpreter.set_coverage_tracker(tracker.clone());
     }
     interpreter::builtins::mailer::ensure_prelude(&mut interpreter);
+    crate::interpreter::events::ensure_prelude(&mut interpreter);
 
     run_preamble_files(&mut interpreter, preamble_files, type_check)?;
 
@@ -1438,6 +1441,7 @@ fn rebind_closure(
                 return_type: func.return_type.clone(),
                 cached_env: std::cell::RefCell::new(None),
                 jit_cache: std::cell::RefCell::new(None),
+                binds_this: false,
                 kernel: None,
             };
             new_func.closure = env.clone();

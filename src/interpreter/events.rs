@@ -521,17 +521,25 @@ fn event_from_record(record: &serde_json::Value) -> Result<Option<Value>, String
     ) else {
         return Ok(None);
     };
+    let data = crate::interpreter::value_json::json_to_value_or_null(data.clone());
+    let written = envelope
+        .get("version")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1);
+    rebuild_event(class_name, data, written)
+}
+
+/// The event `class_name` from its stored fields, written by version
+/// `written` of the class: upcast when older, an error when newer or when
+/// an older one has no `upcast`. `None` when this application does not
+/// declare that event class.
+fn rebuild_event(class_name: &str, mut data: Value, written: i64) -> Result<Option<Value>, String> {
     let Some(class) = crate::interpreter::domain::registered_class(class_name) else {
         return Ok(None);
     };
     if !class_is(&class, DOMAIN_EVENT) {
         return Ok(None);
     }
-    let mut data = crate::interpreter::value_json::json_to_value_or_null(data.clone());
-    let written = envelope
-        .get("version")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(1);
     let current = event_version(&class);
     if written > current {
         return Err(format!(
@@ -561,7 +569,6 @@ fn event_version(class: &Class) -> i64 {
 }
 
 /// Call a tree-walker function with positional arguments.
-#[cfg_attr(not(feature = "es"), allow(dead_code))]
 fn call_function(func: &Function, args: Vec<Value>) -> Result<Value, RuntimeError> {
     let mut env = Environment::with_enclosing(func.closure.clone());
     for (param, arg) in func.params.iter().zip(args) {
@@ -575,6 +582,158 @@ fn call_function(func: &Function, args: Vec<Value>) -> Result<Value, RuntimeErro
         }),
         ControlFlow::Return(v) | ControlFlow::Normal(v) => Ok(v),
         _ => Ok(Value::Null),
+    }
+}
+
+/// Event-sourced aggregates, in Soli: the state of an `EventSourced`
+/// subclass is what its `apply(event)` makes of the events it emitted,
+/// replayed from an append-only store. Each event is stored under the key
+/// `<stream>.<version>`, so two writers appending the same version collide
+/// on the key — optimistic concurrency, answered with `StaleRecord`.
+pub const EVENT_SOURCED_PRELUDE: &str = r##"
+class SoliEventStoreRecord < Model
+end
+
+class EventSourced
+  id: Any = nil
+  version: Int = 0
+  pending_events: Array = []
+
+  # `Account.load(id)`: the aggregate rebuilt from its stream.
+  static def load(id)
+    this.new().__load(id)
+  end
+
+  def __load(id)
+    @id = id
+    @version = 0
+    @pending_events = []
+    @__replay
+    self
+  end
+
+  def apply(event)
+    throw "#{self.class} must define apply(event) to change its state from an event"
+  end
+
+  def emit(event)
+    @apply(event)
+    @pending_events = (@pending_events ?? []) + [event]
+    event
+  end
+
+  def save
+    pending = @pending_events ?? []
+    return true if pending.length == 0
+
+    @id = uuid_v4() if @id.nil?
+    loaded_version = @version
+    try
+      SoliEventStoreRecord.transaction do
+        pending.each do |event|
+          @version = @version + 1
+          record = SoliEventStoreRecord.create({
+            "stream": @__stream,
+            "version": @version,
+            "event_type": event.class,
+            "event_version": __event_version(event),
+            "data": event.to_h
+          }, {"key": @__event_key})
+          @__refuse(record._errors, loaded_version) if record._errors
+          publish(event)
+        end
+      end
+    catch StaleRecord error
+      @version = loaded_version
+      throw error
+    catch error
+      @version = loaded_version
+      # SoliDB reports a key taken by a concurrent writer at commit.
+      throw @__stale(loaded_version) if "#{error}".includes?("already exists")
+
+      throw error
+    end
+    @pending_events = []
+    true
+  end
+
+  def __event_key -> String
+    "#{@__stream}.#{@version}".replace("::", ".").replace(":", ".")
+  end
+
+  def __refuse(errors, loaded_version)
+    throw @__stale(loaded_version) if errors.any? { |e| e["message"] == "has already been taken" }
+
+    throw "#{@__stream}: event #{@version} could not be stored: #{errors}"
+  end
+
+  def __stale(loaded_version)
+    StaleRecord.new("#{@__stream} changed since it was loaded at version #{loaded_version}")
+  end
+
+  def __stream -> String
+    "#{self.class}:#{@id}"
+  end
+
+  def __replay
+    records = SoliEventStoreRecord.where({"stream": @__stream}).order("version", "asc").all
+    records.each do |record|
+      event = __rebuild_event(record.event_type, record.data, record.event_version)
+      @apply(event) unless event.nil?
+      @version = record.version
+    end
+  end
+end
+"##;
+
+/// Define `EventSourced` (and its store model) in `interpreter` if not
+/// already present.
+pub fn ensure_prelude(interpreter: &mut Interpreter) {
+    if interpreter
+        .global_env()
+        .borrow()
+        .get("EventSourced")
+        .is_some()
+    {
+        return;
+    }
+    let program = crate::lexer::Scanner::new(EVENT_SOURCED_PRELUDE)
+        .scan_tokens()
+        .map_err(|e| e.to_string())
+        .and_then(|tokens| {
+            crate::parser::Parser::new(tokens)
+                .parse()
+                .map_err(|e| e.to_string())
+        });
+    match program {
+        Ok(program) => {
+            if let Err(e) = interpreter.interpret(&program) {
+                eprintln!("event-sourcing prelude: {e}");
+            }
+        }
+        Err(e) => eprintln!("event-sourcing prelude: {e}"),
+    }
+}
+
+/// `__rebuild_event(type, data, version)`: a stored event back as its
+/// `DomainEvent` (upcast when older); `nil` for a class this application
+/// does not declare.
+pub fn rebuild_event_native(args: &[Value]) -> Result<Value, String> {
+    let (Some(Value::String(class_name)), Some(data)) = (args.first(), args.get(1)) else {
+        return Err("__rebuild_event(type, data, version)".to_string());
+    };
+    let written = match args.get(2) {
+        Some(Value::Int(v)) => *v,
+        _ => 1,
+    };
+    Ok(rebuild_event(class_name, data.clone(), written)?.unwrap_or(Value::Null))
+}
+
+/// `__event_version(event)`: the `static version` of an event's class.
+pub fn event_version_native(args: &[Value]) -> Result<Value, String> {
+    match args.first().and_then(event_class) {
+        Some(class) => Ok(Value::Int(event_version(&class))),
+        None => Err("__event_version expects a DomainEvent".to_string()),
     }
 }
 

@@ -708,6 +708,30 @@ pub fn insert(
             table,
             key,
             attempt.expect("document consumed only by the last attempt"),
+            false,
+        )
+    })
+}
+
+/// `insert` that refuses a key already taken instead of replacing that row
+/// — what `Model.create(data, {"key": k})` promises.
+pub fn insert_new(
+    table: &str,
+    key: &str,
+    document: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut document = Some(document);
+    super::ensured::write_with_table(table, has_active_tx(), ensure_table, |may_retry| {
+        let attempt = if may_retry {
+            document.clone()
+        } else {
+            document.take()
+        };
+        insert_into_existing(
+            table,
+            Some(key),
+            attempt.expect("document consumed only by the last attempt"),
+            true,
         )
     })
 }
@@ -717,16 +741,19 @@ fn insert_into_existing(
     table: &str,
     key: Option<&str>,
     mut document: serde_json::Value,
+    strict: bool,
 ) -> Result<serde_json::Value, String> {
     let key = resolve_key(key, &mut document)?;
     if let Some(obj) = document.as_object_mut() {
         obj.insert("_key".to_string(), serde_json::json!(key));
     }
     let table_q = Dialect::Sqlite.quote_ident(table)?;
-    let sql = format!(
-        "INSERT INTO {table_q} (_key, doc) VALUES (?, json(?)) \
-         ON CONFLICT(_key) DO UPDATE SET doc = excluded.doc"
-    );
+    let conflict = if strict {
+        ""
+    } else {
+        " ON CONFLICT(_key) DO UPDATE SET doc = excluded.doc"
+    };
+    let sql = format!("INSERT INTO {table_q} (_key, doc) VALUES (?, json(?)){conflict}");
     let doc_str = document.to_string();
     let _trace = super::trace::start_plain(&sql);
     with_conn(|conn| {

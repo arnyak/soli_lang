@@ -366,6 +366,33 @@ pub fn insert(
     })
 }
 
+/// `insert` that refuses a key already taken instead of replacing that row
+/// — what `Model.create(data, {"key": k})` promises.
+pub fn insert_new(
+    table: &str,
+    key: &str,
+    mut document: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if let Some(obj) = document.as_object_mut() {
+        obj.insert("_key".to_string(), serde_json::json!(key));
+    }
+    super::ensured::write_with_table(table, has_active_tx(), ensure_table, |_| {
+        let table_q = PG.quote_ident(table)?;
+        let sql = format!("INSERT INTO {table_q} (_key, doc) VALUES ($1, $2::jsonb) RETURNING doc");
+        let rows = exec(
+            "insert",
+            &sql,
+            &[
+                SqlBind::Text(key.to_string()),
+                SqlBind::Json(document.clone()),
+            ],
+        )?;
+        first_cell(&rows)
+            .cloned()
+            .ok_or_else(|| "postgres insert: row missing after write".to_string())
+    })
+}
+
 pub fn update(
     table: &str,
     key: &str,

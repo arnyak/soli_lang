@@ -17,7 +17,7 @@ impl Vm {
     /// Run whatever `start` pushes (a frame, usually) until it returns, and
     /// give back its value. The caller has already put the callee slot on
     /// the stack; it is consumed.
-    fn run_to_completion(
+    pub(crate) fn run_to_completion(
         &mut self,
         start: impl FnOnce(&mut Self) -> Result<(), RuntimeError>,
     ) -> Result<Value, RuntimeError> {

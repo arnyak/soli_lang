@@ -1102,6 +1102,66 @@ fails stops the run before its record is committed. A record whose event
 class this application does not declare is skipped. It returns how many
 events it published.
 
+## Event Sourcing
+
+A model stores the current state; an event-sourced aggregate stores what
+happened and rebuilds its state from that. Subclass `EventSourced`, change
+state only in `apply(event)`, and record each change with `emit`:
+
+```soli
+class AccountOpened < DomainEvent
+  owner: String
+end
+
+class Deposited < DomainEvent
+  cents: Int
+end
+
+class Account < EventSourced
+  owner: String
+  balance: Int = 0
+
+  def open(owner: String)
+    @emit(AccountOpened.new(owner))
+  end
+
+  def withdraw(cents: Int)
+    throw InsufficientFunds.new("balance #{@balance}") if cents > @balance
+
+    @emit(Deposited.new(-cents))
+  end
+
+  def apply(event)
+    match event.class {
+      "AccountOpened" => @owner = event.owner,
+      "Deposited" => @balance = @balance + event.cents,
+      _ => nil
+    }
+  end
+end
+
+account = Account.new()
+account.open("Acme")
+account.save                         # appends AccountOpened; account.id is set
+again = Account.load(account.id)   # replays the stream: owner "Acme", version 1
+```
+
+`emit` applies the event at once and keeps it pending; `save` appends the
+pending events to the aggregate's stream (`"Account:<id>"`, with a fresh
+UUID as `id` when none was set) in one transaction and publishes each one
+after the commit, so subscribers, `stream:` options and the outbox see them
+as any other domain event. `Account.load(id)` reads the stream back in order and
+calls `apply` for each event — upcasting old versions first (see
+[Versioning](#domain-events)). `version` is the number of the last event
+applied.
+
+Events live in one collection, `soli_event_store_records`, a row per event
+with `stream`, `version`, `event_type`, `event_version` and `data`. The row
+key is the stream and the version, so two writers that loaded the same
+version cannot both append the next one: the second `save` throws
+`StaleRecord` (409 in a served app), its events not stored. Load the
+aggregate again and retry.
+
 ## Aggregate Roots
 
 An aggregate is a root and the entities that only exist through it — an

@@ -708,3 +708,234 @@ print(stale.save, stale.stale?)
     );
     assert_eq!(lines, vec!["1 1", "false true"]);
 }
+
+#[test]
+fn an_event_sourced_aggregate_replays_its_stream_and_refuses_a_stale_append() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines = sqlite_script(
+        dir.path(),
+        r#"class AccountOpened < DomainEvent
+  owner: String
+end
+
+class Deposited < DomainEvent
+  cents: Int
+end
+
+class InsufficientFunds < DomainError
+end
+
+class Account < EventSourced
+  owner: String
+  balance: Int = 0
+
+  def open(owner: String)
+    @emit(AccountOpened.new(owner))
+  end
+
+  def deposit(cents: Int)
+    @emit(Deposited.new(cents))
+  end
+
+  def withdraw(cents: Int)
+    throw InsufficientFunds.new("balance #{@balance}, asked #{cents}") if cents > @balance
+
+    @emit(Deposited.new(-cents))
+  end
+
+  def apply(event)
+    match event.class {
+      "AccountOpened" => @owner = event.owner,
+      "Deposited" => @balance = @balance + event.cents,
+      _ => nil
+    }
+  end
+end
+
+seen = []
+subscribe(Deposited) do |event|
+  seen.push(event.cents)
+end
+
+account = Account.new()
+account.open("Acme")
+account.deposit(500)
+account.save
+print("saved:", account.id.length > 0, account.version, account.balance, seen)
+
+loaded = Account.load(account.id)
+print("loaded:", loaded.owner, loaded.balance, loaded.version)
+loaded.withdraw(200)
+loaded.save
+print("after withdraw:", Account.load(account.id).balance, Account.load(account.id).version)
+try
+  loaded.withdraw(1000)
+catch InsufficientFunds e
+  print("refused:", e.message)
+end
+
+first = Account.load(account.id)
+second = Account.load(account.id)
+first.deposit(1)
+first.save
+second.deposit(2)
+try
+  second.save
+catch StaleRecord e
+  print("stale:", e.message)
+end
+print("final:", Account.load(account.id).balance, Account.load(account.id).version, seen)
+"#,
+    );
+    let stale = lines[4].clone();
+    assert!(
+        stale.starts_with("stale: Account:")
+            && stale.ends_with("changed since it was loaded at version 3"),
+        "{stale}"
+    );
+    assert_eq!(
+        [&lines[..4], &lines[5..]].concat(),
+        vec![
+            "saved: true 2 500 [500]",
+            "loaded: Acme 500 2",
+            "after withdraw: 300 3",
+            "refused: balance 300, asked 1000",
+            "final: 301 4 [500, -200, 1]",
+        ]
+    );
+}
+
+#[test]
+fn create_with_a_chosen_key_refuses_a_taken_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines = sqlite_script(
+        dir.path(),
+        r#"class Note < Model
+end
+print(Note.create({"body": "a"}, {"key": "n1"})._errors)
+print(Note.create({"body": "b"}, {"key": "n1"})._errors)
+print(Note.find("n1").body, Note.count)
+"#,
+    );
+    assert_eq!(
+        lines,
+        vec![
+            "null",
+            "[{field => _key, message => has already been taken}]",
+            "a 1",
+        ]
+    );
+}
+
+fn wallets_app(root: &Path) {
+    write(
+        root,
+        "config/routes.sl",
+        r#"get("/up", "wallets#up")
+post("/wallets", "wallets#create")
+post("/wallets/:id/credit", "wallets#credit")
+post("/wallets/:id/race", "wallets#race")
+get("/wallets/:id", "wallets#show")
+"#,
+    );
+    write(
+        root,
+        "app/models/credited.sl",
+        "class Credited < DomainEvent\n  cents: Int\nend\n",
+    );
+    write(
+        root,
+        "app/models/wallet.sl",
+        r#"class Wallet < EventSourced
+  balance: Int = 0
+
+  def credit(cents: Int)
+    @emit(Credited.new(cents))
+  end
+
+  def apply(event)
+    @balance = @balance + event.cents
+  end
+end
+"#,
+    );
+    write(
+        root,
+        "app/controllers/wallets_controller.sl",
+        r#"class WalletsController < Controller
+  # GET /up
+  def up(req)
+    "ok"
+  end
+
+  # POST /wallets
+  def create(req)
+    wallet = Wallet.new()
+    wallet.credit(params["cents"])
+    wallet.save
+    render_json({"id": wallet.id, "version": wallet.version}, 201)
+  end
+
+  # POST /wallets/:id/credit
+  def credit(req)
+    wallet = Wallet.load(params["id"])
+    wallet.credit(params["cents"])
+    wallet.save
+    render_json({"balance": wallet.balance, "version": wallet.version})
+  end
+
+  # POST /wallets/:id/race — two copies loaded at one version both append
+  def race(req)
+    first = Wallet.load(params["id"])
+    second = Wallet.load(params["id"])
+    first.credit(1)
+    first.save
+    second.credit(2)
+    second.save
+    render_json({"saved": true})
+  end
+
+  # GET /wallets/:id
+  def show(req)
+    wallet = Wallet.load(params["id"])
+    render_json({"balance": wallet.balance, "version": wallet.version})
+  end
+end
+"#,
+    );
+}
+
+#[test]
+fn a_served_app_loads_and_saves_an_event_sourced_aggregate() {
+    let dir = tempfile::tempdir().unwrap();
+    wallets_app(dir.path());
+    let server = serve(dir.path());
+
+    let (status, body) = call(&server, "POST", "/wallets", Some(r#"{"cents": 100}"#));
+    assert_eq!(status, 201, "{body}");
+    let created: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(created["version"], 1, "{body}");
+    let id = created["id"].as_str().unwrap().to_string();
+
+    let (status, body) = call(
+        &server,
+        "POST",
+        &format!("/wallets/{id}/credit"),
+        Some(r#"{"cents": 50}"#),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+        serde_json::json!({"balance": 150, "version": 2})
+    );
+
+    // The second copy's append is refused: StaleRecord answers 409 and its
+    // event is not stored.
+    let (status, body) = call(&server, "POST", &format!("/wallets/{id}/race"), Some("{}"));
+    assert_eq!(status, 409, "{body}");
+    let (_, body) = call(&server, "GET", &format!("/wallets/{id}"), None);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+        serde_json::json!({"balance": 151, "version": 3})
+    );
+}

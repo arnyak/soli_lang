@@ -1743,6 +1743,7 @@ impl Interpreter {
                 return_type: method.return_type.clone(),
                 cached_env: RefCell::new(None),
                 jit_cache: RefCell::new(None),
+                binds_this: false,
                 kernel: None,
             };
             return Ok(Value::Function(Rc::new(bound_method)));
@@ -1842,9 +1843,30 @@ impl Interpreter {
             }
         }
 
-        // Static method access - search up superclass chain
+        // Static method access - search up superclass chain. `this` in its
+        // body is the class it was called on (`Sub.build` → `Sub`), as on
+        // the VM.
         if let Some(method) = class.find_static_method(name) {
-            return Ok(Value::Function(method));
+            if !method.binds_this {
+                return Ok(Value::Function(method));
+            }
+            let mut bound_env = Environment::with_enclosing(method.closure.clone());
+            bound_env.define("this".to_string(), class_val.clone());
+            return Ok(Value::Function(Rc::new(Function {
+                name: method.name.clone(),
+                params: method.params.clone(),
+                body: method.body.clone(),
+                closure: Rc::new(RefCell::new(bound_env)),
+                is_method: method.is_method,
+                span: method.span,
+                source_path: method.source_path.clone(),
+                defining_superclass: method.defining_superclass.clone(),
+                return_type: method.return_type.clone(),
+                cached_env: RefCell::new(None),
+                jit_cache: RefCell::new(None),
+                binds_this: false,
+                kernel: None,
+            })));
         }
         if let Some(native_method) = class.find_native_static_method(name) {
             if class.is_model_subclass() {
@@ -2241,6 +2263,7 @@ impl Interpreter {
                 return_type: method.return_type.clone(),
                 cached_env: RefCell::new(None),
                 jit_cache: RefCell::new(None),
+                binds_this: false,
                 kernel: None,
             };
             return Ok(Value::Function(Rc::new(bound_method)));
@@ -3014,6 +3037,11 @@ pub fn new_with_attributes(
     let instance = Rc::new(RefCell::new(crate::interpreter::value::Instance::new(
         class.clone(),
     )));
+    // Declared fields with a literal default (`items: Array = []`), the
+    // superclass's first — as `new Klass()` sets them. Without this the
+    // attribute form left them unset on the tree-walker, so reading one
+    // raised, while the VM had them.
+    literal_field_defaults(class, &mut instance.borrow_mut());
     match args.first() {
         None | Some(Value::Null) => {}
         Some(Value::Hash(pairs)) => {
@@ -3036,6 +3064,59 @@ pub fn new_with_attributes(
         }
     }
     Ok(Value::Instance(instance))
+}
+
+fn literal_field_defaults(
+    class: &crate::interpreter::value::Class,
+    instance: &mut crate::interpreter::value::Instance,
+) {
+    if let Some(superclass) = &class.superclass {
+        literal_field_defaults(superclass, instance);
+    }
+    own_literal_field_defaults(class, instance);
+}
+
+/// `class`'s own literal field defaults, not its ancestors'.
+pub(crate) fn own_literal_field_defaults(
+    class: &crate::interpreter::value::Class,
+    instance: &mut crate::interpreter::value::Instance,
+) {
+    for (name, default) in &class.fields {
+        if let Some(value) = default.as_ref().and_then(literal_value) {
+            instance.set(name.clone(), value);
+        }
+    }
+}
+
+/// The value of a literal expression — numbers, strings, booleans, `nil`,
+/// and arrays and hashes of literals — evaluated without an interpreter.
+fn literal_value(expr: &crate::ast::Expr) -> Option<Value> {
+    use crate::ast::ExprKind;
+    use crate::interpreter::value::{HashKey, HashPairs};
+    Some(match &expr.kind {
+        ExprKind::IntLiteral(n) => Value::Int(*n),
+        ExprKind::FloatLiteral(f) => Value::Float(*f),
+        ExprKind::StringLiteral(s) => Value::String(s.clone().into()),
+        ExprKind::BoolLiteral(b) => Value::Bool(*b),
+        ExprKind::Null => Value::Null,
+        ExprKind::Array(items) => Value::Array(Rc::new(RefCell::new(
+            items
+                .iter()
+                .map(literal_value)
+                .collect::<Option<Vec<_>>>()?,
+        ))),
+        ExprKind::Hash(pairs) => {
+            let mut hash = HashPairs::default();
+            for (key, value) in pairs {
+                hash.insert(
+                    HashKey::from_value(&literal_value(key)?)?,
+                    literal_value(value)?,
+                );
+            }
+            Value::Hash(Rc::new(RefCell::new(hash)))
+        }
+        _ => return None,
+    })
 }
 
 /// Whether `Klass.new(...)` with these arguments is the attribute-hash form

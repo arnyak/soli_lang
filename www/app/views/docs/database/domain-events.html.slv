@@ -99,6 +99,48 @@ end</code></pre>
         </div>
     </div>
 
+    <h2 id="event-sourcing" class="text-2xl font-bold text-white mb-6">Event sourcing</h2>
+    <p class="text-gray-400 mb-4">
+        A model stores the current state; an event-sourced aggregate stores what happened and rebuilds its state from that. Subclass <code>EventSourced</code>, change state only in <code>apply(event)</code>, and record each change with <code>emit</code>.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">class Account &lt; EventSourced
+  owner: String
+  balance: Int = 0
+
+  def open(owner: String)
+    @emit(AccountOpened.new(owner))
+  end
+
+  def withdraw(cents: Int)
+    throw InsufficientFunds.new("balance #{@balance}") if cents &gt; @balance
+
+    @emit(Deposited.new(-cents))
+  end
+
+  def apply(event)
+    match event.class {
+      "AccountOpened" =&gt; @owner = event.owner,
+      "Deposited" =&gt; @balance = @balance + event.cents,
+      _ =&gt; nil
+    }
+  end
+end
+
+account = Account.new()
+account.open("Acme")
+account.save                             # appends AccountOpened; account.id is set
+again = Account.load(account.id)   # replays the stream: owner "Acme", version 1</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-4">
+        <code>emit</code> applies the event at once and keeps it pending; <code>save</code> appends the pending events to the aggregate&rsquo;s stream (<code>"Account:&lt;id&gt;"</code>, with a fresh UUID as <code>id</code> when none was set) in one transaction and publishes each one after the commit, so subscribers, <code>stream:</code> options and the outbox see them as any other domain event. <code>Account.load(id)</code> reads the stream back in order and calls <code>apply</code> for each event, upcasting old versions first. <code>version</code> is the number of the last event applied.
+    </p>
+    <p class="text-gray-400 mb-12">
+        Events live in one collection, <code>soli_event_store_records</code>, a row per event with <code>stream</code>, <code>version</code>, <code>event_type</code>, <code>event_version</code> and <code>data</code>. The row key is the stream and the version, so two writers that loaded the same version cannot both append the next one: the second <code>save</code> throws <code>StaleRecord</code> (409 in a served app), its events not stored. Load the aggregate again and retry.
+    </p>
+
     <h2 id="after-commit" class="text-2xl font-bold text-white mb-6">After the commit</h2>
     <p class="text-gray-400 mb-4">
         <code>after_commit { … }</code> (or <code>after_commit do … end</code>) runs a block once the data is durable: after the outermost commit inside a transaction, never if it rolls back, at once outside one. It is the place for side effects that must not happen for data that was never stored.

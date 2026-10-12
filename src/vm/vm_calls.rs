@@ -1695,6 +1695,19 @@ impl Vm {
         // callee slot → it becomes slot 0 (`this`) under the method calling
         // convention.
         if let Some((ctor, defining_class)) = class.find_vm_method_with_class("init") {
+            if ctor.proto.defaults_only && defining_class.superclass.is_some() {
+                return self.construct_past_defaults(class, argc, span);
+            }
+            // A constructor sets its own class's defaults; the ancestors'
+            // are set here, whether it calls `super` or not.
+            if let (Some(superclass), Value::Instance(instance)) =
+                (&defining_class.superclass, &instance_val)
+            {
+                if superclass.inherits_field_defaults() {
+                    let instance = instance.clone();
+                    self.apply_field_defaults(superclass, &instance, span)?;
+                }
+            }
             self.stack[callee_idx] = instance_val;
             return self.call_closure_in_class(ctor, argc, span, Some(defining_class));
         }
@@ -1743,6 +1756,120 @@ impl Vm {
         // instance.
         self.stack.truncate(callee_idx);
         self.push(instance_val);
+        Ok(())
+    }
+
+    /// Run `class`'s constructor on the instance in the callee slot
+    /// (`[this, args…]`), leaving `this` — or a frame that returns it — in
+    /// its place: `super(...)`, and construction past a `defaults_only` init.
+    pub(crate) fn call_init_of(
+        &mut self,
+        class: &Rc<Class>,
+        argc: usize,
+        span: Span,
+    ) -> Result<(), RuntimeError> {
+        let receiver_idx = self.stack.len() - 1 - argc;
+        // Compiled constructor — `this` is already in the callee slot;
+        // "init" returns `this`.
+        if let Some((init, defining_class)) = class.find_vm_method_with_class("init") {
+            self.call_closure_in_class(init, argc, span, Some(defining_class))?;
+        } else if let Some(ctor) = class.find_constructor() {
+            // Tree-walking constructor: JIT-compile, run to completion,
+            // evaluate to `this`.
+            let this_val = self.stack[receiver_idx].clone();
+            self.run_jit_method_to_completion(&ctor, argc, span)?;
+            self.push(this_val);
+        } else if let Some(init) = class.find_native_method(NATIVE_CONSTRUCTOR) {
+            // A native constructor — `super(message)` in an `Error`
+            // subclass. It takes `this` first, then the arguments; the
+            // expression evaluates to `this`.
+            let call_args: Vec<Value> = self.stack[receiver_idx..].to_vec();
+            self.stack.truncate(receiver_idx + 1);
+            (init.func)(&call_args).map_err(|e| RuntimeError::new(e, span))?;
+        } else {
+            // No constructor: drop args, evaluate to `this` (matching
+            // tree-walker behavior).
+            self.stack.truncate(receiver_idx + 1);
+        }
+        Ok(())
+    }
+
+    /// `new C(args…)` where `C`'s `init` only sets field defaults: the
+    /// defaults of every class up the chain, then the nearest real
+    /// constructor with the arguments — as the tree-walker constructs.
+    /// `init` alone would refuse the arguments and skip the superclasses'
+    /// defaults.
+    fn construct_past_defaults(
+        &mut self,
+        class: &Rc<Class>,
+        argc: usize,
+        span: Span,
+    ) -> Result<(), RuntimeError> {
+        let callee_idx = self.stack.len() - 1 - argc;
+        let instance = Rc::new(RefCell::new(Instance::new(class.clone())));
+        self.apply_field_defaults(class, &instance, span)?;
+        let mut constructor_class = Some(class.clone());
+        while let Some(current) = constructor_class.take() {
+            match current.find_vm_method_with_class("init") {
+                Some((init, defining)) if init.proto.defaults_only => {
+                    constructor_class = defining.superclass.clone();
+                }
+                _ => {
+                    constructor_class = Some(current);
+                    break;
+                }
+            }
+        }
+        self.stack[callee_idx] = Value::Instance(instance.clone());
+        match constructor_class {
+            Some(rest) => {
+                self.run_to_completion(|vm| vm.call_init_of(&rest, argc, span))?;
+            }
+            None => self.stack.truncate(callee_idx),
+        }
+        self.push(Value::Instance(instance));
+        Ok(())
+    }
+
+    /// The field defaults of `class` and its ancestors, the farthest first,
+    /// on `instance`: each class's defaults-only `init`, or the literal
+    /// defaults of a class the tree-walker defined. The tree-walker sets
+    /// them all before any constructor runs, whether or not it calls `super`.
+    pub(crate) fn apply_field_defaults(
+        &mut self,
+        class: &Rc<Class>,
+        instance: &Rc<RefCell<Instance>>,
+        span: Span,
+    ) -> Result<(), RuntimeError> {
+        let mut chain = Vec::new();
+        let mut next = Some(class.clone());
+        while let Some(current) = next {
+            if !current.inherits_field_defaults() {
+                break;
+            }
+            next = current.superclass.clone();
+            chain.push(current);
+        }
+        for current in chain.into_iter().rev() {
+            let init = current
+                .vm_methods
+                .borrow()
+                .get("init")
+                .filter(|init| init.proto.defaults_only)
+                .cloned();
+            match init {
+                Some(init) => {
+                    self.push(Value::Instance(instance.clone()));
+                    self.run_to_completion(|vm| {
+                        vm.call_closure_in_class(init, 0, span, Some(current.clone()))
+                    })?;
+                }
+                None => crate::interpreter::executor::access::member::own_literal_field_defaults(
+                    &current,
+                    &mut instance.borrow_mut(),
+                ),
+            }
+        }
         Ok(())
     }
 
@@ -1937,10 +2064,13 @@ impl Vm {
                 }
             }
             // Statics compile as plain functions; the class value left in
-            // the callee slot is ignored by the bytecode.
-            Value::Class(class) => class
-                .find_vm_static_method(name)
-                .map(|closure| (closure, class.clone())),
+            // the callee slot is ignored by the bytecode — except by a
+            // tree-walker `static def` that reads `this`, compiled as a
+            // method of the class it is called on.
+            Value::Class(class) => match class.find_vm_static_method(name) {
+                Some(closure) => Some((closure, class.clone())),
+                None => self.compile_tree_walking_static(class, name)?,
+            },
             _ => None,
         };
         if let Some((closure, defining_class)) = compiled {
@@ -2104,6 +2234,41 @@ impl Vm {
             .borrow_mut()
             .insert(name.to_string(), closure.clone());
         Ok(Some((closure, defining)))
+    }
+
+    /// A tree-walker `static def` that reads `this`, compiled as a method:
+    /// the class it is called on, in the callee slot, is its `this`. The
+    /// other tree-walker statics keep the plain-function path.
+    fn compile_tree_walking_static(
+        &self,
+        class: &Rc<Class>,
+        name: &str,
+    ) -> Result<Option<MethodWithClass>, RuntimeError> {
+        let mut defining = class.clone();
+        let method = loop {
+            if let Some(method) = defining.static_methods.get(name) {
+                break method.clone();
+            }
+            match defining.superclass.clone() {
+                Some(superclass) => defining = superclass,
+                None => return Ok(None),
+            }
+        };
+        if !method.binds_this {
+            return Ok(None);
+        }
+        let proto = jit_compile_method(&method, self.globals.keys().cloned()).map_err(|e| {
+            RuntimeError::EngineFallback(
+                format!("a method the VM cannot compile ({})", e),
+                self.current_span(),
+            )
+        })?;
+        let closure = Rc::new(VmClosure::new(proto, Vec::new()));
+        defining
+            .vm_static_methods
+            .borrow_mut()
+            .insert(name.to_string(), closure.clone());
+        Ok(Some((closure, class.clone())))
     }
 
     fn call_builtin_method(

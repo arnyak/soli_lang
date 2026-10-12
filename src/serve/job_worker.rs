@@ -52,6 +52,7 @@ pub fn run_worker(folder: &Path, cli_workers: Option<usize>) -> Result<(), Strin
     if jobs_dir.exists() {
         let mut interpreter = Interpreter::new_for_serve();
         mailer::ensure_prelude(&mut interpreter);
+        crate::interpreter::events::ensure_prelude(&mut interpreter);
         load_jobs_in_worker(0, &mut interpreter, &jobs_dir, true);
     }
 

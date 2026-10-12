@@ -117,7 +117,7 @@ impl Compiler {
         // constructor bytecode, so a class without one but with instance
         // field defaults gets a synthetic zero-arg init.
         if let Some(ref ctor) = decl.constructor {
-            self.compile_constructor(ctor, &decl.fields, line)?;
+            self.compile_constructor(ctor, &decl.fields, false, line)?;
         } else if decl
             .fields
             .iter()
@@ -128,7 +128,7 @@ impl Compiler {
                 body: Vec::new(),
                 span: decl.span,
             };
-            self.compile_constructor(&synthetic, &decl.fields, line)?;
+            self.compile_constructor(&synthetic, &decl.fields, true, line)?;
         }
 
         // Compile static block
@@ -333,6 +333,7 @@ impl Compiler {
         &mut self,
         ctor: &ConstructorDecl,
         fields: &[FieldDecl],
+        defaults_only: bool,
         line: usize,
     ) -> CompileResult<()> {
         let _dummy =
@@ -361,7 +362,8 @@ impl Compiler {
         self.end_scope(line);
 
         // Constructor always returns `this`
-        let proto = self.finish_constructor(line);
+        let mut proto = self.finish_constructor(line);
+        proto.defaults_only = defaults_only;
         let fn_idx = self.add_constant(Constant::Function(Arc::new(proto)));
         self.emit(Op::Closure(fn_idx), line);
 

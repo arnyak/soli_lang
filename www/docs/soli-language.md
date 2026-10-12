@@ -2266,6 +2266,22 @@ print(from_area.width);   # ~3.464
 print(from_area.height);  # ~6.928
 ```
 
+Inside a static method, `this` is the class it was called on — a subclass
+when called on one — so a factory written once builds the right class:
+
+```soli
+class Shape
+  static def build
+    this.new()
+  end
+end
+
+class Circle < Shape
+end
+
+Circle.build.class   # "Circle"
+```
+
 ### Mixin modules
 
 `module Name … end` defines a mixin (and a namespace). Instance methods can be mixed into a class with `include` (they become instance methods) or `extend` (they become class methods). Methods on a module are also callable on the module itself (`Greetable.greet` works without an include — like Ruby `extend self`).

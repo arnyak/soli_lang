@@ -1429,6 +1429,7 @@ impl Interpreter {
                 return_type: method.return_type.clone(),
                 cached_env: RefCell::new(None),
                 jit_cache: RefCell::new(None),
+                binds_this: false,
                 kernel: None,
             };
             let result =
@@ -1715,6 +1716,7 @@ impl Interpreter {
             return_type: closure.return_type.clone(),
             cached_env: RefCell::new(None),
             jit_cache: RefCell::new(None),
+            binds_this: false,
             kernel: None,
         };
         self.call_value(Value::Function(Rc::new(bound)), Vec::new(), span)

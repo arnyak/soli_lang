@@ -83,6 +83,7 @@ pub fn boot(folder: &Path) -> Result<(), RuntimeError> {
     // controller metadata, templates), exactly as the server's boot thread.
     let mut boot = Interpreter::new_for_serve();
     crate::interpreter::builtins::mailer::ensure_prelude(&mut boot);
+    crate::interpreter::events::ensure_prelude(&mut boot);
     if crate::platform::fs::exists(&models_dir) {
         load_models(&mut boot, &models_dir)?;
     }
@@ -134,6 +135,7 @@ pub fn boot(folder: &Path) -> Result<(), RuntimeError> {
     );
     crate::interpreter::builtins::template::set_dev_mode(false);
     let mut interpreter = Interpreter::new_for_serve();
+    crate::interpreter::events::ensure_prelude(&mut interpreter);
     app_loader::load_app_in_worker(
         0,
         &mut interpreter,
