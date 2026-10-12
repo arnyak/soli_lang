@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.24.0] - 2026-10-12
+
 ### Added
 
 * **language:** **`private class` in a module.** A class declared `private class Ledger` inside `module Billing` is reachable only from code in `Billing` (unqualified or `Billing::Ledger`); from outside, `Billing::Ledger` and `Billing.Ledger` raise "Billing::Ledger is private to Billing", on both engines — a bounded context's boundary is enforced, not a convention. `soli fmt` keeps the modifier. A `private` section line still only means methods.
