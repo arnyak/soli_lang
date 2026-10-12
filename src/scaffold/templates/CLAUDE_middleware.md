@@ -152,8 +152,10 @@ get("/health", "home#health")      # no auth
 
 middleware("authenticate", -> {
   get("/admin", "admin#index")
-  resources("admin/users")
-  resources("admin/posts")
+  namespace("admin", -> {         # admin/users#index, admin_users_path …
+    resources("users")
+    resources("posts")
+  })
 })
 ```
 
@@ -167,7 +169,9 @@ Combine multiple scoped middleware by nesting:
 ```soli
 middleware("authenticate", -> {
   middleware("require_admin", -> {
-    resources("admin/users")
+    namespace("admin", -> {
+      resources("users")
+    })
   })
 })
 ```

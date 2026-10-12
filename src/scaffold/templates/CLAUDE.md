@@ -172,7 +172,7 @@ the code you are writing — they are properties of the runtime.
 | Model classes are **not resolvable from `.slv` templates** | `Cart.total_of(...)` in a view raises and the page 500s | Compute in the controller, hand the view a plain value |
 | `setenv` was removed (SEC-033) | A spec cannot flip a mode read from the environment | Split the env read from the work — a named method the spec can call directly |
 | `.pluck(field)` returns a QueryBuilder, not an array | It lands in a bind variable and the query fails | `.all.map { \|row\| row.field }` |
-| An invalid SDBQL query **returns an error string instead of raising** | A typo silently yields garbage | Prefer proven forms: `CONTAINS(LOWER(doc.x), @needle)` |
+| An invalid SDBQL query raises from `.all` / `.count`, but **`.first` answers `nil` and an `@sdbql{}` block an `"Error: …"` string**; an unknown function matches nothing | A typo behind `.first` or in a block yields garbage, not an error | Prove the query with `.all` in a spec; prefer proven forms: `CONTAINS(LOWER(doc.x), @needle)` |
 | No scoped uniqueness | `"uniqueness": true` is global and best-effort | Composite unique index in the migration + a lookup for a readable message |
 | **Instant navigation** (on by default) swaps `<body>` on link clicks; an external `<script src>` runs **once per tab** | A widget, animation or copy button set up in `public/js/` works on the page you landed on and is dead after any link click; loops and listeners from the previous page keep running | Put setup in `init()`, call it on load **and** on `document.addEventListener("soli:load", init)`, make it idempotent, and stop the previous page's loops. Pattern in `public/js/CLAUDE.md`; test by clicking a link, never by reloading |
 | `permit` drops containers declared with `true` | Nested hashes and arrays vanish from the body | Describe the shape fully: `{"days": [{"hour": true}]}` |
@@ -444,10 +444,14 @@ post("/users", "users#create")
 # edit_post_path(post), and *_url variants.
 resources("posts")
 
-# Scoped middleware — only runs for routes inside the block
+# Scoped middleware — only runs for routes inside the block. A namespace
+# routes its resources to app/controllers/admin/ (admin/users#index,
+# admin_users_path); resources("admin/users") would put a / in the helpers.
 middleware("authenticate", -> {
     get("/admin", "admin#index")
-    resources("admin/users")
+    namespace("admin", -> {
+        resources("users")
+    })
 })
 ```
 
