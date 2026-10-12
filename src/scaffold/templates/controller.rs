@@ -19,7 +19,7 @@ class {controller_name} < Controller
   # GET /{resource} — every @field reaches the view and the layout, and the
   # matching {resource}/<action> view renders by itself: no render() needed.
   def index
-    @{model_var}s = {model_name}.all
+    @{resource} = {model_name}.all
     @title = "{controller_name}"
   end
 
@@ -51,11 +51,15 @@ class {controller_name} < Controller
     redirect("/{resource}")
   end
 
-  # PATCH/PUT /{resource}/:id
+  # PATCH/PUT /{resource}/:id — an invalid change re-renders the form, 422.
   def update
-    id = params["id"]
-    permitted = this._permit_params(params)
-    {model_name}.update(id, permitted)
+    @{model_var} = {model_name}.find(params["id"])
+    @{model_var}.update(this._permit_params(params))
+    if @{model_var}._errors
+      @title = "Edit {model_name}"
+      return render("{resource}/edit", {{}}, {{ "status": 422 }})
+    end
+
     redirect("/{resource}")
   end
 

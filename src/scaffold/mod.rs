@@ -75,6 +75,11 @@ pub fn create_scaffold_with_fields(
         return Err(format!("'{}' is not a directory", folder));
     }
 
+    // The model name, singular whichever way it was typed: `scaffold posts`
+    // builds `Post`, `posts_controller.sl`, `/posts` like `scaffold post`.
+    let singular = crate::inflect::singularize(&to_snake_case(name));
+    let name = singular.as_str();
+
     let parsed_fields: Vec<FieldDefinition> = fields
         .iter()
         .filter_map(|f| FieldDefinition::parse(f))
@@ -149,6 +154,7 @@ post("/{resource}", "{resource}#create")
 get("/{resource}/:id", "{resource}#show")
 get("/{resource}/:id/edit", "{resource}#edit")
 put("/{resource}/:id", "{resource}#update")
+patch("/{resource}/:id", "{resource}#update")
 delete("/{resource}/:id", "{resource}#delete")
 "#,
         name = name,

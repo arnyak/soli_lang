@@ -48,7 +48,7 @@
             </div>
             <div>
                 <div class="font-medium text-white">Model</div>
-                <div class="text-sm text-gray-500">app/models/users_model.sl</div>
+                <div class="text-sm text-gray-500">app/models/user_model.sl</div>
             </div>
         </div>
 
@@ -97,7 +97,7 @@
             </div>
             <div>
                 <div class="font-medium text-white">Migration</div>
-                <div class="text-sm text-gray-500">db/migrations/*create_users_*.sl</div>
+                <div class="text-sm text-gray-500">db/migrations/&lt;YYYYmmddHHMMSS&gt;_create_users.sl</div>
             </div>
         </div>
 
@@ -177,10 +177,10 @@
     <h3 class="text-xl font-semibold text-white mb-4">Model</h3>
     <div class="mb-8 rounded-xl bg-[#171412]/50 border border-white/10 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-white/10">
-            <span class="text-sm font-mono text-gray-400">app/models/users_model.sl</span>
+            <span class="text-sm font-mono text-gray-400">app/models/user_model.sl</span>
         </div>
         <div>
-            <pre class="text-sm leading-7"><code class="language-soli"><span class="text-orange-400">class</span> <span class="text-yellow-200">Users</span> <span class="text-orange-400">&lt;</span> <span class="text-yellow-200">Model</span>
+            <pre class="text-sm leading-7"><code class="language-soli"><span class="text-orange-400">class</span> <span class="text-yellow-200">User</span> <span class="text-orange-400">&lt;</span> <span class="text-yellow-200">Model</span>
   <span class="text-orange-400">static</span>
     <span class="text-gray-500"># Fields</span>
     <span class="text-gray-500"># name (string)</span>
@@ -208,14 +208,14 @@
   <span class="text-orange-400">end</span>
 
   <span class="text-orange-400">def</span> <span class="text-blue-400">index</span>
-    users = <span class="text-yellow-200">Users</span>.<span class="text-blue-400">all</span>()
+    users = <span class="text-yellow-200">User</span>.<span class="text-blue-400">all</span>()
     <span class="text-blue-400">render</span>(<span class="text-green-400">"users/index"</span>, {
       <span class="text-green-400">"title"</span>: <span class="text-green-400">"Users"</span>
     })
   <span class="text-orange-400">end</span>
 
   <span class="text-orange-400">def</span> <span class="text-blue-400">show</span>
-    user = <span class="text-yellow-200">Users</span>.<span class="text-blue-400">find</span>(params[<span class="text-green-400">"id"</span>])
+    user = <span class="text-yellow-200">User</span>.<span class="text-blue-400">find</span>(params[<span class="text-green-400">"id"</span>])
     <span class="text-blue-400">render</span>(<span class="text-green-400">"users/show"</span>, {
       <span class="text-green-400">"title"</span>: <span class="text-green-400">"View User"</span>
     })
@@ -223,7 +223,7 @@
 
   <span class="text-orange-400">def</span> <span class="text-blue-400">create</span>
     permitted = <span class="text-orange-400">this</span>._permit_params(params)
-    user = <span class="text-yellow-200">Users</span>.<span class="text-blue-400">create</span>(permitted)
+    user = <span class="text-yellow-200">User</span>.<span class="text-blue-400">create</span>(permitted)
     <span class="text-orange-400">unless</span> user.<span class="text-blue-400">_errors</span>
       <span class="text-orange-400">return</span> <span class="text-blue-400">redirect</span>(<span class="text-green-400">"/users"</span>)
     end
@@ -235,13 +235,13 @@
   <span class="text-orange-400">def</span> <span class="text-blue-400">update</span>
     id = params[<span class="text-green-400">"id"</span>]
     permitted = <span class="text-orange-400">this</span>._permit_params(params)
-    <span class="text-yellow-200">Users</span>.<span class="text-blue-400">update</span>(id, permitted)
+    <span class="text-yellow-200">User</span>.<span class="text-blue-400">update</span>(id, permitted)
     <span class="text-orange-400">return</span> <span class="text-blue-400">redirect</span>(<span class="text-green-400">"/users"</span>)
   <span class="text-orange-400">end</span>
 
   <span class="text-orange-400">def</span> <span class="text-blue-400">delete</span>
     id = params[<span class="text-green-400">"id"</span>]
-    <span class="text-yellow-200">Users</span>.<span class="text-blue-400">delete</span>(id)
+    <span class="text-yellow-200">User</span>.<span class="text-blue-400">delete</span>(id)
     <span class="text-orange-400">return</span> <span class="text-blue-400">redirect</span>(<span class="text-green-400">"/users"</span>)
   <span class="text-orange-400">end</span>
 
@@ -365,7 +365,7 @@
     <h3 class="text-xl font-semibold text-white mb-4">Migration</h3>
     <div class="mb-8 rounded-xl bg-[#171412]/50 border border-white/10 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-white/10">
-            <span class="text-sm font-mono text-gray-400">db/migrations/*create_users_*.sl</span>
+            <span class="text-sm font-mono text-gray-400">db/migrations/&lt;YYYYmmddHHMMSS&gt;_create_users.sl</span>
         </div>
         <div>
             <pre class="text-sm leading-7"><code class="language-soli"><span class="text-orange-400">def</span> <span class="text-blue-400">up</span>(db)
@@ -380,16 +380,16 @@
 
     <h3 class="text-xl font-semibold text-white mb-4">Tests</h3>
     <p class="text-gray-400 mb-4">
-        The generator writes <strong class="text-white">one</strong> spec: the controller E2E file below. There is no model spec &mdash; add one yourself (<code class="text-cyan-400">tests/users_model_spec.sl</code>) if you want model-level coverage. It would look like this:
+        The generator writes <strong class="text-white">one</strong> spec: the controller E2E file below. There is no model spec &mdash; add one yourself (<code class="text-cyan-400">tests/user_model_spec.sl</code>) if you want model-level coverage. It would look like this:
     </p>
     <div class="mb-8 rounded-xl bg-[#171412]/50 border border-white/10 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-white/10">
-            <span class="text-sm font-mono text-gray-400">tests/users_model_spec.sl (write it yourself)</span>
+            <span class="text-sm font-mono text-gray-400">tests/user_model_spec.sl (write it yourself)</span>
         </div>
         <div>
             <pre class="text-sm leading-7"><code class="language-soli"><span class="text-orange-400">describe</span>(<span class="text-green-400">"UsersModel"</span>) <span class="text-orange-400">do</span>
   <span class="text-blue-400">test</span>(<span class="text-green-400">"creates a valid record"</span>) <span class="text-orange-400">do</span>
-    result = <span class="text-yellow-200">Users</span>.<span class="text-blue-400">create</span>({ <span class="text-green-400">"name"</span>: <span class="text-green-400">"Test User"</span> })
+    result = <span class="text-yellow-200">User</span>.<span class="text-blue-400">create</span>({ <span class="text-green-400">"name"</span>: <span class="text-green-400">"Test User"</span> })
     <span class="text-blue-400">assert_null</span>(result.<span class="text-blue-400">_errors</span>)
   <span class="text-orange-400">end</span>
 <span class="text-orange-400">end</span></code></pre>
@@ -449,10 +449,10 @@
 
     <div class="mb-8 rounded-xl bg-[#171412]/50 border border-white/10 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-white/10">
-            <span class="text-sm font-mono text-gray-400">app/models/users_model.sl</span>
+            <span class="text-sm font-mono text-gray-400">app/models/user_model.sl</span>
         </div>
         <div>
-            <pre class="text-sm leading-7"><code class="language-soli"><span class="text-orange-400">class</span> <span class="text-yellow-200">Users</span> <span class="text-orange-400">&lt;</span> <span class="text-yellow-200">Model</span>
+            <pre class="text-sm leading-7"><code class="language-soli"><span class="text-orange-400">class</span> <span class="text-yellow-200">User</span> <span class="text-orange-400">&lt;</span> <span class="text-yellow-200">Model</span>
   <span class="text-orange-400">static</span>
     <span class="text-gray-500"># Fields</span>
     <span class="text-gray-500"># name (string)</span>
@@ -481,7 +481,7 @@
   <span class="text-orange-400">def</span> <span class="text-blue-400">create</span>
     <span class="text-gray-500"># Only permit whitelisted fields</span>
     permitted = <span class="text-orange-400">this</span>._permit_params(params)
-    user = <span class="text-yellow-200">Users</span>.<span class="text-blue-400">create</span>(permitted)
+    user = <span class="text-yellow-200">User</span>.<span class="text-blue-400">create</span>(permitted)
   <span class="text-orange-400">end</span>
 
   <span class="text-gray-500"># Mass assignment protection</span>
@@ -559,7 +559,7 @@ to the blacklist if needed
                     <td class="px-6 py-4 text-gray-400">edit</td>
                 </tr>
                 <tr>
-                    <td class="px-6 py-4 font-mono text-yellow-400">PUT</td>
+                    <td class="px-6 py-4 font-mono text-yellow-400">PUT, PATCH</td>
                     <td class="px-6 py-4 font-mono text-gray-300">/users/:id</td>
                     <td class="px-6 py-4 text-gray-400">update</td>
                 </tr>

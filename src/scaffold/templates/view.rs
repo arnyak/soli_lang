@@ -29,14 +29,14 @@ pub fn index_view_template(
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-700">
-                <% if {model_var}s.empty? %>
+                <% if {resource}.empty? %>
                 <tr>
                     <td colspan="{colspan}" class="px-6 py-8 text-center text-slate-400">
                         No {resource} found. <a href="/{resource}/new" class="text-indigo-400 hover:text-indigo-300">Create one?</a>
                     </td>
                 </tr>
                 <% end %>
-                <% {model_var}s.each do |{model_var}| %>
+                <% {resource}.each do |{model_var}| %>
                 <tr class="hover:bg-slate-700/50 transition-colors">
                     <td class="px-6 py-4 whitespace-nowrap text-slate-300"><%= {model_var}["_key"] %></td>
 {table_cells}

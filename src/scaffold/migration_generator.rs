@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::Path;
-use web_time::{SystemTime, UNIX_EPOCH};
 
 use crate::scaffold::app_generator::write_file;
 use crate::scaffold::templates::migration;
@@ -18,13 +17,10 @@ pub fn create_migration(
     let collection_name = to_snake_case_plural(name);
     let migration_name = format!("create_{}", collection_name);
 
-    // Generate timestamp for migration filename
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| format!("Failed to get timestamp: {}", e))?
-        .as_secs();
-
-    let filename = format!("{}{}_{}.sl", timestamp, migration_name, timestamp);
+    // `<YYYYmmddHHMMSS>_create_posts.sl`, the name `soli db:migrate` reads
+    // (and `db:migrate generate` writes): the version, `_`, the name.
+    let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
+    let filename = format!("{}_{}.sl", timestamp, migration_name);
     let migrations_dir = app_path.join("db/migrations");
     let migration_path = migrations_dir.join(&filename);
 

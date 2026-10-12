@@ -16,8 +16,9 @@ desktop products.
 
 ## Basic Usage
 
-Pass the **singular** resource name (the model name). The generator derives the
-plural collection, view directory, and routes from it.
+Pass the resource name, singular or plural (`post` and `posts` give the same
+result): the model is singular (`Post`), and the collection, controller, view
+directory and routes are plural (`posts`).
 
 ```bash
 soli generate scaffold <singular-name>
@@ -31,10 +32,10 @@ soli generate scaffold post
 
 This creates:
 - Model: `app/models/post_model.sl` (`class Post < Model`)
-- Controller: `app/controllers/post_controller.sl` (`class PostController`)
+- Controller: `app/controllers/posts_controller.sl` (`class PostsController`)
 - Views: `app/views/posts/` (index, show, new, edit, `_form` partial)
-- Spec: `tests/controllers/post_controller_spec.sl` (controller E2E only — no model test file)
-- Migration: `db/migrations/<unix>create_posts_<unix>.sl`
+- Spec: `tests/controllers/posts_controller_spec.sl` (controller E2E only — no model test file)
+- Migration: `db/migrations/<YYYYmmddHHMMSS>_create_posts.sl`
 - Routes: CRUD paths appended to `config/routes.sl`
 
 ## Generate with Fields
@@ -97,7 +98,7 @@ Standard CRUD actions (abbreviated — generated code also has `new` / `edit`
 and a `permit()`-based `_permit_params`):
 
 ```soli
-class PostController < Controller
+class PostsController < Controller
   static {
     this.layout = "application"
   }
@@ -105,7 +106,7 @@ class PostController < Controller
   # @fields reach the view and layout; posts/<action> renders by itself
   def index
     @posts = Post.all
-    @title = "PostController"
+    @title = "PostsController"
   end
 
   def show
@@ -139,7 +140,7 @@ end
 | new | GET | /posts/new | Show create form |
 | create | POST | /posts | Create new record |
 | edit | GET | /posts/:id/edit | Show edit form |
-| update | PUT | /posts/:id | Update record |
+| update | PUT, PATCH | /posts/:id | Update record |
 | delete | DELETE | /posts/:id | Delete record |
 
 ### Views

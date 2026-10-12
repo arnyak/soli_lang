@@ -14,8 +14,10 @@ pub fn create_controller(
     name: &str,
     fields: &[FieldDefinition],
 ) -> Result<(), String> {
-    let controller_name = to_pascal_case(name) + "Controller";
+    // `invoices#index` is `InvoicesController` in `invoices_controller.sl`,
+    // the plural the routes name.
     let resource_name = to_snake_case_plural(name);
+    let controller_name = to_pascal_case(&resource_name) + "Controller";
     let model_name = to_pascal_case(name);
     let model_var = to_snake_case(name);
 
@@ -43,14 +45,13 @@ pub fn create_controller(
 
     let controller_path = app_path
         .join("app/controllers")
-        .join(format!("{}_controller.sl", to_snake_case(name)));
+        .join(format!("{}_controller.sl", resource_name));
     write_file(&controller_path, &content)?;
     Ok(())
 }
 
 /// Create controller tests for a scaffold
 pub fn create_tests(app_path: &Path, name: &str) -> Result<(), String> {
-    let snake_name = to_snake_case(name);
     let resource_path = to_snake_case_plural(name);
 
     let tests_dir = app_path.join("tests");
@@ -70,9 +71,10 @@ pub fn create_tests(app_path: &Path, name: &str) -> Result<(), String> {
     // pass the bare resource name — appending here produced
     // `describe("UsersControllerController")`.
     let controller_test_content =
-        controller::controller_test_template(&to_pascal_case(name), &resource_path);
+        controller::controller_test_template(&to_pascal_case(&resource_path), &resource_path);
 
-    let controller_test_path = controllers_dir.join(format!("{}_controller_spec.sl", snake_name));
+    let controller_test_path =
+        controllers_dir.join(format!("{}_controller_spec.sl", resource_path));
     write_file(&controller_test_path, &controller_test_content)?;
     println!("  Created: {}", controller_test_path.display());
 
