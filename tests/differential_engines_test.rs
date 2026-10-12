@@ -476,6 +476,41 @@ end
 print(tally[Amount.new(1)], tally.length)
 print(h)"##,
     ),
+    (
+        // A private class of a module: reachable inside it (unqualified or
+        // qualified), refused outside with ::, and with a dot.
+        "private_classes_stay_in_their_module",
+        r##"module Billing
+  private class Ledger
+    static def balance -> Int
+      42
+    end
+  end
+
+  class Report
+    static def total -> Int
+      Ledger.balance + Billing::Ledger.balance
+    end
+  end
+
+  def self.peek -> Int
+    Ledger.balance
+  end
+end
+
+print(Billing::Report.total)
+print(Billing.peek)
+try
+  Billing::Ledger.balance
+catch e
+  print(e)
+end
+try
+  Billing.Ledger.balance
+catch e
+  print(e)
+end"##,
+    ),
     // A typed last clause that matches runs its body and continues: the VM
     // used to fall into the no-match `Rethrow` after the body.
     (

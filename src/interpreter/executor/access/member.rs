@@ -1878,6 +1878,9 @@ impl Interpreter {
         // `Organization.Department` — a nested class, as `Organization::Department`
         // and as on the VM.
         if let Some(nested) = class.nested_classes.borrow().get(name) {
+            let namespace = self.current_namespace();
+            crate::interpreter::domain::check_nested_access(class, name, namespace.as_deref())
+                .map_err(|e| RuntimeError::type_error(e, span))?;
             return Ok(Value::Class(nested.clone()));
         }
 

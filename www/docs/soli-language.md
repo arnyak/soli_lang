@@ -3821,7 +3821,33 @@ Inside a module, its classes are read unqualified — `Invoice` in a method
 of `Billing::PayInvoice` (or in a block there, or a module function) is
 `Billing::Invoice`; outside, write `Billing::Invoice`. The module is looked
 in when no global has that name, so a top-level `Invoice` would win — name
-the context (`Billing::Invoice`) where both exist. A declared return type may name a class of the module by
+the context (`Billing::Invoice`) where both exist.
+
+A class that is an implementation detail of its context is declared
+`private class`: code inside the module uses it, code outside gets an error
+(`Billing::Ledger is private to Billing`), with `::` or a dot. That is what
+keeps a context's boundary a rule rather than a habit — other contexts reach
+it through its public classes and its events.
+
+```soli
+module Billing
+  private class Ledger            # only Billing's code sees it
+    static def balance -> Int
+      42
+    end
+  end
+
+  class Report
+    static def total -> Int
+      Ledger.balance
+    end
+  end
+end
+
+Billing::Report.total             # 42
+Billing::Ledger.balance           # error: Billing::Ledger is private to Billing
+```
+ A declared return type may name a class of the module by
 its short name (`-> Invoice`).
 
 A model in a context gets its own collection (`billing_invoices`), and its

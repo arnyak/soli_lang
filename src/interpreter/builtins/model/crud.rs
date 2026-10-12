@@ -321,6 +321,9 @@ pub fn with_model_transaction<T, E>(
     on_commit: impl FnOnce(String) -> E,
     on_event: impl FnOnce(crate::error::RuntimeError) -> E,
 ) -> Result<T, E> {
+    // `part_of`: an aggregate's children may be written while its root's
+    // transaction runs — this one, or one it joins.
+    let _root = TransactionRootGuard::enter(class_name);
     if has_active_tx() {
         return run();
     }
@@ -342,6 +345,23 @@ pub fn with_model_transaction<T, E>(
             clear_current_tx();
             Err(err)
         }
+    }
+}
+
+struct TransactionRootGuard;
+
+impl TransactionRootGuard {
+    fn enter(class_name: &str) -> Self {
+        super::registry::TRANSACTION_ROOTS.with(|r| r.borrow_mut().push(class_name.to_string()));
+        TransactionRootGuard
+    }
+}
+
+impl Drop for TransactionRootGuard {
+    fn drop(&mut self) {
+        super::registry::TRANSACTION_ROOTS.with(|r| {
+            r.borrow_mut().pop();
+        });
     }
 }
 

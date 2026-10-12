@@ -240,6 +240,12 @@ pub fn parse_relation_options(
 /// A relation declared in a bounded context names a model of that context
 /// by default: `belongs_to("customer")` on `Billing::Invoice` is
 /// `Billing::Customer` (`class_name:` reaches any other).
+/// The class a relation-like name (`:invoice`) means from `owner_class`:
+/// classified, in the owner's bounded context.
+pub fn related_class_name(owner_class: &str, name: &str) -> String {
+    in_owner_context(owner_class, classify(name))
+}
+
 fn in_owner_context(owner_class: &str, class_name: String) -> String {
     match owner_class.rsplit_once("::") {
         Some((namespace, _)) => format!("{namespace}::{class_name}"),

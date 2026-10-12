@@ -1244,3 +1244,11 @@ fn a_value_field_list_round_trips() {
     assert!(out.contains("[Line]"), "{out}");
     assert_idempotent(src);
 }
+
+#[test]
+fn a_private_nested_class_keeps_its_modifier() {
+    let src = "module Billing\n  private class Ledger\n  end\nend\n";
+    let out = format_source(src).expect("format failed");
+    assert!(out.contains("private class Ledger"), "{out}");
+    assert_idempotent(src);
+}

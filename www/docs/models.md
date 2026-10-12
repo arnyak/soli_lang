@@ -1055,6 +1055,29 @@ and the job appends the record once the data is committed, with the job
 queue's retries — so a stream receives every committed event, at least once,
 and never one that was rolled back.
 
+**Versioning events.** An event that changes shape declares
+`static version: Int = 2`; stream records carry the version they were
+written with. A consumer meeting an older record calls the class's
+`static def upcast(data, from_version)`, which returns the fields in the
+current shape. A record from an older version without `upcast`, or from a
+newer version than the class, stops `EventStream.consume` with an error
+before it is committed — nothing is dropped silently.
+
+```soli
+class InvoicePaid < DomainEvent
+  static version: Int = 2
+  number: String
+  cents: Int
+
+  # v1 called the field `amount`.
+  static def upcast(data: Hash, from_version: Int) -> Hash
+    return data unless from_version == 1
+
+    {"number": data["number"], "cents": data["amount"]}
+  end
+end
+```
+
 **Consuming a stream.** The other side — an application that reacts to
 another service's events — reads the topic with a consumer group and
 publishes each record here, to its own subscribers:
@@ -1078,6 +1101,36 @@ committed after each record, so delivery is at least once — a handler that
 fails stops the run before its record is committed. A record whose event
 class this application does not declare is skipped. It returns how many
 events it published.
+
+## Aggregate Roots
+
+An aggregate is a root and the entities that only exist through it — an
+invoice and its lines. `part_of :invoice` on the child makes the root the
+only way in: its `create`, `save`, `update`, `delete`, `upsert` and
+`create_many` are refused unless an `Invoice.transaction do … end` is
+running (that one, or one it joins).
+
+```soli
+module Billing
+  class Invoice < Model
+    has_many("lines")
+  end
+
+  class Line < Model
+    part_of :invoice                # Billing::Invoice
+  end
+end
+
+Billing::Line.create({...})         # error: Billing::Line is part of the
+                                    # Billing::Invoice aggregate
+Billing::Invoice.transaction do
+  invoice.lines << Billing::Line.new({"cents": 100})   # fine
+end
+```
+
+Deleting an invoice that cascades to its lines (`dependent:`) writes the
+lines too, so it goes inside `Invoice.transaction` as well. Reads are not
+restricted.
 
 ## Bounded Contexts
 

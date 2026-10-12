@@ -331,6 +331,47 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
+thread_local! {
+    /// `part_of`: child model → the aggregate root it belongs to.
+    pub static PART_OF: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    /// The model classes whose `transaction` blocks are running, outermost
+    /// first (a nested `Root.transaction` joins, but is counted).
+    pub static TRANSACTION_ROOTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Set once a model declares `part_of`: until then the write guard is one
+/// relaxed load.
+pub static AGGREGATES_DECLARED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// `part_of :invoice` on `class_name`.
+pub fn register_part_of(class_name: &str, root: &str) {
+    AGGREGATES_DECLARED.store(true, std::sync::atomic::Ordering::Relaxed);
+    PART_OF.with(|m| {
+        m.borrow_mut()
+            .insert(class_name.to_string(), root.to_string())
+    });
+}
+
+/// A write of `class_name`: refused when it is part of an aggregate whose
+/// root's `transaction` is not running — an aggregate changes through its
+/// root.
+pub fn check_aggregate_write(class_name: &str) -> Result<(), String> {
+    if !AGGREGATES_DECLARED.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
+    let Some(root) = PART_OF.with(|m| m.borrow().get(class_name).cloned()) else {
+        return Ok(());
+    };
+    if TRANSACTION_ROOTS.with(|r| r.borrow().contains(&root)) {
+        return Ok(());
+    }
+    Err(format!(
+        "{class_name} is part of the {root} aggregate: change it inside \
+         {root}.transaction do … end (deleting a {root} that cascades to it too)"
+    ))
+}
+
 /// Register a model field as holding a value object (`value_field`). On read
 /// the stored hash becomes that value object again; on save anything else
 /// is a validation error.
@@ -752,6 +793,7 @@ pub fn clear_model_classes() {
     STI_PARENTS.with(|m| m.borrow_mut().clear());
     ENUM_FIELDS.with(|fields| fields.borrow_mut().clear());
     VALUE_FIELDS.with(|fields| fields.borrow_mut().clear());
+    PART_OF.with(|m| m.borrow_mut().clear());
     super::state_machine::clear();
 }
 
@@ -764,6 +806,7 @@ pub fn clear_all_model_registries() {
     crate::db::introspect::clear_schema_cache();
     ENUM_FIELDS.with(|fields| fields.borrow_mut().clear());
     VALUE_FIELDS.with(|fields| fields.borrow_mut().clear());
+    PART_OF.with(|m| m.borrow_mut().clear());
     STI_PARENTS.with(|m| m.borrow_mut().clear());
     MODEL_CLASSES.with(|classes: &RefCell<HashMap<String, Rc<Class>>>| {
         classes.borrow_mut().clear();

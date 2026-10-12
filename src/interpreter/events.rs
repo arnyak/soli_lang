@@ -238,6 +238,10 @@ fn enqueue_stream(
         crate::interpreter::domain::to_hash(&inst.borrow()),
     );
     envelope.insert(
+        HashKey::String("version".into()),
+        Value::Int(event_version(class)),
+    );
+    envelope.insert(
         HashKey::String("occurred_at".into()),
         Value::String(crate::jobs::now_iso().into()),
     );
@@ -481,7 +485,7 @@ fn consume_records(
             .unwrap_or_default();
         for record in records {
             let offset = record.get("offset").and_then(|o| o.as_u64()).unwrap_or(0);
-            if let Some(event) = event_from_record(&record) {
+            if let Some(event) = event_from_record(&record)? {
                 publish_with(&event, false).map_err(|e| e.to_string())?;
                 published += 1;
             }
@@ -493,17 +497,85 @@ fn consume_records(
 
 /// A stream record (`{"type", "data", …}` as a stream subscription writes
 /// it) as its domain event, when this application declares that class.
+///
+/// A record written by an older version of the event (`"version"` below the
+/// class's `static version`) goes through the class's
+/// `static def upcast(data, from_version)` first; with no `upcast`, or from a
+/// newer version than the class knows, it is an error — the run stops before
+/// committing the record rather than lose it.
 #[cfg_attr(not(feature = "es"), allow(dead_code))]
-fn event_from_record(record: &serde_json::Value) -> Option<Value> {
-    let value = record.get("value")?;
+fn event_from_record(record: &serde_json::Value) -> Result<Option<Value>, String> {
+    let Some(value) = record.get("value") else {
+        return Ok(None);
+    };
     let envelope: serde_json::Value = match value {
-        serde_json::Value::String(text) => serde_json::from_str(text).ok()?,
+        serde_json::Value::String(text) => match serde_json::from_str(text) {
+            Ok(json) => json,
+            Err(_) => return Ok(None),
+        },
         other => other.clone(),
     };
-    let class = envelope.get("type")?.as_str()?;
-    let data = crate::interpreter::value_json::json_to_value_or_null(envelope.get("data")?.clone());
-    let event = crate::interpreter::domain::hydrate(class, &data)?;
-    event_class(&event).is_some().then_some(event)
+    let (Some(class_name), Some(data)) = (
+        envelope.get("type").and_then(|t| t.as_str()),
+        envelope.get("data"),
+    ) else {
+        return Ok(None);
+    };
+    let Some(class) = crate::interpreter::domain::registered_class(class_name) else {
+        return Ok(None);
+    };
+    if !class_is(&class, DOMAIN_EVENT) {
+        return Ok(None);
+    }
+    let mut data = crate::interpreter::value_json::json_to_value_or_null(data.clone());
+    let written = envelope
+        .get("version")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1);
+    let current = event_version(&class);
+    if written > current {
+        return Err(format!(
+            "{class_name} version {written} on the stream, but this application knows \
+             version {current}: deploy the newer event class first"
+        ));
+    }
+    if written < current {
+        let upcast = class.find_static_method("upcast").ok_or_else(|| {
+            format!(
+                "{class_name} version {written} on the stream, version {current} here, and \
+                 no `static def upcast(data, from_version)` to bring it up to date"
+            )
+        })?;
+        data = call_function(&upcast, vec![data, Value::Int(written)])
+            .map_err(|e| format!("{class_name}.upcast: {e}"))?;
+    }
+    Ok(crate::interpreter::domain::hydrate(class_name, &data))
+}
+
+/// The `static version` an event class declares (or inherits); 1 without.
+fn event_version(class: &Class) -> i64 {
+    if let Some(Value::Int(version)) = class.static_fields.borrow().get("version") {
+        return *version;
+    }
+    class.superclass.as_deref().map(event_version).unwrap_or(1)
+}
+
+/// Call a tree-walker function with positional arguments.
+#[cfg_attr(not(feature = "es"), allow(dead_code))]
+fn call_function(func: &Function, args: Vec<Value>) -> Result<Value, RuntimeError> {
+    let mut env = Environment::with_enclosing(func.closure.clone());
+    for (param, arg) in func.params.iter().zip(args) {
+        env.define(param.name.clone(), arg);
+    }
+    let mut interp = Interpreter::for_bound_body();
+    match interp.execute_block(&func.body, env)? {
+        ControlFlow::Throw(value) => Err(RuntimeError::Thrown {
+            value,
+            span: func.span.unwrap_or_default(),
+        }),
+        ControlFlow::Return(v) | ControlFlow::Normal(v) => Ok(v),
+        _ => Ok(Value::Null),
+    }
 }
 
 #[cfg(test)]
@@ -518,7 +590,10 @@ mod tests {
             "key": "F-1",
             "value": r#"{"type":"Billing::InvoicePaid","data":{"number":"F-1"}}"#
         });
-        assert!(event_from_record(&record).is_none());
-        assert!(event_from_record(&serde_json::json!({"value": "not json"})).is_none());
+        assert!(matches!(event_from_record(&record), Ok(None)));
+        assert!(matches!(
+            event_from_record(&serde_json::json!({"value": "not json"})),
+            Ok(None)
+        ));
     }
 }

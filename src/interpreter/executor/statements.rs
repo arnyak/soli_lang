@@ -1138,6 +1138,12 @@ impl Interpreter {
                     .nested_classes
                     .borrow_mut()
                     .insert(nested_decl.name.clone(), nested_class.clone());
+                if nested_decl.is_private {
+                    parent_class
+                        .private_members
+                        .borrow_mut()
+                        .insert(nested_decl.name.clone());
+                }
             }
 
             // Restore the previous environment

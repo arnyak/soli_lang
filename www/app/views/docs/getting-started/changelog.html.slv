@@ -21,6 +21,17 @@
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
         <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.23.0.</p>
+
+        <h3 id="unreleased-language" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Language</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white"><code class="text-cyan-400">private class</code> in a module.</strong> Reachable only from code inside the module; from outside, <code class="text-cyan-400">Billing::Ledger</code> is an error &mdash; a bounded context&rsquo;s boundary is enforced. <a href="/docs/language/modules#bounded-contexts" class="text-cyan-400 hover:underline">Guide</a>.</li>
+        </ul>
+
+        <h3 id="unreleased-orm" class="text-xl font-semibold text-white mb-4 scroll-mt-24">ORM</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white"><code class="text-cyan-400">part_of :invoice</code>: aggregate roots.</strong> A child entity is written only inside its root&rsquo;s <code class="text-cyan-400">Invoice.transaction do … end</code>. <a href="/docs/database/domain-events#aggregate-roots" class="text-cyan-400 hover:underline">Guide</a>.</li>
+            <li><strong class="text-white">Versioned domain events.</strong> <code class="text-cyan-400">static version: Int = 2</code> and <code class="text-cyan-400">static def upcast(data, from_version)</code>: older stream records are brought up to date when consumed, and unknown versions stop the run instead of being dropped. <a href="/docs/database/domain-events#versioning" class="text-cyan-400 hover:underline">Guide</a>.</li>
+        </ul>
     </section>
 
     <section id="v2-23-0" class="mb-16 scroll-mt-24">

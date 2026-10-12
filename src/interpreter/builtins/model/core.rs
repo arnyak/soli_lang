@@ -1886,8 +1886,14 @@ impl Model {
         let mut native_methods: HashMap<String, Rc<NativeFunction>> = HashMap::new();
         super::register_instance::register(&mut native_methods);
 
-        let native_static_methods = on_model_connection(native_static_methods);
-        let native_methods = on_model_connection(native_methods);
+        let native_static_methods = guard_aggregate_writes(
+            on_model_connection(native_static_methods),
+            &["create", "create_many", "update", "delete", "upsert"],
+        );
+        let native_methods = guard_aggregate_writes(
+            on_model_connection(native_methods),
+            &["save", "update", "delete"],
+        );
 
         let model_class = Class {
             name: "Model".to_string(),
@@ -1934,6 +1940,38 @@ fn on_model_connection(
                         _ => return inner(args),
                     };
                     super::registry::run_on_model_connection(&class_name, || inner(args))
+                },
+            );
+            (name, Rc::new(wrapped))
+        })
+        .collect()
+}
+
+/// `part_of`: the writes named here refuse to touch an aggregate's child
+/// outside its root's transaction (`registry::check_aggregate_write`).
+fn guard_aggregate_writes(
+    methods: HashMap<String, Rc<NativeFunction>>,
+    names: &[&str],
+) -> HashMap<String, Rc<NativeFunction>> {
+    methods
+        .into_iter()
+        .map(|(name, native)| {
+            if !names.contains(&name.as_str()) {
+                return (name, native);
+            }
+            let inner = native.func.clone();
+            let wrapped = NativeFunction::new_with_auto(
+                native.name.clone(),
+                native.arity,
+                native.is_auto_invocable,
+                move |args| {
+                    let class_name = match args.first() {
+                        Some(Value::Class(class)) => class.name.clone(),
+                        Some(Value::Instance(instance)) => instance.borrow().class.name.clone(),
+                        _ => return inner(args),
+                    };
+                    super::registry::check_aggregate_write(&class_name)?;
+                    inner(args)
                 },
             );
             (name, Rc::new(wrapped))
@@ -2143,6 +2181,29 @@ pub fn register_model_builtins(env: &mut Environment) {
             let mut metadata = get_or_create_metadata(&class_name);
             metadata.soft_delete = true;
             update_metadata(&class_name, metadata);
+            Ok(Value::Null)
+        })),
+    );
+
+    // part_of :invoice - this model is an entity inside the Invoice
+    // aggregate: it is written only while an `Invoice.transaction` runs.
+    env.define(
+        "part_of".to_string(),
+        Value::NativeFunction(NativeFunction::new("part_of", Some(2), |args| {
+            let class_name = get_class_name_from_class(args)?;
+            let root = match args.get(1) {
+                Some(Value::Class(c)) => c.name.clone(),
+                Some(Value::Symbol(s)) | Some(Value::String(s)) => {
+                    super::relations::related_class_name(&class_name, s)
+                }
+                _ => {
+                    return Err(
+                        "part_of(:root) names the aggregate root, e.g. part_of :invoice"
+                            .to_string(),
+                    )
+                }
+            };
+            super::registry::register_part_of(&class_name, &root);
             Ok(Value::Null)
         })),
     );

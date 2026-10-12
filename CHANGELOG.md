@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+* **language:** **`private class` in a module.** A class declared `private class Ledger` inside `module Billing` is reachable only from code in `Billing` (unqualified or `Billing::Ledger`); from outside, `Billing::Ledger` and `Billing.Ledger` raise "Billing::Ledger is private to Billing", on both engines — a bounded context's boundary is enforced, not a convention. `soli fmt` keeps the modifier. A `private` section line still only means methods.
+
+* **orm:** **`part_of :invoice`: aggregate roots.** On a child model, its `create`, `save`, `update`, `delete`, `upsert` and `create_many` are refused unless the root's `transaction` is running (`Invoice.transaction do … end`, or one it joins) — an aggregate changes through its root. The name resolves in the model's context (`Billing::Invoice`). Free until a model declares it (one relaxed load per write).
+
+* **orm:** **Versioned domain events.** `static version: Int = 2` on a `DomainEvent`; stream records carry `"version"`. `EventStream.consume` passes an older record through the class's `static def upcast(data, from_version)`, and stops with an error, before committing, on an older record without `upcast` or one from a newer version than the class.
+
 ## [2.23.0] - 2026-10-12
 
 ### Added

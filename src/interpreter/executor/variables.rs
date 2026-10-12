@@ -82,17 +82,23 @@ impl Drop for TemplateLenientVarsGuard {
 }
 
 impl Interpreter {
-    /// `name` read unqualified in a class nested in a module: resolved in the
-    /// namespace its environment records (`interpreter::domain`).
-    pub(crate) fn resolve_in_current_namespace(&self, name: &str) -> Option<Value> {
-        let namespace = match self
+    /// The namespace the running code is written in (`Billing::PayInvoice`),
+    /// when it is in one.
+    pub(crate) fn current_namespace(&self) -> Option<String> {
+        match self
             .environment
             .borrow()
             .get(crate::interpreter::domain::NAMESPACE_BINDING)
         {
-            Some(Value::String(ns)) => ns.to_string(),
-            _ => return None,
-        };
+            Some(Value::String(ns)) => Some(ns.to_string()),
+            _ => None,
+        }
+    }
+
+    /// `name` read unqualified in a class nested in a module: resolved in the
+    /// namespace its environment records (`interpreter::domain`).
+    pub(crate) fn resolve_in_current_namespace(&self, name: &str) -> Option<Value> {
+        let namespace = self.current_namespace()?;
         let env = self.environment.clone();
         crate::interpreter::domain::resolve_in_namespace(&namespace, name, |global| {
             env.borrow().get(global)

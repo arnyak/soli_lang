@@ -159,6 +159,10 @@ impl Compiler {
             let nested_name_idx = self.add_string_constant(&nested.name);
             self.emit(Op::SetProperty(nested_name_idx), line);
             self.emit(Op::Pop, line);
+            // `private class`: recorded on the parent, now back on top.
+            if nested.is_private {
+                self.emit(Op::MarkPrivate(nested_name_idx), line);
+            }
         }
 
         // Restore class context

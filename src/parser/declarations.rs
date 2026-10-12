@@ -230,6 +230,7 @@ impl Parser {
                     extended_hooks: Vec::new(),
                     concern_class_methods: Vec::new(),
                     invariants: Vec::new(),
+                    is_private: false,
                     span,
                 }),
                 span,
@@ -305,7 +306,10 @@ impl Parser {
             } else if self.check(&TokenKind::Class) || self.check(&TokenKind::Module) {
                 // Handle nested class / module declaration
                 let nested_class = self.class_declaration()?;
-                if let StmtKind::Class(nested_class_decl) = nested_class.kind {
+                if let StmtKind::Class(mut nested_class_decl) = nested_class.kind {
+                    // Only the explicit modifier: a `private` section line keeps
+                    // meaning methods, as before.
+                    nested_class_decl.is_private = explicit_visibility == Some(Visibility::Private);
                     nested_classes.push(*nested_class_decl);
                 }
             } else if self.parse_concern_hook(
@@ -355,6 +359,7 @@ impl Parser {
                 extended_hooks,
                 concern_class_methods,
                 invariants,
+                is_private: false,
                 span,
             }),
             span,
@@ -652,6 +657,7 @@ impl Parser {
                 "encrypts",
                 "enum_field",
                 "value_field",
+                "part_of",
                 "state_machine",
                 "edge",
                 "timeseries",

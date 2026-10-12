@@ -272,6 +272,16 @@ end
 Billing::Invoice.count              # 1
 Shipping::Invoice.create({"number": "S-1"})</code></pre>
                 <p class="text-gray-400 mt-3">A relation that leaves its context says so: <code>belongs_to("user", {"class_name": "User"})</code>. Two files declaring the same qualified class still stop the boot. Controllers stay top-level (namespaced by directory, as before).</p>
+                <p class="text-gray-400 mt-3">A class that is an implementation detail of its context is a <code class="text-amber-400">private class</code>: code inside the module uses it, code outside gets an error (<code>Billing::Ledger is private to Billing</code>), with <code>::</code> or a dot. Other contexts reach it through its public classes and its events.</p>
+<pre data-filename="app/models/billing/ledger.sl"><code class="language-soli text-sm">module Billing
+  private class Ledger              # only Billing's code sees it
+    static def balance -&gt; Int
+      42
+    end
+  end
+end
+
+Billing::Ledger.balance             # error: Billing::Ledger is private to Billing</code></pre>
             </div>
         </section>
 

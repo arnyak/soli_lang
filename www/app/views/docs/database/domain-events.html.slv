@@ -78,6 +78,27 @@ end</code></pre>
         </div>
     </div>
 
+    <h3 id="versioning" class="text-lg font-semibold text-white mb-4">Versioning events</h3>
+    <p class="text-gray-400 mb-4">
+        An event that changes shape declares <code>static version: Int = 2</code>; stream records carry the version they were written with. A consumer meeting an older record calls the class&rsquo;s <code>static def upcast(data, from_version)</code>, which returns the fields in the current shape. An older record without <code>upcast</code>, or one from a newer version than the class, stops <code>EventStream.consume</code> with an error before it is committed &mdash; nothing is dropped silently.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">class InvoicePaid &lt; DomainEvent
+  static version: Int = 2
+  number: String
+  cents: Int
+
+  # v1 called the field `amount`.
+  static def upcast(data: Hash, from_version: Int) -&gt; Hash
+    return data unless from_version == 1
+
+    {"number": data["number"], "cents": data["amount"]}
+  end
+end</code></pre>
+        </div>
+    </div>
+
     <h2 id="after-commit" class="text-2xl font-bold text-white mb-6">After the commit</h2>
     <p class="text-gray-400 mb-4">
         <code>after_commit { … }</code> (or <code>after_commit do … end</code>) runs a block once the data is durable: after the outermost commit inside a transaction, never if it rolls back, at once outside one. It is the place for side effects that must not happen for data that was never stored.
@@ -121,6 +142,25 @@ b.stale?                # true — _errors names lock_version</code></pre>
         </div>
     </div>
     <p class="text-gray-400 mb-12">On a column-mode table (an existing SQL schema, <code>table "orders"</code>) the table needs a <code>lock_version</code> integer column; the update is one <code>UPDATE … WHERE id = ? AND lock_version = ?</code>. <code>increment</code> and <code>decrement</code> do not bump the version.</p>
+
+    <h2 id="aggregate-roots" class="text-2xl font-bold text-white mb-6">Aggregate roots</h2>
+    <p class="text-gray-400 mb-4">
+        An aggregate is a root and the entities that only exist through it &mdash; an invoice and its lines. <code>part_of :invoice</code> on the child makes the root the only way in: its <code>create</code>, <code>save</code>, <code>update</code>, <code>delete</code>, <code>upsert</code> and <code>create_many</code> are refused unless an <code>Invoice.transaction do … end</code> is running. Deleting an invoice that cascades to its lines goes inside that transaction as well; reads are not restricted.
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">module Billing
+  class Line &lt; Model
+    part_of :invoice                # Billing::Invoice
+  end
+end
+
+Billing::Line.create({...})         # error: part of the Billing::Invoice aggregate
+Billing::Invoice.transaction do
+  invoice.lines &lt;&lt; Billing::Line.new({"cents": 100})   # fine
+end</code></pre>
+        </div>
+    </div>
 
     <h2 id="bounded-contexts" class="text-2xl font-bold text-white mb-6">Bounded contexts</h2>
     <p class="text-gray-400 mb-4">

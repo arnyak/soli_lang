@@ -472,6 +472,7 @@ fn a_served_app_publishes_events_after_the_commit() {
     assert_eq!(args["topic"], "orders");
     assert_eq!(args["key"], "A-1");
     assert_eq!(args["event"]["type"], "OrderPaid");
+    assert_eq!(args["event"]["version"], 1);
     assert_eq!(
         args["event"]["data"],
         serde_json::json!({"number": "A-1", "cents": 900})
@@ -644,4 +645,33 @@ print(Order.find(o.id).number, Order.find(o.id).lock_version)
 "#,
     );
     assert_eq!(lines, vec!["true 1", "false true", "C-2 1"]);
+}
+
+#[test]
+fn an_aggregate_child_is_written_through_its_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines = sqlite_script(
+        dir.path(),
+        r#"module Billing
+  class Invoice < Model
+    has_many("lines")
+  end
+
+  class Line < Model
+    part_of :invoice
+  end
+end
+inv = Billing::Invoice.create({"number": "F-1"})
+print(Billing::Line.create({"invoice_id": inv._key, "cents": 100}) rescue "refused")
+Billing::Invoice.transaction do
+  line = Billing::Line.create({"invoice_id": inv._key, "cents": 100})
+  line.cents = 200
+  print(line.save)
+end
+line = Billing::Line.all[0]
+line.cents = 300
+print(line.save rescue "refused", Billing::Line.count)
+"#,
+    );
+    assert_eq!(lines, vec!["refused", "true", "refused 1"]);
 }

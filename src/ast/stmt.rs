@@ -239,6 +239,10 @@ pub struct ClassDecl {
     /// it saves (a falsy one is a validation error).
     #[serde(default)]
     pub invariants: Vec<InvariantDecl>,
+    /// `private class Ledger` inside a module: reachable only from code in
+    /// that module (its bounded context).
+    #[serde(default)]
+    pub is_private: bool,
     pub span: Span,
 }
 
@@ -484,6 +488,7 @@ impl EnumDecl {
             extended_hooks: Vec::new(),
             concern_class_methods: Vec::new(),
             invariants: Vec::new(),
+            is_private: false,
             span,
         }
     }

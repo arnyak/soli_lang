@@ -422,8 +422,21 @@ impl Vm {
                     let (mut interp, scope) = self.model_class_scope(object, name, span)?;
                     return interp.auto_invoke_member(scope, span);
                 }
-                // Static field access
+                // Static field access — a nested class is one on the VM; a
+                // `private class` of a module only from code inside it.
                 if let Some(val) = class.static_fields.borrow().get(name) {
+                    if matches!(val, Value::Class(_)) {
+                        let namespace = self
+                            .frames
+                            .last()
+                            .and_then(|f| f.closure.proto.namespace.clone());
+                        crate::interpreter::domain::check_nested_access(
+                            class,
+                            name,
+                            namespace.as_deref(),
+                        )
+                        .map_err(|e| RuntimeError::type_error(e, span))?;
+                    }
                     return Ok(val.clone());
                 }
                 // Static method access (AST-interpreted)
@@ -451,8 +464,18 @@ impl Vm {
                     }
                     return Ok(Value::NativeFunction((*native).clone()));
                 }
-                // Nested class
+                // Nested class (as the tree-walker stores it)
                 if let Some(nested) = class.nested_classes.borrow().get(name) {
+                    let namespace = self
+                        .frames
+                        .last()
+                        .and_then(|f| f.closure.proto.namespace.clone());
+                    crate::interpreter::domain::check_nested_access(
+                        class,
+                        name,
+                        namespace.as_deref(),
+                    )
+                    .map_err(|e| RuntimeError::type_error(e, span))?;
                     return Ok(Value::Class(nested.clone()));
                 }
                 // Class reflection (`define_method`, `class_eval`, `send`, …) is

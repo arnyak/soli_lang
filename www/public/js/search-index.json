@@ -4065,6 +4065,52 @@
       ]
     },
     {
+      "title": "part_of",
+      "type": "dsl",
+      "category": "Database",
+      "path": "/docs/database/domain-events#aggregate-roots",
+      "signature": "part_of :invoice",
+      "description": "Make a model an entity of an aggregate: written only inside its root's transaction",
+      "keywords": [
+        "part_of",
+        "aggregate",
+        "aggregate root",
+        "ddd",
+        "entity",
+        "consistency boundary"
+      ]
+    },
+    {
+      "title": "Versioning domain events",
+      "type": "guide",
+      "category": "Database",
+      "path": "/docs/database/domain-events#versioning",
+      "signature": "static version: Int = 2; static def upcast(data, from_version)",
+      "description": "Version events and upcast older stream records when consuming them",
+      "keywords": [
+        "event version",
+        "upcast",
+        "schema evolution",
+        "DomainEvent",
+        "stream"
+      ]
+    },
+    {
+      "title": "private class",
+      "type": "keyword",
+      "category": "Language",
+      "path": "/docs/language/modules#bounded-contexts",
+      "signature": "module Billing; private class Ledger; end; end",
+      "description": "A class reachable only from code inside its module (bounded context)",
+      "keywords": [
+        "private class",
+        "module",
+        "bounded context",
+        "encapsulation",
+        "namespace"
+      ]
+    },
+    {
       "title": "import",
       "type": "keyword",
       "category": "Language",

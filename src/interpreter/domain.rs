@@ -91,6 +91,11 @@ pub fn hydrate_field(spec: &str, stored: &Value) -> Option<Value> {
     }
 }
 
+/// A value-object class this thread has seen declared, by qualified name.
+pub fn registered_class(class_name: &str) -> Option<Rc<Class>> {
+    CLASSES.with(|c| c.borrow().get(class_name).cloned())
+}
+
 pub fn hydrate(class_name: &str, stored: &Value) -> Option<Value> {
     let class = CLASSES.with(|c| c.borrow().get(class_name).cloned())?;
     let Value::Hash(hash) = stored else {
@@ -526,4 +531,30 @@ fn nested_class(class: &Class, name: &str) -> Option<Rc<Class>> {
         Some(Value::Class(nested)) => Some(nested.clone()),
         _ => None,
     }
+}
+
+/// `name`, a class nested in `parent`, read from code in `namespace`: refused
+/// when it is a `private class` of `parent` and the code is not inside
+/// `parent` — a bounded context's private classes stay inside it.
+pub fn check_nested_access(
+    parent: &Class,
+    name: &str,
+    namespace: Option<&str>,
+) -> Result<(), String> {
+    if !parent.private_members.borrow().contains(name) {
+        return Ok(());
+    }
+    let inside = namespace.is_some_and(|ns| {
+        ns == parent.name
+            || ns
+                .strip_prefix(parent.name.as_str())
+                .is_some_and(|rest| rest.starts_with("::"))
+    });
+    if inside {
+        return Ok(());
+    }
+    Err(format!(
+        "{}::{name} is private to {} — use it from code in {}, or declare it without `private`",
+        parent.name, parent.name, parent.name
+    ))
 }

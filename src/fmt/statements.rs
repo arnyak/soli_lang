@@ -898,6 +898,9 @@ impl Printer<'_> {
                         p.blank_line();
                     }
                     p.flush_comments_before(n.span.line_usize());
+                    if n.is_private {
+                        p.write("private ");
+                    }
                     p.print_class_decl(n);
                 }
             }
