@@ -4,6 +4,8 @@
 
 ### Fixed
 
+* **language:** **A method body may start with `[` after a return type.** `def human?(r) -> Bool` followed by a line `["a", "b"].includes?(r)` was read as the return type `Bool[...]` and failed with "expected ]" — and one such file stopped the whole app from loading. The `[]` array suffix must now touch the type and close at once (`Int[]`, `Int[][]`); after a space or a line break, `[` starts the next expression.
+
 * **orm:** **Relations work on the SQL adapters.** On PostgreSQL, MySQL, SQLite and D1, `owner.pets` built a SoliDB string filter and `pet.owner`, `has_one` and has_and_belongs_to_many readers a raw SDBQL query, so every relation read raised ("String/raw SDBQL is SoliDB-only") — and `owner.pets.all` / `.length` answered the error *text* as if it were the rows. `dependent: "delete"` / `"delete_all"` / `"nullify"` cascades failed the same way. A relation's owner filter is now a hash filter (the SQL adapters compile it, SoliDB runs its SDBQL echo, as for `.where({ ... })`), so `has_many` chains (`where`, `count`, `for`, index) and cascades run everywhere; `belongs_to`, polymorphic `belongs_to`, `has_one` and HABTM read through the adapter on SQL (document or column-aware target). The foreign key keeps its type (an integer key stays an integer).
 
 * **orm:** **A failed query read raises.** `.all`, `.count`, iteration (`each`, `map`, `length`…), `for x in query` and `query[0]` handed back the query layer's `"Error: …"` string in place of the rows, so a broken query read as a 150-character "result". They raise the error now (`.first` keeps answering `nil` on a failed read).
