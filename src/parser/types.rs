@@ -88,8 +88,17 @@ impl Parser {
         };
 
         // Check for array suffix [] and nullable suffix ?
+        //
+        // `[]` is a suffix only when written against the type (`Int[]`). After
+        // a space or a line break, the `[` starts the next expression: in
+        // `def f(x) -> Bool` followed by a body line `["a", "b"].includes?(x)`,
+        // the array literal is the body, not part of the return type.
         let mut result = base_type;
-        while self.match_token(&TokenKind::LeftBracket) {
+        while self.check(&TokenKind::LeftBracket)
+            && self.peek().span.start == self.previous_span().end
+            && self.peek_nth(1).kind == TokenKind::RightBracket
+        {
+            self.advance();
             self.expect(&TokenKind::RightBracket)?;
             let span = start_span.merge(&self.previous_span());
             result = TypeAnnotation::new(TypeKind::Array(Box::new(result)), span);

@@ -201,6 +201,45 @@ mod parser_tests {
         program.statements.into_iter().next().unwrap().kind
     }
 
+    /// `[]` after a type is the array suffix only when written against it.
+    /// A body line starting with `[` after `-> Bool` used to be read as part
+    /// of the return type and failed with "expected ]".
+    #[test]
+    fn test_return_type_then_array_literal_body() {
+        let source = "def human?(reason: Any) -> Bool\n  [\"a\", \"b\"].includes?(reason)\nend";
+        match parse_stmt(source) {
+            StmtKind::Function(f) => {
+                let return_type = f.return_type.expect("return type");
+                assert!(matches!(return_type.kind, TypeKind::Named(ref name) if name == "Bool"));
+                assert_eq!(f.body.len(), 1);
+            }
+            other => panic!("Expected function, got {:?}", other),
+        }
+
+        // A space before the bracket also ends the type.
+        match parse_stmt("def first(xs: Any) -> Int [1].first end") {
+            StmtKind::Function(f) => {
+                let return_type = f.return_type.expect("return type");
+                assert!(matches!(return_type.kind, TypeKind::Named(ref name) if name == "Int"));
+            }
+            other => panic!("Expected function, got {:?}", other),
+        }
+
+        // Written against the type, `[]` is still an array type.
+        match parse_stmt("def all(xs: Int[]) -> Int[][]\n  [xs]\nend") {
+            StmtKind::Function(f) => {
+                let return_type = f.return_type.expect("return type");
+                match return_type.kind {
+                    TypeKind::Array(inner) => assert!(matches!(inner.kind, TypeKind::Array(_))),
+                    other => panic!("Expected Int[][], got {:?}", other),
+                }
+                assert!(matches!(f.params[0].type_annotation.kind, TypeKind::Array(_)));
+                assert_eq!(f.body.len(), 1);
+            }
+            other => panic!("Expected function, got {:?}", other),
+        }
+    }
+
     #[test]
     fn test_fn_no_parens() {
         match parse_stmt("fn demo { 1 }") {
