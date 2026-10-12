@@ -44,7 +44,7 @@ end
 - `class_methods do … end` become class methods on the includer.
 - `def self.included(base)` / `def self.extended(base)` run after the mix-in.
 - A class's own methods win over included ones.
-- Modules are not instantiated (`new Publishable()` raises).
+- Modules are not instantiated (`Publishable.new()` raises).
 - There is no `prepend`, and `super` does not walk into the module.
 
 This is separate from file `import` / `export`. Language reference:

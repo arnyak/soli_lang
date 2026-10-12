@@ -425,7 +425,7 @@ if let Some(inherited_native) = superclass.find_native_static_method("inherited"
   count: Int = 0
 end
 
-c = new Counter()
+c = Counter.new()
 c.instance_eval {
   this.count = 42
 }

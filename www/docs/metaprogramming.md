@@ -105,7 +105,7 @@ class Recorder
   end
 end
 
-recorder = new Recorder()
+recorder = Recorder.new()
 recorder.anything(1, 2, 3)   # "anything called with 3 argument(s)"
 ```
 

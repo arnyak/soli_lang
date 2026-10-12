@@ -972,7 +972,7 @@ class ValidationError
 end
 
 try
-  throw new NotFoundError("User not found")
+  throw NotFoundError.new("User not found")
 catch NotFoundError e
   print("404: " + e.message)
 catch ValidationError e
@@ -999,7 +999,7 @@ class NotFoundError < AppError
 end
 
 try
-  throw new NotFoundError("missing")
+  throw NotFoundError.new("missing")
 catch AppError e
   print("App error: " + e.message)  # Catches NotFoundError too
 end
@@ -2124,8 +2124,8 @@ class Person
 end
 
 # Creating instances
-alice = new Person("Alice", 30);
-bob = new Person("Bob", 25, "bob@example.com");
+alice = Person.new("Alice", 30);
+bob = Person.new("Bob", 25, "bob@example.com");
 
 # Using instances
 print(alice.greet());      # "Hello, I'm Alice"
@@ -2134,6 +2134,33 @@ print(bob.introduce());    # "Hi, I'm Bob and I'm 25 years old. You can reach me
 alice.have_birthday();
 print(alice.age);          # 31
 ```
+
+#### Creating instances
+
+`Klass.new(...)` builds an instance and runs the constructor with the
+arguments — positional, named, a hash, or none. `new Klass(...)` is the same
+call, and still works everywhere.
+
+```soli
+alice = Person.new("Alice", 30)
+bob = Person.new(name: "Bob", age: 25)
+
+class Counter
+  count: Int
+
+  new
+    @count = 0
+  end
+end
+
+Counter.new().count   # 0 — the constructor ran
+```
+
+- Keep the parentheses when there are no arguments: a bare `Counter.new` is
+  not a call.
+- A class without a constructor takes its fields from a hash or from named
+  arguments: `Bag.new({"a": 1})`, `Bag.new(a: 1)`.
+- A module is not instantiated: `Greetable.new()` raises.
 
 #### `this` and `self`
 
@@ -2244,18 +2271,18 @@ class Rectangle
 
   # Static factory method
   static def square(side: Float) -> Rectangle
-    new Rectangle(side, side)
+    Rectangle.new(side, side)
   end
 
   # Another factory method
   static def from_area(area: Float, aspect_ratio: Float = 1.0) -> Rectangle
     width = sqrt(area / aspect_ratio);
     height = width * aspect_ratio;
-    new Rectangle(width, height)
+    Rectangle.new(width, height)
   end
 end
 
-rect = new Rectangle(10.0, 5.0);
+rect = Rectangle.new(10.0, 5.0);
 print(rect.area());  # 50.0
 
 square = Rectangle.square(7.0);
@@ -2319,7 +2346,7 @@ Admin::User.new().role  # "admin"
 
 - `include` / `extend` accept one or more names: `include A, B`.
 - A class's own methods win over included ones.
-- `new ModuleName()` raises — modules are not instantiated.
+- `ModuleName.new()` (like `new ModuleName()`) raises — modules are not instantiated.
 - This is separate from file `import` / `export` (see [Modules](#modules) below).
 
 ### Concern hooks
@@ -2417,21 +2444,21 @@ class Cat < Animal
 end
 
 # Using inheritance
-dog = new Dog("Buddy", 3, "Golden Retriever");
+dog = Dog.new("Buddy", 3, "Golden Retriever");
 print(dog.speak());        # "Buddy barks!"
 print(dog.get_info());     # "Buddy is 3 years old"
 print(dog.fetch());        # "Buddy fetches the ball!"
 print(dog.breed);          # "Golden Retriever"
 
-cat = new Cat("Whiskers", 5);
+cat = Cat.new("Whiskers", 5);
 print(cat.speak());        # "Whiskers meows!"
 print(cat.purr());         # "Whiskers purrs contentedly"
 
 # Polymorphism
 animals = [
-  new Dog("Rex", 2, "German Shepherd"),
-  new Cat("Mittens", 4),
-  new Dog("Spot", 1, "Beagle")
+  Dog.new("Rex", 2, "German Shepherd"),
+  Cat.new("Mittens", 4),
+  Dog.new("Spot", 1, "Beagle")
 ];
 
 for animal in animals
@@ -2462,7 +2489,7 @@ class HomeController < BaseController
   end
 end
 
-c = new HomeController()
+c = HomeController.new()
 print(c.action())   # "base -> home"
 print(c.before())   # "authenticated" (inherited from BaseController)
 ```
@@ -2540,8 +2567,8 @@ class Rectangle implements Drawable, Resizable {
 
 # Using interfaces
 shapes = [
-  new Circle(5.0, "red"),
-  new Rectangle(10.0, 6.0, "blue")
+  Circle.new(5.0, "red"),
+  Rectangle.new(10.0, 6.0, "blue")
 ];
 
 for shape in shapes {
@@ -2621,7 +2648,7 @@ class BankAccount
   end
 end
 
-account = new BankAccount(100.0)
+account = BankAccount.new(100.0)
 account.deposit(50.0)            # true
 account.balance_label            # "EUR 150"
 account.valid_amount?(1.0)       # raises: private method 'valid_amount?' …
@@ -2652,7 +2679,7 @@ account.valid_amount?(1.0)       # raises: private method 'valid_amount?' …
   writes alike. Fields under a `private` section are private.
 - **`soli check`** reports these calls and accesses when it knows the
   receiver's class: an annotated variable (`v: Vault`), or a variable
-  assigned `new Vault(...)`. A receiver it cannot type (an unannotated
+  assigned `Vault.new(...)` (or `new Vault(...)`). A receiver it cannot type (an unannotated
   parameter, say) is left to the runtime.
 
 ### Protected Methods
@@ -2681,8 +2708,8 @@ class Account
   end
 end
 
-new Account(10).richer_than?(new Account(5))   # true
-new Account(10).balance                        # raises: protected method 'balance' …
+Account.new(10).richer_than?(Account.new(5))   # true
+Account.new(10).balance                        # raises: protected method 'balance' …
 ```
 
 `protected def x` marks one method; `protected` alone on its line starts a
@@ -2898,12 +2925,12 @@ class Inventory
 end
 
 # Using the inventory system
-inventory = new Inventory();
+inventory = Inventory.new();
 
 # Add products
-inventory.add_product(new Product("P001", "Laptop", 999.99, 10));
-inventory.add_product(new Electronics("E001", "Headphones", 149.99, 50, "AudioTech", 24));
-inventory.add_product(new Product("P002", "Mouse", 29.99, 100));
+inventory.add_product(Product.new("P001", "Laptop", 999.99, 10));
+inventory.add_product(Electronics.new("E001", "Headphones", 149.99, 50, "AudioTech", 24));
+inventory.add_product(Product.new("P002", "Mouse", 29.99, 100));
 
 # Work with inventory
 print("Total inventory value: $" + str(inventory.get_total_inventory_value()));
@@ -2965,11 +2992,11 @@ its outer class: `type(dept)` is `"Organization::Department"`.
 Use the `::` (scope resolution operator) to access nested classes:
 
 ```soli
-dept = new Organization::Department();
+dept = Organization::Department.new();
 print("Department: " + dept.get_name());  # "Department: Engineering"
 print("Budget: $" + str(dept.get_budget()));  # "Budget: $1000000"
 
-team = new Organization::Team();
+team = Organization::Team.new();
 print("Team: " + team.get_name());  # "Team: Backend Team"
 ```
 
@@ -3013,7 +3040,7 @@ class TrafficLight
   end
 end
 
-red = new TrafficLight::RedState();
+red = TrafficLight::RedState.new();
 print("Red light duration: " + str(red.get_duration()) + "s");  # "Red light duration: 30s"
 print("Next state: " + red.next);  # "Next state: green"
 ```
@@ -3043,9 +3070,9 @@ class Database
   end
 end
 
-conn = new Database::Connection();
-query = new Database::QueryBuilder();
-tx = new Database::Transaction();
+conn = Database::Connection.new();
+query = Database::QueryBuilder.new();
+tx = Database::Transaction.new();
 
 print(conn.connect());  # "Connected to database"
 print(query.select("users"));  # "SELECT * FROM users"
@@ -3075,11 +3102,11 @@ class Server
   end
 
   def start()
-    "Server starting with SSL: " + str(new Server::SSLConfig().is_enabled())
+    "Server starting with SSL: " + str(Server::SSLConfig.new().is_enabled())
   end
 end
 
-ssl = new Server::SSLConfig();
+ssl = Server::SSLConfig.new();
 print("Protocol: " + ssl.get_protocol());  # "Protocol: TLS 1.3"
 ```
 
@@ -3108,9 +3135,9 @@ class Service
   end
 end
 
-db = new Service::Database();
-cache = new Service::Cache();
-logger = new Service::Logger();
+db = Service::Database.new();
+cache = Service::Cache.new();
+logger = Service::Logger.new();
 
 print(db.connect());  # "DB connected"
 print(cache.get("test"));  # "cached:test"
@@ -3277,7 +3304,7 @@ end
 describe_value("hello")     # "String with 5 characters"
 describe_value(42)          # "Integer: 42"
 describe_value([1, 2, 3])   # "Array with 3 elements"
-describe_value(new Point(3)) # "Point at 3"
+describe_value(Point.new(3)) # "Point at 3"
 
 # A type pattern takes a guard too
 size = match 5 { Int: n if n > 3 => "big #{n}", _ => "small" }   # "big 5"

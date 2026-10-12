@@ -187,7 +187,7 @@ One document per relationship, as a SolidB edge (`_from` / `_to` reference
 | `implements` | class → interface |
 | `imports` | file → local file |
 | `calls` | method/function → the function or class-method it calls |
-| `instantiates` | method/function → class it constructs (`new X()`) |
+| `instantiates` | method/function → class it constructs (`X.new()`, or `new X()`) |
 | `renders` | controller action → view (`render` / `partial`); view → partial view |
 | `redirects` | method/function → route whose path matches `redirect("/path")` (prefers the `GET` route when a path is served by several verbs) |
 | `routes_to` | route → controller action |
@@ -198,8 +198,8 @@ Call-graph resolution is **precision-first**. Linked when high-confidence:
 - class-method calls (`User.find(...)`), `this.method(...)`, bare `super(...)` /
   `super.method(...)` when the parent method exists
 - unambiguous bare function calls
-- instance calls on a **locally typed** variable only: `let u = new User()`,
-  `let u: User = …`, or `let u = User.find(...)` (and other model factories
+- instance calls on a **locally typed** variable only: `u = User.new()`,
+  `let u: User = …`, or `u = User.find(...)` (and other model factories
   like `find_by` / `create`) then `u.authenticate(...)`
 
 Unbound receivers (`user.save()` when `user` has no known class) stay

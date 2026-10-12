@@ -214,7 +214,7 @@ chunk_lines = 50                       # window for chunk-embedded files</code><
                     <tr><td class="py-2.5 px-4"><code>implements</code></td><td class="py-2.5 px-4">class &rarr; interface</td></tr>
                     <tr><td class="py-2.5 px-4"><code>imports</code></td><td class="py-2.5 px-4">file &rarr; local file</td></tr>
                     <tr><td class="py-2.5 px-4"><code>calls</code></td><td class="py-2.5 px-4">method/function &rarr; the function or class-method it calls</td></tr>
-                    <tr><td class="py-2.5 px-4"><code>instantiates</code></td><td class="py-2.5 px-4">method/function &rarr; class it constructs (<code>new X()</code>)</td></tr>
+                    <tr><td class="py-2.5 px-4"><code>instantiates</code></td><td class="py-2.5 px-4">method/function &rarr; class it constructs (<code>X.new()</code>, or <code>new X()</code>)</td></tr>
                     <tr><td class="py-2.5 px-4"><code>renders</code></td><td class="py-2.5 px-4">controller action &rarr; view (<code>render</code>/<code>partial</code>); view &rarr; partial view</td></tr>
                     <tr><td class="py-2.5 px-4"><code>redirects</code></td><td class="py-2.5 px-4">method/function &rarr; route whose path matches <code>redirect("/path")</code> (prefers the <code>GET</code> route when a path is served by several verbs)</td></tr>
                     <tr><td class="py-2.5 px-4"><code>routes_to</code></td><td class="py-2.5 px-4">route &rarr; controller action</td></tr>
@@ -228,8 +228,8 @@ chunk_lines = 50                       # window for chunk-embedded files</code><
                 Linked when high-confidence: class-method calls (<code>User.find(...)</code>),
                 <code>this.method(...)</code>, bare <code>super(...)</code>/<code>super.method(...)</code>,
                 unambiguous bare functions, and instance calls on a <strong>locally typed</strong> variable
-                (<code>let u = new User()</code>, <code>let u: User = &hellip;</code>, or
-                <code>let u = User.find(...)</code> then <code>u.authenticate(...)</code>). Unbound receivers
+                (<code>u = User.new()</code>, <code>let u: User = &hellip;</code>, or
+                <code>u = User.find(...)</code> then <code>u.authenticate(...)</code>). Unbound receivers
                 (<code>user.save()</code> with no known class) stay unlinked &mdash; an edge is never invented.
                 Reassigning a tracked local to a value with no known class drops its type, and a bare
                 <code>partial("form")</code> in a view resolves against that view's own directory first.

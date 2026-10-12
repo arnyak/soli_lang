@@ -16,6 +16,20 @@ impl TypeChecker {
         callee: &Expr,
         arguments: &[Argument],
     ) -> TypeResult<Type> {
+        // `Inner.new(...)` naming a class this scope cannot see — a nested
+        // class from inside its outer class — is left to the runtime, as
+        // `new Inner(...)` is (see `check_new_expr`).
+        if let ExprKind::Member { object, name } = &callee.kind {
+            if let ExprKind::Variable(class_name) = &object.kind {
+                if name == "new"
+                    && class_name.starts_with(|c: char| c.is_ascii_uppercase())
+                    && self.env.get(class_name).is_none()
+                    && self.env.get_class(class_name).is_none()
+                {
+                    return self.check_new_expr(span, object, arguments);
+                }
+            }
+        }
         let callee_type = match &callee.kind {
             ExprKind::Variable(name) => self.check_variable(name, callee.span)?,
             _ => self.check_expr(callee)?,

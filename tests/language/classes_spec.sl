@@ -1057,3 +1057,84 @@ describe("A method named match") do
     assert_eq(result, "forty-two")
   end
 end
+
+describe("Klass.new") do
+  test("runs the constructor, as new Klass does") do
+    class NewSpecPoint
+      x: Int
+      y: Int
+
+      new(x: Int = 0, y: Int = 0)
+        @x = x
+        @y = y
+      end
+    end
+
+    assert_eq(NewSpecPoint.new(3, 4).x, 3)
+    assert_eq(NewSpecPoint.new().x, 0)
+    assert_eq(NewSpecPoint.new(y: 9).y, 9)
+    assert_eq(NewSpecPoint.new(y: 9).x, 0)
+    assert_eq(NewSpecPoint.new(1, y: 2).y, 2)
+  end
+
+  test("runs a constructor that takes no arguments") do
+    class NewSpecCounter
+      count: Int
+
+      new
+        @count = 10
+      end
+    end
+
+    assert_eq(NewSpecCounter.new().count, 10)
+  end
+
+  test("passes one hash to the constructor") do
+    class NewSpecPolicy
+      user: Any
+      record: Any
+
+      new(context)
+        @user = "ctor:" + context["user"]
+        @record = context["record"]
+      end
+    end
+
+    policy = NewSpecPolicy.new({"user": "ada", "record": 1})
+    assert_eq(policy.user, "ctor:ada")
+    assert_eq(policy.record, 1)
+  end
+
+  test("runs an inherited constructor") do
+    class NewSpecBase
+      name: String
+
+      new(name: String = "base")
+        @name = name
+      end
+    end
+
+    class NewSpecChild < NewSpecBase
+    end
+
+    assert_eq(NewSpecChild.new().name, "base")
+    assert_eq(NewSpecChild.new(name: "child").name, "child")
+  end
+
+  test("assigns attributes on a class without a constructor") do
+    class NewSpecBag
+      a: Any
+    end
+
+    assert_eq(NewSpecBag.new({"a": 1}).a, 1)
+    assert_eq(NewSpecBag.new(a: 2).a, 2)
+    assert_eq(type(NewSpecBag.new()), "NewSpecBag")
+  end
+
+  test("refuses a module") do
+    module NewSpecGreetable
+    end
+
+    assert_raises(fn() { NewSpecGreetable.new() })
+  end
+end

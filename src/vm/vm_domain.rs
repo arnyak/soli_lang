@@ -120,7 +120,9 @@ impl Vm {
         class: &Rc<Class>,
         receiver_idx: usize,
     ) -> Result<(), RuntimeError> {
-        use crate::interpreter::executor::access::member::{is_attribute_new, new_with_attributes};
+        use crate::interpreter::executor::access::member::{
+            has_constructor, is_attribute_new, new_with_attributes,
+        };
         let span = self.current_span();
         let args: Vec<Value> = self.stack.drain(receiver_idx + 1..).collect();
         self.stack.truncate(receiver_idx);
@@ -142,6 +144,16 @@ impl Vm {
                 _ => Vec::new(),
             };
             return self.build_value_object(class, Vec::new(), named, span);
+        }
+        // `Klass.new()`, `Klass.new(name: x)`, `Klass.new({...})` on a class
+        // with a constructor: the constructor, exactly as `new Klass(...)`.
+        if has_constructor(class) {
+            let argc = args.len();
+            self.push(Value::Class(class.clone()));
+            for value in args {
+                self.push(value);
+            }
+            return self.call_class(class, argc, span);
         }
         let instance = new_with_attributes(class, &args).map_err(|e| RuntimeError::new(e, span))?;
         self.push(instance);

@@ -153,7 +153,9 @@ impl Interpreter {
                 }
             }
         }
-        use crate::interpreter::executor::access::member::{is_attribute_new, new_with_attributes};
+        use crate::interpreter::executor::access::member::{
+            has_constructor, is_attribute_new, new_with_attributes,
+        };
         if !is_attribute_new(&positional, !named.is_empty()) {
             return self.instantiate_class(class, positional, named, span);
         }
@@ -166,6 +168,11 @@ impl Interpreter {
                 }
             }
             return self.instantiate_class(class, Vec::new(), named, span);
+        }
+        // `Klass.new()`, `Klass.new(name: x)`, `Klass.new({...})` on a class
+        // with a constructor: the constructor, exactly as `new Klass(...)`.
+        if has_constructor(class) {
+            return self.instantiate_class(class, positional, named, span);
         }
         let args = if named.is_empty() {
             positional

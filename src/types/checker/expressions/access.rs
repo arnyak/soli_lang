@@ -727,28 +727,51 @@ fn constructed_key(name: &str) -> String {
     format!("\u{0}new {name}")
 }
 
+/// The class named by `new C(...)` or `C.new(...)`, the two spellings of a
+/// construction.
+fn constructed_class_name(expr: &Expr) -> Option<&str> {
+    let class_expr = match &expr.kind {
+        ExprKind::New { class_expr, .. } => class_expr,
+        ExprKind::Call { callee, .. } => match &callee.kind {
+            ExprKind::Member { object, name } if name == "new" => object,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    match &class_expr.kind {
+        ExprKind::Variable(class_name) => Some(class_name),
+        _ => None,
+    }
+}
+
 impl TypeChecker {
-    /// Remember (or forget) that variable `name` holds a `new C(...)`.
+    /// Remember (or forget) that variable `name` holds a `new C(...)` (or a
+    /// `C.new(...)`).
     pub(crate) fn note_constructed_class(&mut self, name: &str, value: Option<&Expr>) {
-        let class = match value.map(|v| &v.kind) {
-            Some(ExprKind::New { class_expr, .. }) => match &class_expr.kind {
-                ExprKind::Variable(class_name) => self.env.get_class(class_name).cloned(),
-                _ => None,
-            },
-            _ => None,
-        };
+        let class = value
+            .and_then(constructed_class_name)
+            .and_then(|class_name| self.env.get_class(class_name).cloned());
         let noted = class.map(Type::Class).unwrap_or(Type::Unknown);
         self.env.define(constructed_key(name), noted);
     }
 
-    /// The class `object` was built from: `new C(...)` itself, or a variable
-    /// noted by [`Self::note_constructed_class`].
+    /// The class `object` was built from: `new C(...)` / `C.new(...)` itself,
+    /// or a variable noted by [`Self::note_constructed_class`].
     fn constructed_class_of(&self, object: &Expr) -> Option<String> {
-        match &object.kind {
-            ExprKind::New { class_expr, .. } => match &class_expr.kind {
+        if let ExprKind::New { class_expr, .. } = &object.kind {
+            return match &class_expr.kind {
                 ExprKind::Variable(class_name) => Some(class_name.clone()),
                 _ => None,
-            },
+            };
+        }
+        // `c.new(...)` on a variable that is no class is not a construction.
+        if let Some(class_name) = constructed_class_name(object) {
+            return self
+                .env
+                .get_class(class_name)
+                .map(|_| class_name.to_string());
+        }
+        match &object.kind {
             ExprKind::Variable(name) => match self.env.get(&constructed_key(name)) {
                 Some(Type::Class(class)) => Some(class.name),
                 _ => None,

@@ -55,7 +55,7 @@ class Factory
   extend Greetable
 end</code></pre>
         <p class="text-gray-400 mt-4 text-sm">
-            A class's own methods win over included ones. <code>new Greetable()</code> raises.
+            A class's own methods win over included ones. <code>Greetable.new()</code> raises.
             Nested classes work as a namespace: <code>Admin::User</code>.
             Not yet: <code>prepend</code>, or <code>super</code> into the module.
         </p>
@@ -298,13 +298,13 @@ Billing::Ledger.balance             # error: Billing::Ledger is private to Billi
 import "./commerce.sl"
 
 # Reach the classes through ::
-book = new Commerce::Product("Soli Guide", 29.99, 10)
-shirt = new Commerce::Product("T-Shirt", 19.99, 3)
+book = Commerce::Product.new("Soli Guide", 29.99, 10)
+shirt = Commerce::Product.new("T-Shirt", 19.99, 3)
 
 println(book.in_stock())          # true
 println(book.discounted(20.0))    # 23.992
 
-cart = new Commerce::Cart()
+cart = Commerce::Cart.new()
 cart.add(book)
 cart.add(shirt)
 println(cart.total())             # 49.98</code></pre>

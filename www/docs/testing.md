@@ -614,7 +614,7 @@ class in production.
 
 ```soli
 test("charges through the gateway") do
-  gateway = new Mock("gateway", {
+  gateway = Mock.new("gateway", {
     "charge": fn(amount) { {"ok": true, "amount": amount} },
     "currency": "EUR"
   })

@@ -1068,6 +1068,23 @@ impl GraphBuilder {
     fn walk_expr(&mut self, expr: &Expr, ctx: &WalkCtx, locals: &mut HashMap<String, String>) {
         match &expr.kind {
             ExprKind::Call { callee, arguments } => {
+                // `User.new(...)` instantiates, as `new User(...)` does.
+                if let ExprKind::Member { object, name } = &callee.kind {
+                    if name == "new" {
+                        if let Some(to) = simple_name(object)
+                            .and_then(|cname| self.class_by_name.get(&cname).cloned())
+                        {
+                            self.push_edge(
+                                &ctx.caller_id,
+                                &to,
+                                "instantiates",
+                                "",
+                                &ctx.relpath,
+                                expr.span.line,
+                            );
+                        }
+                    }
+                }
                 self.resolve_call(callee, arguments, expr.span.line, ctx, locals);
                 self.walk_expr(callee, ctx, locals);
                 for a in arguments {
@@ -1924,6 +1941,23 @@ mod tests {
             .edges
             .iter()
             .any(|e| e.from == route.key && e.to == create.key && e.edge_kind == "routes_to"));
+    }
+
+    #[test]
+    fn klass_new_is_an_instantiates_edge() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "app/services/receipt.sl",
+            "class Receipt\n  new(total)\n    @total = total\n  end\nend\n",
+        );
+        write(
+            dir.path(),
+            "app/services/checkout.sl",
+            "def checkout(total)\n  Receipt.new(total)\nend\n",
+        );
+        let graph = build_graph(dir.path()).unwrap();
+        assert!(has_edge(&graph, "checkout", "Receipt", "instantiates"));
     }
 
     #[test]

@@ -1917,6 +1917,13 @@ impl Interpreter {
             return Ok(class_val.clone());
         }
 
+        // The same on a class with a constructor: `Klass.new(name: x)` reaches
+        // here on the VM (named arguments skip the call interceptor), and the
+        // call must run the constructor as `new Klass(name: x)` does.
+        if name == "new" && intercepts_new(class) && has_constructor(class) {
+            return Ok(class_val.clone());
+        }
+
         // ClassName.new() — instantiate, with an optional hash of attributes
         // that are bulk-assigned to the new instance's fields (see
         // `new_with_attributes`). With other arguments the call itself runs
@@ -3028,6 +3035,9 @@ pub fn new_with_attributes(
     class: &Rc<crate::interpreter::value::Class>,
     args: &[Value],
 ) -> Result<Value, String> {
+    if class.is_module {
+        return Err(format!("cannot instantiate module {}", class.name));
+    }
     if args.len() > 1 {
         return Err(format!(
             "new() expects 0 or 1 arguments, got {}",
@@ -3120,14 +3130,22 @@ fn literal_value(expr: &crate::ast::Expr) -> Option<Value> {
 }
 
 /// Whether `Klass.new(...)` with these arguments is the attribute-hash form
-/// (no constructor) rather than a constructor call: no arguments, one hash
-/// or `nil`, or named arguments only (which arrive as one hash).
+/// rather than a constructor call: no arguments, one hash or `nil`, or named
+/// arguments only (which arrive as one hash). A class with a constructor
+/// still runs it (see `has_constructor`).
 pub fn is_attribute_new(positional: &[Value], has_named: bool) -> bool {
     match positional {
         [] => true,
         [Value::Hash(_) | Value::Null] => !has_named,
         _ => false,
     }
+}
+
+/// Whether `class` (or an ancestor) declares a constructor, on either
+/// engine: a class with one builds every `Klass.new(...)` through it, as
+/// `new Klass(...)` does — the attribute form is for classes without.
+pub fn has_constructor(class: &crate::interpreter::value::Class) -> bool {
+    class.find_vm_method("init").is_some() || class.find_constructor().is_some()
 }
 
 /// Whether `Klass.new(...)` on `class` is answered by the engines' call

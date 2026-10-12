@@ -26,6 +26,8 @@
 
 * **language:** **VM: a subclass keeps its superclass's field defaults and constructor.** With field defaults of its own and no `new`, `new Child(5)` failed on the VM with "expected 0, got 1" (the defaults-only `init` hid the superclass's constructor), and the superclass's defaults stayed unset — with a `new` that does not call `super` too. The VM now sets every class's defaults, the farthest first, then runs the nearest real constructor, as the tree-walker does. Instantiation speed is unchanged.
 
+* **language:** **`Klass.new(...)` is `new Klass(...)` on a class with a constructor.** `Klass.new()`, `Klass.new(name: x)` and `Klass.new({...})` skipped the constructor and only assigned attributes: a `new` without parameters never ran, defaults never applied, and `Point.new(y: 9)` left `x` unset. On a class with a constructor (its own or inherited) every form now runs it, on both engines; a class without one keeps the attribute form, and value objects are unchanged. `Greetable.new()` on a module raises `cannot instantiate module Greetable`, as `new Greetable()` does (it returned an instance). `soli check` types a receiver built with `Vault.new(...)` as it does `new Vault(...)` (private and protected calls on it are reported) and leaves `Inner.new(...)` from inside its outer class to the runtime; `soli graph build` records `X.new(...)` as an `instantiates` edge. The language reference and the docs pages write `Klass.new(...)` now, with a "Creating instances" section.
+
 ## [2.23.0] - 2026-10-12
 
 ### Added

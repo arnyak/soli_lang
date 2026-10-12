@@ -469,9 +469,9 @@ puts "Hello world";</code></pre>
   end
 end
 
-user1 = new User(name: "Alice", age: 30, role: "admin")
-user2 = new User("Bob", age: 25)
-user3 = new User(name: "Charlie", role: "moderator");</code></pre>
+user1 = User.new(name: "Alice", age: 30, role: "admin")
+user2 = User.new("Bob", age: 25)
+user3 = User.new(name: "Charlie", role: "moderator");</code></pre>
             </div>
         </div>
     </section>

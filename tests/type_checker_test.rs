@@ -954,3 +954,61 @@ print(Amount2.new(9, "USD").to_h)
 print(Amount2.new({"cents": 5}) == Amount2.new(5))"##,
     );
 }
+
+/// `C.new(...)` is a construction, as `new C(...)` is: `soli check` types the
+/// receiver from either spelling and refuses a private call on it.
+#[test]
+fn klass_new_types_the_receiver_like_new_klass() {
+    let source = |construction: &str| {
+        format!(
+            "class Vault
+  private
+
+  def secret
+    1
+  end
+end
+v = {construction}
+v.secret
+{construction}.secret
+"
+        )
+    };
+    for construction in ["Vault.new()", "new Vault()"] {
+        let errors = check_err(&source(construction));
+        let private_calls = errors
+            .iter()
+            .filter(|e| {
+                matches!(e, TypeError::General { message, .. }
+                    if message == "private method 'secret' called for an instance of Vault")
+            })
+            .count();
+        assert_eq!(private_calls, 2, "{construction}: {errors:?}");
+    }
+    // `.new` on a variable that holds no known class types nothing.
+    check_ok("def build(klass)\n  made = klass.new()\n  made.anything\nend\n");
+}
+
+/// A nested class named from inside its outer class: `Inner.new(...)` is
+/// left to the runtime, as `new Inner(...)` is.
+#[test]
+fn klass_new_on_a_nested_class_from_its_outer_class() {
+    for construction in ["Inner.new(x)", "new Inner(x)"] {
+        check_ok(&format!(
+            "class Outer
+  def build(x)
+    {construction}
+  end
+
+  class Inner
+    value: Any
+
+    new(value)
+      @value = value
+    end
+  end
+end
+"
+        ));
+    }
+}

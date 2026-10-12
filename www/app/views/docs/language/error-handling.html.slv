@@ -274,7 +274,7 @@ end
 
 # Multiple typed catch blocks
 try
-  throw new NotFoundError("User not found")
+  throw NotFoundError.new("User not found")
 catch NotFoundError e
   print("404: " + e.message)
 catch ValidationError e
@@ -315,7 +315,7 @@ end
 
 # Catches NotFoundError because it extends AppError
 try
-  throw new NotFoundError("Page not found")
+  throw NotFoundError.new("Page not found")
 catch AppError e
   print("App error: " + e.message)
 end</code></pre>
@@ -336,7 +336,7 @@ class ErrorB {}
 
 try
   try
-    throw new ErrorB()
+    throw ErrorB.new()
   catch ErrorA e
     # Does NOT match ErrorB
     print("A")

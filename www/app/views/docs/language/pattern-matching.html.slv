@@ -180,7 +180,7 @@ end
 print(describe_value("hello"))       # "String with 5 characters"
 print(describe_value(42))            # "Integer: 42"
 print(describe_value([1, 2, 3]))     # "Array with 3 elements"
-print(describe_value(new Point(3)))  # "Point at 3"</code></pre>
+print(describe_value(Point.new(3)))  # "Point at 3"</code></pre>
             </div>
         </div>
     </section>

@@ -311,8 +311,9 @@ catch DomainError err
 end"##,
     ),
     (
-        // `Klass.new(positional)` runs the constructor; the one-hash and
-        // named-only forms keep assigning attributes.
+        // `Klass.new(...)` is `new Klass(...)` on a class with a constructor,
+        // whatever the arguments — none, one hash, named only. A class
+        // without one keeps the attribute form; a module is not instantiated.
         "klass_new_runs_the_constructor",
         r##"class InsufficientFunds < DomainError
 end
@@ -341,7 +342,33 @@ end
 print(Amount.new({"cents": 5}).to_h)
 print(Amount.new(cents: 7).to_h)
 print(Amount.new(9, "USD").to_h)
-print(Amount.new({"cents": 5}) == Amount.new(5))"##,
+print(Amount.new({"cents": 5}) == Amount.new(5))
+class Counter
+  count: Int
+  new
+    @count = 10
+  end
+end
+print(Counter.new().count)
+class Point
+  x: Int
+  y: Int
+  new(x = 0, y = 0)
+    @x = x
+    @y = y
+  end
+end
+print(Point.new().x, Point.new(y: 4).y, Point.new(y: 4).x)
+class Child < Point
+end
+print(Child.new(y: 6).y, Child.new().x)
+class Bag
+  a: Any
+end
+print(Bag.new({"a": 1}).a, Bag.new(a: 2).a, type(Bag.new()))
+module Greetable
+end
+print(Greetable.new() rescue "module")"##,
     ),
     (
         // Outside a transaction `after_commit` runs its block at once, in

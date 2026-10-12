@@ -67,6 +67,32 @@
 end</code></pre>
             </div>
         </section>
+
+        <section id="kw-new" class="scroll-mt-20 mb-6">
+            <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+                <a href="#kw-new" class="group flex items-center gap-2 mb-3">
+                    <code class="text-lg font-mono text-amber-400">Klass.new</code>
+                </a>
+                <p class="text-gray-400 mb-3">Builds an instance and runs the constructor with the arguments &mdash; positional, named, a hash, or none. <code>new Klass(...)</code> is the same call, and still works everywhere.</p>
+                <pre data-filename="Example"><code class="language-soli text-sm">alice = Person.new("Alice", 30)
+bob = Person.new(name: "Bob", age: 25)
+
+class Counter
+  count: Int
+
+  new
+    @count = 0
+  end
+end
+
+Counter.new().count   # 0 — the constructor ran</code></pre>
+                <ul class="list-disc list-inside text-gray-400 mt-3 space-y-1">
+                    <li>Keep the parentheses when there are no arguments: a bare <code>Counter.new</code> is not a call.</li>
+                    <li>A class without a constructor takes its fields from a hash or from named arguments: <code>Bag.new({"a": 1})</code>, <code>Bag.new(a: 1)</code>.</li>
+                    <li>A module is not instantiated: <code>Greetable.new()</code> raises.</li>
+                </ul>
+            </div>
+        </section>
     </section>
 
     <!-- Visibility Modifiers -->
@@ -137,7 +163,7 @@ end</code></pre>
   end
 end
 
-account = new BankAccount(100.0)
+account = BankAccount.new(100.0)
 account.deposit(50.0)            # true
 account.balance_label            # "EUR 150"
 account.valid_amount?(1.0)       # raises: private method 'valid_amount?' …</code></pre>
@@ -150,7 +176,7 @@ account.valid_amount?(1.0)       # raises: private method 'valid_amount?' …</c
                 <li><strong class="text-white">A <code>_</code> prefix is only a naming convention.</strong> It keeps a controller method out of the automatic routes; it does not make the method private. Use <code>private</code> for that.</li>
                 <li><strong class="text-white"><code>soli fmt</code></strong> writes visibility as sections: a <code>private def</code> becomes a <code>private</code> line above the method (and a <code>public</code> line above the next public one).</li>
                 <li><strong class="text-white">Fields follow the same rules.</strong> A <code>private</code> field is readable and writable on <code>self</code> only (<code>@secret</code>, <code>this.secret</code>); a <code>protected</code> one also from code running in an instance of the declaring class or a subclass. Anything else raises <code>private field 'secret' accessed for an instance of Vault</code> &mdash; reads and writes alike. Fields under a <code>private</code> section are private.</li>
-                <li><strong class="text-white"><code>soli check</code></strong> reports these calls and accesses when it knows the receiver&rsquo;s class: an annotated variable (<code>v: Vault</code>), or a variable assigned <code>new Vault(...)</code>. A receiver it cannot type (an unannotated parameter, say) is left to the runtime.</li>
+                <li><strong class="text-white"><code>soli check</code></strong> reports these calls and accesses when it knows the receiver&rsquo;s class: an annotated variable (<code>v: Vault</code>), or a variable assigned <code>Vault.new(...)</code> (or <code>new Vault(...)</code>). A receiver it cannot type (an unannotated parameter, say) is left to the runtime.</li>
             </ul>
         </section>
 
@@ -177,8 +203,8 @@ account.valid_amount?(1.0)       # raises: private method 'valid_amount?' …</c
   end
 end
 
-new Account(10).richer_than?(new Account(5))   # true
-new Account(10).balance                        # raises: protected method 'balance' …</code></pre>
+Account.new(10).richer_than?(Account.new(5))   # true
+Account.new(10).balance                        # raises: protected method 'balance' …</code></pre>
             </div>
             </div>
             <p class="text-gray-400 mb-3"><code>protected def x</code> marks one method; <code>protected</code> alone on its line starts a section, like <code>private</code>.</p>
@@ -444,7 +470,7 @@ class Dog < Pet
   end
 end
 
-dog = new Dog("Rex", "Alice")
+dog = Dog.new("Rex", "Alice")
 print(dog.speak())     # "Woof!"
 print(dog.describe())  # "Rex belongs to Alice"
 print(dog.name)        # "Rex" (inherited from Animal)</code></pre>
@@ -473,7 +499,7 @@ class C < B
   end
 end
 
-print(new C().identify())  # "A -> B -> C"</code></pre>
+print(C.new().identify())  # "A -> B -> C"</code></pre>
             </div>
         </section>
     </section>
@@ -506,7 +532,7 @@ account.class == "Account" # true</code></pre>
   end
 
   def create_inner(x: Int) -> Inner
-    new Inner(this, x)
+    Inner.new(this, x)
   end
 
   class Inner
@@ -529,8 +555,8 @@ account.class == "Account" # true</code></pre>
 end
 
 # Using nested classes
-outer = new Outer(10)
-inner = new Outer::Inner(outer, 5)
+outer = Outer.new(10)
+inner = Outer::Inner.new(outer, 5)
 print(inner.get_combined())   # 15
 print(inner.get_outer_value()) # 10
 
@@ -559,13 +585,13 @@ print(inner2.get_combined())   # 30</code></pre>
     def insert(new_value: Int)
       if new_value < this.value
         if this.left == null
-          this.left = new Tree::Node(new_value)
+          this.left = Tree::Node.new(new_value)
         else
           this.left.insert(new_value)
         end
       else
         if this.right == null
-          this.right = new Tree::Node(new_value)
+          this.right = Tree::Node.new(new_value)
         else
           this.right.insert(new_value)
         end
@@ -581,14 +607,14 @@ print(inner2.get_combined())   # 30</code></pre>
 
   def insert(value: Int)
     if this.root == null
-      this.root = new Tree::Node(value)
+      this.root = Tree::Node.new(value)
     else
       this.root.insert(value)
     end
   end
 end
 
-tree = new Tree()
+tree = Tree.new()
 tree.insert(5)
 tree.insert(3)
 tree.insert(7)</code></pre>
@@ -622,8 +648,8 @@ class User
   end
 end
 
-profile = new User::Profile("alice")
-settings = new User::Settings()
+profile = User::Profile.new("alice")
+settings = User::Settings.new()
 
 # Controller action organization
 class Posts
@@ -644,7 +670,7 @@ class Posts
   end
 end
 
-action = new Posts::Action()
+action = Posts::Action.new()
 action.create("Hello", "World")</code></pre>
             </div>
         </section>
@@ -668,8 +694,8 @@ action.create("Hello", "World")</code></pre>
 end
 
 # Accessing from any scope using fully qualified names
-db = new Service::Database()
-cache = new Service::Cache()
+db = Service::Database.new()
+cache = Service::Cache.new()
 print(db.query("SELECT * FROM users"))
 print(cache.get("session:123"))</code></pre>
             </div>
