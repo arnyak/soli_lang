@@ -41,6 +41,13 @@
   already queued behind a slow handler is handled once, with the last value,
   so a dragged note follows the hand instead of replaying the queue.
 
+### Security
+
+- Dependencies: `ammonia` 4.1.4 → 4.2.3 (RUSTSEC-2021-0157,
+  RUSTSEC-2021-0158) and `quinn-proto` 0.11.16 → 0.11.19
+  (RUSTSEC-2026-0338 to -0342: remote panics and unbounded memory growth
+  in QUIC). `cargo audit` is clean again.
+
 ### Fixed
 
 - Bounded contexts: `soli test` preloads the subfolders of `app/models`,
