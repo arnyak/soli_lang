@@ -625,6 +625,15 @@ impl Parser {
     }
 
     pub(crate) fn block_statements(&mut self) -> ParseResult<Vec<Stmt>> {
+        // Exact capacity: the AST outlives the parse — shared by every
+        // worker for the process's life — so growth slack would be kept.
+        self.block_statements_grown().map(|mut list| {
+            list.shrink_to_fit();
+            list
+        })
+    }
+
+    fn block_statements_grown(&mut self) -> ParseResult<Vec<Stmt>> {
         self.expect(&TokenKind::LeftBrace)?;
 
         // A braced block is its own statement scope; the enclosing `begin` body's

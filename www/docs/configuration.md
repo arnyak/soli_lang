@@ -28,7 +28,7 @@ The files are read from the app folder passed to `soli serve`. When serving a bu
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `SOLI_HOST` | IP address the server binds to. Set `127.0.0.1` to keep a dev server off the LAN (only local processes can connect); the default listens on all interfaces. An invalid value is a startup error. [File mode](static-server.md) defaults to `127.0.0.1` instead. | `0.0.0.0` |
-| `SOLI_WORKERS` | Number of request-handling worker threads. Each worker is a full interpreter copy (its own parsed app + builtins), so this is the primary lever on baseline RSS. Defaults to the number of CPU cores; when `APP_ENV=production` (or `prod`) and this is unset, defaults to **2** so a many-core box does not open one interpreter per core. Set explicitly (or pass `--workers N`) to opt into more throughput. | CPU cores; **2** in production |
+| `SOLI_WORKERS` | Number of request-handling worker threads. Each worker is an interpreter of its own (its own classes, environments and builtins; the parsed code is shared), so this is the primary lever on baseline RSS. Defaults to the number of CPU cores; when `APP_ENV=production` (or `prod`) and this is unset, defaults to **2** so a many-core box does not open one interpreter per core. Set explicitly (or pass `--workers N`) to opt into more throughput. | CPU cores; **2** in production |
 | `SOLI_DEFAULT_LOCALE` | The locale a request starts from when nothing else decides, and the one a translation lookup falls back to when the active locale has no entry. The resolution order per request is session `locale`, then a `locale` cookie, then `Accept-Language` matched against the locales in `config/locales/`, then this. | `en` |
 | `SOLI_WS_WORKERS` | Worker threads reserved exclusively for realtime (WebSocket/LiveView) events, so a burst of them can't starve HTTP and a slow handler can't delay presence/broadcasts. The reservation costs a whole HTTP worker, so by default it only applies once the pool has **4 or more** workers; below that every worker drains both channels and realtime shares the pool. Set it explicitly to force the split at any size (`1` on a 2-worker pool leaves 1 HTTP worker), or `0` to disable it entirely. Always clamped so at least one HTTP worker remains. The startup line reports the resulting layout. Each EUI session is pinned to one of the realtime workers (by session id), so its renders always run on the thread that holds its kept subtrees and the application's own per-worker objects. | a quarter of the pool (at least `1`) when workers ≥ 4, else `0` |
 | `SOLI_REQUEST_LOG` | Enables per-request `[LOG] METHOD PATH - STATUS (Xms)` lines on stdout when set to `1` or `true`. Always on under `--dev`. Alias for `SOLI_LOG=access`. | `false` |
@@ -221,10 +221,17 @@ its next query, which is the fresh-connect cost the ping avoids elsewhere.
 ### Keeping memory low
 
 `soli serve` runs a pool of worker **threads** in one process, and each worker
-holds its own copy of the parsed app plus the full builtin surface (`Rc`-based
-values can't be shared across threads). So baseline RSS scales with the worker
-count, and — for apps with lots of code or large in-memory data (e.g. i18n
-locale tables) — with the size of that app.
+holds its own interpreter: its classes, environments, compiled bytecode and the
+full builtin surface (`Rc`-based values can't be shared across threads). So
+baseline RSS scales with the worker count, and — for apps with lots of code or
+large in-memory data (e.g. i18n locale tables) — with the size of that app.
+
+The parsed code itself is not per worker. Every application file is parsed
+once, into a cache the whole process shares, and the functions, methods and
+lambdas each worker builds run that one copy of their body. Each worker used to
+copy every body out of it, and that copy was most of what a worker cost: on a
+180-file app (1.4 MB of `.sl`), a worker went from 16.4 MiB to 7.5 MiB, and the
+process at 8 workers from 175 MiB to 97 MiB.
 
 Within a worker the builtin surface is built **once** and shared as the
 enclosing scope of the interpreter's globals, the template engine's environment
@@ -247,7 +254,7 @@ The levers, cheapest first:
 
 | Lever | Effect |
 |-------|--------|
-| `SOLI_WORKERS=N` | The biggest one — each worker is a full interpreter copy. With `APP_ENV=production`, the default is already **2** (not one-per-core). Raise it for throughput, or set `1` for a low-traffic service. Note the throughput floor: a worker blocks for the whole of each database round-trip, so a DB-backed route tops out near `workers × (1 / query latency)` — roughly 11k req/s per worker against a loopback SoliDB. Routes that never touch the DB are unaffected (a single worker serves >140k req/s). |
+| `SOLI_WORKERS=N` | The biggest one — each worker is a full interpreter. With `APP_ENV=production`, the default is already **2** (not one-per-core). Raise it for throughput, or set `1` for a low-traffic service. Note the throughput floor: a worker blocks for the whole of each database round-trip, so a DB-backed route tops out near `workers × (1 / query latency)` — roughly 11k req/s per worker against a loopback SoliDB. Routes that never touch the DB are unaffected (a single worker serves >140k req/s). |
 | `SOLI_JOB_WORKERS=1` (or `0`) | The job worker pool is a second set of full interpreters. It defaults to `1`; `0` disables the job engine in this process (run `soli jobs` separately). |
 | `SOLI_JOB_VIEW_HELPERS=0` | Drops view helpers (incl. i18n locale tables) from every job interpreter when jobs don't render helper-using templates. |
 | Slim Cargo features | Build only the subsystems you need (see below). Omitting SQL clients and PASETO shrinks the binary and the code pages mapped into every worker. |
@@ -470,7 +477,7 @@ These knobs control how the request edge handles untrusted input. See the
 | `SOLI_JOBS_LEASE_SECS` | Lease length for a claimed job. A `running` job whose lease expires is reclaimed by another poller — raise this for long jobs. | `60` |
 | `SOLI_JOBS_MAX_RETRIES` | Default retry budget per job; a job past it becomes `dead`. | `3` |
 | `SOLI_JOBS_RETENTION_SECS` | How long completed job rows are kept before pruning. | `604800` |
-| `SOLI_JOB_WORKERS` | Worker threads that run job code. Each worker is a full interpreter copy, so the default is conservative; raise it for higher throughput, or set `0` to disable the job engine in this process and run [`soli jobs`](jobs.md#standalone-worker) separately. | `1` |
+| `SOLI_JOB_WORKERS` | Worker threads that run job code. Each worker is a full interpreter, so the default is conservative; raise it for higher throughput, or set `0` to disable the job engine in this process and run [`soli jobs`](jobs.md#standalone-worker) separately. | `1` |
 | `SOLI_JOB_VIEW_HELPERS` | Whether background-job interpreters load view helpers (which include an app's i18n locale tables — often the largest per-interpreter cost). Set `0` to skip them when no job renders a helper-using template, dropping that memory from every job interpreter. | enabled |
 | `SOLI_JOBS_USER` | HTTP Basic username for the production `/__soli/jobs` dashboard. Must be paired with `SOLI_JOBS_PASSWORD`. Unset (and no token, and no `SOLI_ADMIN_*`) means the route 404s outside `--dev`. | unset |
 | `SOLI_JOBS_PASSWORD` | HTTP Basic password for `/__soli/jobs`. | unset |

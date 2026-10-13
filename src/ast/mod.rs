@@ -7,7 +7,7 @@ pub mod walk;
 
 pub use expr::{BinaryOp, CompoundOp, Expr, ExprKind, MatchArm, MatchPattern, UnaryOp};
 pub use stmt::{
-    ClassDecl, ConstructorDecl, EnumDecl, EnumPayloadField, EnumVariantDecl, FieldDecl,
+    Body, ClassDecl, ConstructorDecl, EnumDecl, EnumPayloadField, EnumVariantDecl, FieldDecl,
     FunctionDecl, ImportDecl, ImportItem, ImportSpecifier, InterfaceDecl, InterfaceMethod,
     MethodDecl, Parameter, Program, Stmt, StmtKind, Visibility,
 };

@@ -660,7 +660,7 @@ pub fn set_stmt_source_path(stmt: &Stmt, source_path: PathBuf) -> Stmt {
     use crate::ast::StmtKind::*;
     match &mut new_stmt.kind {
         Function(decl) => {
-            for s in &mut decl.body {
+            for s in decl.body.make_mut() {
                 *s = set_stmt_source_path(s, source_path.clone());
             }
         }
@@ -669,12 +669,12 @@ pub fn set_stmt_source_path(stmt: &Stmt, source_path: PathBuf) -> Stmt {
                 *s = set_stmt_source_path(s, source_path.clone());
             }
             if let Some(ref mut ctor) = decl.constructor {
-                for s in &mut ctor.body {
+                for s in ctor.body.make_mut() {
                     *s = set_stmt_source_path(s, source_path.clone());
                 }
             }
             for method in &mut decl.methods {
-                for s in &mut method.body {
+                for s in method.body.make_mut() {
                     *s = set_stmt_source_path(s, source_path.clone());
                 }
             }

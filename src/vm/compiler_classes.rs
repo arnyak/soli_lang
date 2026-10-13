@@ -125,7 +125,7 @@ impl Compiler {
         {
             let synthetic = ConstructorDecl {
                 params: Vec::new(),
-                body: Vec::new(),
+                body: Default::default(),
                 span: decl.span,
             };
             self.compile_constructor(&synthetic, &decl.fields, true, line)?;

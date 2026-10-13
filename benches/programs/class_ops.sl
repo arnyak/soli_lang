@@ -6,11 +6,11 @@ class Counter {
         this.count = 0;
     }
 
-    fn increment() -> Void {
+    fn increment() {
         this.count = this.count + 1;
     }
 
-    fn add(n: Int) -> Void {
+    fn add(n: Int) {
         this.count = this.count + n;
     }
 

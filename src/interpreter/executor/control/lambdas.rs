@@ -3,7 +3,6 @@
 use std::rc::Rc;
 
 use crate::ast::Parameter;
-use crate::ast::Stmt;
 use crate::ast::TypeAnnotation;
 use crate::interpreter::executor::{Interpreter, RuntimeResult};
 use crate::interpreter::value::{Function, Value};
@@ -14,14 +13,15 @@ impl Interpreter {
     pub(crate) fn evaluate_lambda(
         &mut self,
         params: &[Parameter],
-        body: &[Stmt],
+        body: &crate::ast::Body,
         return_type: &Option<Box<TypeAnnotation>>,
         span: Span,
     ) -> RuntimeResult<Value> {
         let func = Function {
             name: "<lambda>".to_string(),
             params: params.to_vec().into(),
-            body: body.to_vec().into(),
+            // A refcount bump: the body is the parsed AST's own (`Body`).
+            body: Rc::new(body.clone()),
             closure: self.environment.clone(),
             is_method: false,
             span: Some(span),

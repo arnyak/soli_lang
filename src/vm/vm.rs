@@ -6513,7 +6513,7 @@ mod tests {
             "veto".to_string(),
             Rc::new(Function {
                 name: "veto".to_string(),
-                body: body.into(),
+                body: Rc::new(body.into()),
                 ..Function::default()
             }),
         );
@@ -6581,7 +6581,7 @@ mod tests {
             "veto".to_string(),
             Rc::new(Function {
                 name: "veto".to_string(),
-                body: body.into(),
+                body: Rc::new(body.into()),
                 ..Function::default()
             }),
         );
@@ -6688,7 +6688,7 @@ mod tests {
             "veto".to_string(),
             Rc::new(Function {
                 name: "veto".to_string(),
-                body: body.into(),
+                body: Rc::new(body.into()),
                 ..Function::default()
             }),
         );
@@ -6944,7 +6944,7 @@ mod tests {
             "veto".to_string(),
             Rc::new(Function {
                 name: "veto".to_string(),
-                body: body.into(),
+                body: Rc::new(body.into()),
                 ..Function::default()
             }),
         );

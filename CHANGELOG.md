@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Performance
+
+- A server's workers share the parsed code instead of each copying it. Every
+  function, method, constructor and lambda body is now one `Body` of the
+  cached AST, and a worker's `Function` holds it behind its own `Rc`; each
+  worker — and the job worker — used to deep-copy every body out of the
+  cache. On a 180-file app (1.4 MB of `.sl`) a worker costs 7.5 MiB instead
+  of 16.4, and the process at 2 workers 41.9 MiB instead of 76.7 (8 workers:
+  97 MiB instead of 175). Boot time is unchanged.
+- A lambda no longer copies its body each time it is evaluated
+  (`xs.map { |x| … }`, a scope, a validation): it shares it.
+- The parser returns its statement, argument and parameter lists at exact
+  capacity, and `Stmt`/`Expr` shrank to 192/72 bytes: that app's cached AST
+  is 11.1 MiB instead of 14.8.
+
 ## [2.26.0] - 2026-10-13
 
 ### Added

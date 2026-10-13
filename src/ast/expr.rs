@@ -1,6 +1,6 @@
 //! Expression AST nodes.
 
-use crate::ast::stmt::{Parameter, Stmt};
+use crate::ast::stmt::{Body, Parameter, Stmt};
 use crate::ast::types::TypeAnnotation;
 use crate::span::Span;
 
@@ -157,7 +157,7 @@ pub enum ExprKind {
     Lambda {
         params: Vec<Parameter>,
         return_type: Option<Box<TypeAnnotation>>,
-        body: Vec<Stmt>,
+        body: Body,
     },
 
     /// Ternary/conditional expression: cond ? then_expr : else_expr
@@ -205,9 +205,9 @@ pub enum ExprKind {
 
 /// Size guard — an `Expr` is allocated per parsed expression (and embedded
 /// inline in `Argument`/`InterpolatedPart` and every `Expr`-holding `StmtKind`),
-/// so its size multiplies across every worker's AST. Keep fat payloads boxed.
+/// so its size multiplies across the whole AST. Keep fat payloads boxed.
 /// See the `size_guards` test in `interpreter::value` for the live numbers.
-const _: () = assert!(std::mem::size_of::<Expr>() <= 80);
+const _: () = assert!(std::mem::size_of::<Expr>() <= 72);
 
 /// Part of an interpolated string.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

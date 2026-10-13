@@ -27,7 +27,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::ser::{SerializeMap, SerializeSeq};
 
-use crate::ast::{Expr, FunctionDecl, MethodDecl, Parameter, Stmt, TypeAnnotation};
+use crate::ast::{Body, Expr, FunctionDecl, MethodDecl, Parameter, TypeAnnotation};
 use crate::interpreter::builtins::model::QueryBuilder;
 use crate::interpreter::environment::Environment;
 use crate::span::Span;
@@ -1401,7 +1401,12 @@ pub struct Function {
     // the whole parameter list / method-body AST. Built once from the AST via
     // `from_decl`/`from_method`; never mutated after construction.
     pub params: Rc<[Parameter]>,
-    pub body: Rc<[Stmt]>,
+    // The body is the parsed AST's own `Body`, shared with every worker
+    // rather than copied per worker. It sits behind this thread's `Rc` so
+    // that rebinding `this` on a call bumps a non-atomic count: an `Arc`
+    // bumped on every call by every worker would be one cache line bounced
+    // between all their cores.
+    pub body: Rc<Body>,
     pub closure: Rc<RefCell<Environment>>,
     pub is_method: bool,
     pub span: Option<Span>,
@@ -1437,7 +1442,7 @@ impl Default for Function {
         Self {
             name: String::new(),
             params: Vec::new().into(),
-            body: Vec::new().into(),
+            body: Rc::new(Body::default()),
             closure: Rc::new(RefCell::new(Environment::new())),
             is_method: false,
             span: None,
@@ -1461,7 +1466,7 @@ impl Function {
         Self {
             name: decl.name.clone(),
             params: decl.params.clone().into(),
-            body: decl.body.clone().into(),
+            body: Rc::new(decl.body.clone()),
             closure,
             is_method: false,
             span: Some(decl.span),
@@ -1483,7 +1488,7 @@ impl Function {
         Self {
             name: decl.name.clone(),
             params: decl.params.clone().into(),
-            body: decl.body.clone().into(),
+            body: Rc::new(decl.body.clone()),
             closure,
             is_method: true,
             span: Some(decl.span),
@@ -3832,7 +3837,7 @@ mod value_misc_tests {
     //
     // `size_of::<Value>()` is paid by every array cell, hash slot, model-row
     // field, env binding, and VM stack slot; the AST node sizes are paid by
-    // every parsed statement/expression, once per worker thread. These bounds
+    // every parsed statement/expression. These bounds
     // lock in the memory-footprint reductions so a fat inline variant can't
     // silently creep back. Run `cargo test size_guards -- --nocapture` to see
     // the live numbers. Tighten the bounds when a reduction lands.
@@ -3866,6 +3871,41 @@ mod value_misc_tests {
             "size_of::<TypeAnnotation>() = {}",
             size_of::<TypeAnnotation>()
         );
+    }
+
+    /// Functions built from one declaration share its parsed body — the
+    /// workers of a server each build their own `Function`s from the one
+    /// cached AST, and a copy per worker was most of what a worker cost.
+    #[test]
+    fn functions_share_the_parsed_body() {
+        use crate::ast::{Body, StmtKind};
+        use crate::interpreter::environment::Environment;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let program = crate::parser::Parser::new(
+            crate::lexer::Scanner::new("def greet(name)\n  \"hi \" + name\nend\n")
+                .scan_tokens()
+                .expect("lexer error"),
+        )
+        .parse()
+        .expect("parser error");
+        let StmtKind::Function(decl) = &program.statements[0].kind else {
+            panic!("expected a function declaration");
+        };
+        let env = || Rc::new(RefCell::new(Environment::new()));
+        let one = super::Function::from_decl(decl, env(), None);
+        let two = super::Function::from_decl(decl, env(), None);
+        assert!(Body::ptr_eq(&one.body, &decl.body));
+        assert!(Body::ptr_eq(&one.body, &two.body));
+
+        // A rewrite copies a shared body rather than changing it under the
+        // functions that run it.
+        let mut edited = decl.body.clone();
+        edited.make_mut();
+        assert!(!Body::ptr_eq(&edited, &decl.body));
+        assert_eq!(edited, decl.body);
+        assert!(Body::ptr_eq(&one.body, &decl.body));
     }
 }
 

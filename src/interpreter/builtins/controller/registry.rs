@@ -1128,7 +1128,7 @@ fn build_hook_function(handler_source: &str, source_line: usize) -> Option<Funct
     Some(Function {
         name: "hook".to_string(),
         params: params.clone().into(),
-        body: body.clone().into(),
+        body: Rc::new(body.clone()),
         is_method: true,
         span: Some(lambda.span),
         return_type: return_type.as_deref().cloned(),

@@ -205,7 +205,7 @@ fn compile_function(
             })
             .collect(),
         return_type: None,
-        body: body.to_vec(),
+        body: body.to_vec().into(),
         span,
     };
     let program = Program::new(vec![Stmt::new(StmtKind::function(decl), span, None)]);

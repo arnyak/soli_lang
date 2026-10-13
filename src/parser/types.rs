@@ -136,6 +136,15 @@ impl Parser {
     }
 
     pub(crate) fn parse_parameters(&mut self) -> ParseResult<Vec<Parameter>> {
+        // Exact capacity: the AST outlives the parse — shared by every
+        // worker for the process's life — so growth slack would be kept.
+        self.parse_parameters_grown().map(|mut list| {
+            list.shrink_to_fit();
+            list
+        })
+    }
+
+    fn parse_parameters_grown(&mut self) -> ParseResult<Vec<Parameter>> {
         if !self.match_token(&TokenKind::LeftParen) {
             return Ok(Vec::new());
         }

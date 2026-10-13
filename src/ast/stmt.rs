@@ -6,6 +6,106 @@ use crate::ast::expr::Expr;
 use crate::ast::types::TypeAnnotation;
 use crate::span::Span;
 
+/// The statements of a function, method, constructor or lambda body.
+///
+/// Shared, not copied. A server parses each application file once into a
+/// cache every worker reads (`serve::app_loader`), and each worker then
+/// builds its own `Function` values from the declarations. They used to
+/// deep-copy their body out of the AST: one copy of the whole application's
+/// code per worker, the bulk of what a worker cost — some 10 MiB of 16 in a
+/// 180-file app. Cloning a `Body` is a reference-count bump, so every worker
+/// runs the one parsed copy.
+///
+/// Built once and not changed in place: the few passes that rewrite a body
+/// (the parser's desugarings, the module resolver) go through
+/// [`Body::make_mut`] or [`Body::edit`], which copy only when the body is
+/// shared. Serialized as the plain list of statements, as `Vec<Stmt>` was.
+#[derive(Clone)]
+pub struct Body(std::sync::Arc<[Stmt]>);
+
+impl Default for Body {
+    fn default() -> Self {
+        Body(Vec::new().into())
+    }
+}
+
+impl Body {
+    /// The statements, mutably; copies them first if another `Body` shares
+    /// them.
+    pub fn make_mut(&mut self) -> &mut [Stmt] {
+        if std::sync::Arc::get_mut(&mut self.0).is_none() {
+            self.0 = self.0.iter().cloned().collect();
+        }
+        std::sync::Arc::get_mut(&mut self.0).unwrap_or_else(|| unreachable!("just unshared"))
+    }
+
+    /// Rewrite the statement list — insert, remove, replace — and keep the
+    /// result.
+    pub fn edit<R>(&mut self, f: impl FnOnce(&mut Vec<Stmt>) -> R) -> R {
+        let mut stmts = self.0.to_vec();
+        let result = f(&mut stmts);
+        self.0 = stmts.into();
+        result
+    }
+
+    /// Whether two bodies are the same parsed statements, not merely equal
+    /// ones.
+    pub fn ptr_eq(a: &Body, b: &Body) -> bool {
+        std::sync::Arc::ptr_eq(&a.0, &b.0)
+    }
+}
+
+impl std::ops::Deref for Body {
+    type Target = [Stmt];
+    fn deref(&self) -> &[Stmt] {
+        &self.0
+    }
+}
+
+impl From<Vec<Stmt>> for Body {
+    fn from(stmts: Vec<Stmt>) -> Self {
+        Body(stmts.into())
+    }
+}
+
+impl FromIterator<Stmt> for Body {
+    fn from_iter<I: IntoIterator<Item = Stmt>>(iter: I) -> Self {
+        Body(iter.into_iter().collect())
+    }
+}
+
+impl<'a> IntoIterator for &'a Body {
+    type Item = &'a Stmt;
+    type IntoIter = std::slice::Iter<'a, Stmt>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl PartialEq for Body {
+    fn eq(&self, other: &Self) -> bool {
+        self.0[..] == other.0[..]
+    }
+}
+
+impl std::fmt::Debug for Body {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0[..].fmt(f)
+    }
+}
+
+impl serde::Serialize for Body {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0[..].serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Body {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Vec::<Stmt>::deserialize(deserializer).map(Body::from)
+    }
+}
+
 /// A statement in the AST.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Stmt {
@@ -138,11 +238,11 @@ impl StmtKind {
     }
 }
 
-/// Size guard — a `Stmt` is allocated per parsed statement in every
-/// `Rc<[Stmt]>` function/method body, once per worker. Keep the large decl
-/// variants boxed. See the `size_guards` test in `interpreter::value`.
+/// Size guard — a `Stmt` is allocated per parsed statement, in the one AST
+/// every worker shares (`Body`). Keep the large decl variants boxed. See the
+/// `size_guards` test in `interpreter::value`.
 #[cfg(not(windows))]
-const _: () = assert!(std::mem::size_of::<Stmt>() <= 200);
+const _: () = assert!(std::mem::size_of::<Stmt>() <= 192);
 // Windows gets 8 more bytes, and it is not this type growing: `Option<PathBuf>`
 // is 24 bytes on Unix, where the niche in `Vec`'s pointer absorbs the
 // discriminant, and 32 on Windows, whose `OsString` representation does not
@@ -150,7 +250,7 @@ const _: () = assert!(std::mem::size_of::<Stmt>() <= 200);
 // bound rather than everyone inheriting the loosest one, so the guard still
 // catches an unboxed variant being added.
 #[cfg(windows)]
-const _: () = assert!(std::mem::size_of::<Stmt>() <= 208);
+const _: () = assert!(std::mem::size_of::<Stmt>() <= 200);
 
 /// An import specifier (what to import from a module).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -185,7 +285,7 @@ pub struct FunctionDecl {
     pub name: String,
     pub params: Vec<Parameter>,
     pub return_type: Option<TypeAnnotation>,
-    pub body: Vec<Stmt>,
+    pub body: Body,
     pub span: Span,
 }
 
@@ -253,7 +353,7 @@ pub struct ClassDecl {
 pub struct InvariantDecl {
     pub field: Option<String>,
     pub message: String,
-    pub body: Vec<Stmt>,
+    pub body: Body,
     pub span: Span,
 }
 
@@ -380,11 +480,11 @@ impl EnumDecl {
                     name: variant.name.clone(),
                     params,
                     return_type: Some(enum_type()),
-                    body: vec![Stmt::new(
+                    body: Body::from(vec![Stmt::new(
                         StmtKind::Return(Some(construct(&variant.name, hash_fields))),
                         variant.span,
                         None,
-                    )],
+                    )]),
                     span: variant.span,
                 });
             }
@@ -427,7 +527,7 @@ impl EnumDecl {
                 is_block_param: false,
             }],
             return_type: Some(enum_type()),
-            body: vec![Stmt::new(
+            body: Body::from(vec![Stmt::new(
                 StmtKind::Return(Some(Expr::new(
                     ExprKind::Call {
                         callee: Box::new(var("__enum_from")),
@@ -440,7 +540,7 @@ impl EnumDecl {
                 ))),
                 span,
                 None,
-            )],
+            )]),
             span,
         });
 
@@ -454,7 +554,7 @@ impl EnumDecl {
                 TypeKind::Named("String".to_string()),
                 span,
             )),
-            body: vec![Stmt::new(
+            body: Body::from(vec![Stmt::new(
                 StmtKind::Return(Some(Expr::new(
                     ExprKind::Member {
                         object: Box::new(Expr::new(ExprKind::This, span)),
@@ -464,7 +564,7 @@ impl EnumDecl {
                 ))),
                 span,
                 None,
-            )],
+            )]),
             span,
         });
 
@@ -523,7 +623,7 @@ pub struct MethodDecl {
     pub name: String,
     pub params: Vec<Parameter>,
     pub return_type: Option<TypeAnnotation>,
-    pub body: Vec<Stmt>,
+    pub body: Body,
     pub span: Span,
 }
 
@@ -531,7 +631,7 @@ pub struct MethodDecl {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ConstructorDecl {
     pub params: Vec<Parameter>,
-    pub body: Vec<Stmt>,
+    pub body: Body,
     pub span: Span,
 }
 

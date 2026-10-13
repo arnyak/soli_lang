@@ -62,7 +62,7 @@ fn compile_function_proto(
         name: func.name.clone(),
         params: func.params.to_vec(),
         return_type: None,
-        body: func.body.to_vec(),
+        body: (*func.body).clone(),
         span: func.span.unwrap_or_default(),
     };
 
@@ -193,8 +193,8 @@ fn view_helper_proto(func: &Function) -> Option<Arc<FunctionProto>> {
     {
         return None;
     }
-    // `Rc<[Stmt]>` is a fat pointer; the data address identifies the body.
-    let key = Rc::as_ptr(&func.body) as *const () as usize;
+    // The data address of the shared statements identifies the body.
+    let key = func.body.as_ptr() as usize;
     let cached = VIEW_HELPER_VM.with(|cache| cache.borrow().get(&key).copied());
     if cached == Some(false) {
         return None;
@@ -2657,7 +2657,7 @@ mod tests {
         .statements;
         let method = Function {
             name: "stamp".to_string(),
-            body: body.into(),
+            body: Rc::new(body.into()),
             is_method: true,
             ..Function::default()
         };
@@ -2761,7 +2761,7 @@ mod tests {
             .statements;
         let helper = Value::Function(Rc::new(Function {
             name: "helper".to_string(),
-            body: body.into(),
+            body: Rc::new(body.into()),
             ..Function::default()
         }));
 

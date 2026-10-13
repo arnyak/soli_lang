@@ -734,7 +734,7 @@ impl Interpreter {
             Rc::new(Function {
                 name: "new".to_string(),
                 params: ctor.params.clone().into(),
-                body: ctor.body.clone().into(),
+                body: Rc::new(ctor.body.clone()),
                 closure: method_env.clone(),
                 is_method: true,
                 span: Some(ctor.span),

@@ -473,7 +473,7 @@ impl Parser {
                     ExprKind::Lambda {
                         params: vec![param],
                         return_type: None,
-                        body: vec![body_stmt],
+                        body: vec![body_stmt].into(),
                     },
                     span,
                 ))
@@ -1212,6 +1212,15 @@ impl Parser {
     }
 
     pub(crate) fn parse_arguments(&mut self) -> ParseResult<Vec<Argument>> {
+        // Exact capacity: the AST outlives the parse — shared by every
+        // worker for the process's life — so growth slack would be kept.
+        self.parse_arguments_grown().map(|mut list| {
+            list.shrink_to_fit();
+            list
+        })
+    }
+
+    fn parse_arguments_grown(&mut self) -> ParseResult<Vec<Argument>> {
         let mut arguments = Vec::new();
         let mut seen_named = false;
 
@@ -1271,7 +1280,7 @@ impl Parser {
                             ExprKind::Lambda {
                                 params: vec![param],
                                 return_type: None,
-                                body: vec![body_stmt],
+                                body: vec![body_stmt].into(),
                             },
                             span,
                         );
@@ -1315,7 +1324,7 @@ impl Parser {
                             ExprKind::Lambda {
                                 params: vec![param],
                                 return_type: None,
-                                body: vec![body_stmt],
+                                body: vec![body_stmt].into(),
                             },
                             span,
                         );
@@ -1379,6 +1388,16 @@ impl Parser {
     /// Caller must have already verified the lookahead is `Ident :`. Each iteration
     /// requires the same shape; anything else ends the list.
     fn parse_named_arguments_without_parens(&mut self) -> ParseResult<Vec<Argument>> {
+        // Exact capacity: the AST outlives the parse — shared by every
+        // worker for the process's life — so growth slack would be kept.
+        self.parse_named_arguments_without_parens_grown()
+            .map(|mut list| {
+                list.shrink_to_fit();
+                list
+            })
+    }
+
+    fn parse_named_arguments_without_parens_grown(&mut self) -> ParseResult<Vec<Argument>> {
         let mut arguments = Vec::new();
 
         loop {
@@ -1438,7 +1457,7 @@ impl Parser {
             ExprKind::Lambda {
                 params,
                 return_type: None,
-                body: statements,
+                body: statements.into(),
             },
             span,
         ))
@@ -1469,7 +1488,7 @@ impl Parser {
             ExprKind::Lambda {
                 params,
                 return_type: None,
-                body: statements,
+                body: statements.into(),
             },
             span,
         ))
@@ -1641,7 +1660,7 @@ impl Parser {
             ExprKind::Lambda {
                 params,
                 return_type: return_type.map(Box::new),
-                body,
+                body: body.into(),
             },
             span,
         ))
@@ -2023,6 +2042,15 @@ impl Parser {
     /// e.g., `print "hello", "world"` or `print x, y`
     /// Also used by class-level DSL statements (`edge from: "users", ...`).
     pub(crate) fn parse_command_arguments(&mut self) -> ParseResult<Vec<Argument>> {
+        // Exact capacity: the AST outlives the parse — shared by every
+        // worker for the process's life — so growth slack would be kept.
+        self.parse_command_arguments_grown().map(|mut list| {
+            list.shrink_to_fit();
+            list
+        })
+    }
+
+    fn parse_command_arguments_grown(&mut self) -> ParseResult<Vec<Argument>> {
         let mut arguments = Vec::new();
 
         if !self.at_command_arg_start() {

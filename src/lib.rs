@@ -1187,7 +1187,7 @@ first — merge them into one."
 fn create_function_value(
     params: Vec<ast::stmt::Parameter>,
     return_type: Option<ast::types::TypeAnnotation>,
-    body: Vec<ast::Stmt>,
+    body: ast::Body,
     span: span::Span,
 ) -> Value {
     use interpreter::value::Function;

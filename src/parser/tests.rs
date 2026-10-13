@@ -437,7 +437,7 @@ mod parser_tests {
         let stmts = parse_stmts(source);
         match stmts.into_iter().next().unwrap() {
             StmtKind::Let { initializer, .. } => match initializer.unwrap().kind {
-                ExprKind::Lambda { params, body, .. } => (params, body),
+                ExprKind::Lambda { params, body, .. } => (params, body.to_vec()),
                 other => panic!("Expected lambda, got {:?}", other),
             },
             other => panic!("Expected let, got {:?}", other),
@@ -447,7 +447,7 @@ mod parser_tests {
     /// Extract function body from a single function declaration
     fn parse_fn_body(source: &str) -> Vec<Stmt> {
         match parse_stmts(source).into_iter().next().unwrap() {
-            StmtKind::Function(f) => f.body,
+            StmtKind::Function(f) => f.body.to_vec(),
             other => panic!("Expected function, got {:?}", other),
         }
     }
@@ -840,7 +840,7 @@ mod parser_tests {
                 match &arguments[0] {
                     Argument::Positional(arg_expr) => {
                         let (params, body) = match &arg_expr.kind {
-                            ExprKind::Lambda { params, body, .. } => (params, body),
+                            ExprKind::Lambda { params, body, .. } => (params, body.to_vec()),
                             other => panic!("Expected lambda, got {:?}", other),
                         };
                         assert_eq!(params.len(), 1);

@@ -173,7 +173,7 @@ impl Parser {
                 name,
                 params,
                 return_type,
-                body,
+                body: body.into(),
                 span,
             }),
             span,
@@ -937,7 +937,11 @@ impl Parser {
         let body = self.parse_constructor_body()?;
         let span = start_span.merge(&self.previous_span());
 
-        Ok(ConstructorDecl { params, body, span })
+        Ok(ConstructorDecl {
+            params,
+            body: body.into(),
+            span,
+        })
     }
 
     fn parse_constructor_body(&mut self) -> ParseResult<Vec<Stmt>> {
@@ -1006,7 +1010,7 @@ impl Parser {
             name,
             params,
             return_type,
-            body,
+            body: body.into(),
             span,
         })
     }
