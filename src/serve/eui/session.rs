@@ -351,6 +351,13 @@ pub fn upgrade(
             // about it.
             let mut params = serde_json::Map::new();
             params.insert("viewport".into(), viewport_json(&hello.viewport));
+            // The version the two ends settled on: a view that has
+            // something newer to send (a MIDI sound, EUI 03 §7) sends an
+            // older client what it can play instead.
+            params.insert(
+                "protocol".into(),
+                serde_json::Value::from(hello.version.min(PROTOCOL_VERSION)),
+            );
             for (k, v) in query_pairs(query.as_deref()) {
                 params.insert(k, serde_json::Value::String(v));
             }

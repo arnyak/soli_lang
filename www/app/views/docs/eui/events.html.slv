@@ -42,6 +42,12 @@
     </div>
     <p class="text-gray-400 mb-6"><code class="text-cyan-400">file_pick</code>, <code class="text-cyan-400">file_save</code>, <code class="text-cyan-400">location</code> and <code class="text-cyan-400">nfc_tag</code> are answered by the client, and the last two are compiled only for a phone: a desktop has no tag reader and no positioning it can reach.</p>
 
+    <h3 id="answering-a-save" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Answering a save</h3>
+    <p class="text-gray-400 mb-6">A node that offers a file carries <code class="text-cyan-400">"save": "name.ext"</code> and a handler for <code class="text-cyan-400">file_save</code>. Pressing it opens the platform&rsquo;s save dialog; when the person has chosen a place, the handler runs and answers with the file, in the wrapped form &mdash; the new state, and the bytes:</p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-6"><div class="p-4 overflow-x-auto"><pre><code class="language-soli text-sm"># the node: &lbrace;"p": &lbrace;"save": "tune.mid"&rbrace;, "on": &lbrace;"file_save": "midi_save"&rbrace;&rbrace;
+"midi_save" =&gt; &lbrace;"state": state, "save": score_midi(state["src"])&rbrace;,</code></pre></div></div>
+    <p class="text-gray-400 mb-6"><code class="text-cyan-400">save</code> is a string (written as its UTF-8) or a list of bytes, each 0 to 255. The server sends it to that node as <code class="text-cyan-400">Blob</code> frames, in chunks of at most 256 KiB, and the client writes it where the person chose; anything else aborts the save with the reason. The key is read only for a <code class="text-cyan-400">file_save</code>, and only in the wrapped form: a bare state that happens to hold a <code class="text-cyan-400">save</code> key is still a state.</p>
+
     <h2 id="waking" class="text-2xl font-bold text-white mb-6 scroll-mt-24">Waking a session</h2>
     <p class="text-gray-400 mb-6">A component may ask to be woken on a clock &mdash; the <code class="text-cyan-400">wake</code> event. On its own that makes every window a poller: it learns what someone else did only when its own clock next fires, and spends a render per period discovering that nothing happened.</p>
     <p class="text-gray-400 mb-6"><code class="text-cyan-400">eui_wake(component)</code> is the other half &mdash; it renders every <em>other</em> live session of a component immediately, from wherever the change was written.</p>

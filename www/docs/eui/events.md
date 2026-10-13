@@ -69,6 +69,25 @@ a kind the view has not declared cannot arrive.
 than the server, and the last two are compiled only for a phone: a desktop has no tag
 reader and no positioning it can reach, so the code behind them is not built for it.
 
+### Answering a save
+
+A node that offers a file carries `"save": "name.ext"` and a handler for
+`file_save`. Pressing it opens the platform's save dialog; when the person
+has chosen a place, the handler runs, and answers with the file in the
+wrapped form — the new state, and the bytes:
+
+```soli
+# the node: {"p": {"save": "tune.mid"}, "on": {"file_save": "midi_save"}}
+"midi_save" => {"state": state, "save": score_midi(state["src"])},
+```
+
+`save` is a string (written as its UTF-8) or a list of bytes, each 0 to
+255; the server sends it to that node as `Blob` frames (spec 01 §6), in
+chunks of at most 256 KiB, and the client writes it where the person
+chose. Anything else aborts the save with the reason. The key is read only
+for a `file_save`, and only in the wrapped form: a bare state that happens
+to hold a `save` key is still a state.
+
 ## Waking a session
 
 A component may ask to be woken on a clock — that is the `wake` event. On its own that

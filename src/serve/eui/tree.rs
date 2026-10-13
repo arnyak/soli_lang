@@ -1407,6 +1407,11 @@ impl Encoder {
         kind: NodeKind,
         p: &serde_json::Map<String, Json>,
     ) -> Result<NodeProps, String> {
+        // A node is a sound or a player of MIDI commands, not both
+        // (EUI 03 §7).
+        if kind == NodeKind::Audio && p.contains_key("src") && p.contains_key("notes") {
+            return Err("EUI: an audio node takes a src or notes, not both".into());
+        }
         let mut props = Vec::with_capacity(p.len());
         let mut scroll_to = None;
         let mut focus_to = false;
@@ -1443,18 +1448,20 @@ impl Encoder {
                 && name == "src"
                 || kind == NodeKind::Scene && matches!(name.as_str(), "shader" | "mesh");
             let value = if asset_prop {
-                match v {
-                    Json::String(path) => WireValue::Asset(super::assets::from_file(path)?),
-                    Json::Object(o) if o.len() == 1 => {
-                        let hex = o.get("asset").and_then(Json::as_str).ok_or_else(|| {
-                            format!("EUI: a src object must be {{\"asset\": \"<hash>\"}}, got {v}")
-                        })?;
-                        WireValue::Asset(super::assets::parse_hex(hex).ok_or_else(|| {
-                            format!("EUI: a src asset must be 64 hex characters, got '{hex}'")
-                        })?)
-                    }
-                    other => return Err(format!("EUI: a {name} must be a path, got {other}")),
-                }
+                asset_value(name, v)?
+            } else if kind == NodeKind::Audio && name == "soundfont" {
+                // A SoundFont bank, in parts (EUI 03 §7): each one an asset
+                // like a `src`, fetched and verified the same way, and put
+                // back together by the client.
+                let parts = v
+                    .as_array()
+                    .ok_or_else(|| format!("EUI: a soundfont must be a list of assets, got {v}"))?;
+                WireValue::List(
+                    parts
+                        .iter()
+                        .map(|part| asset_value(name, part))
+                        .collect::<Result<_, _>>()?,
+                )
             } else if kind == NodeKind::Scene && name == "uniforms" {
                 self.uniforms_value(v)?
             } else if kind == NodeKind::Canvas && name == "paths" {
@@ -2068,6 +2075,24 @@ fn edges_of(v: &Json) -> Result<[u8; 4], String> {
 /// the one that does not.
 type NodeProps = (Vec<(u32, WireValue)>, Option<(i64, i64)>, bool);
 
+/// An asset prop's value: a file in the application, which goes on the
+/// wire as the hash of its bytes, or `{"asset": "<64 hex>"}`, already in
+/// the store.
+fn asset_value(name: &str, v: &Json) -> Result<WireValue, String> {
+    match v {
+        Json::String(path) => Ok(WireValue::Asset(super::assets::from_file(path)?)),
+        Json::Object(o) if o.len() == 1 => {
+            let hex = o.get("asset").and_then(Json::as_str).ok_or_else(|| {
+                format!("EUI: a src object must be {{\"asset\": \"<hash>\"}}, got {v}")
+            })?;
+            Ok(WireValue::Asset(super::assets::parse_hex(hex).ok_or_else(
+                || format!("EUI: a src asset must be 64 hex characters, got '{hex}'"),
+            )?))
+        }
+        other => Err(format!("EUI: a {name} must be a path, got {other}")),
+    }
+}
+
 /// `scroll_to: [x, y]`, in pixels, on a node that can be scrolled.
 ///
 /// Only a scroller and a windowed list have an offset to set; the client
@@ -2528,6 +2553,48 @@ mod tests {
             false,
         )
         .unwrap();
+    }
+
+    /// EUI 03 §7: a bank in parts is a list of assets on the wire, and an
+    /// audio node is a sound or a player of commands, not both.
+    #[test]
+    fn a_soundfont_is_a_list_of_assets_and_notes_exclude_a_src() {
+        let a = super::super::assets::put(b"first half of a bank".to_vec()).unwrap();
+        let b = super::super::assets::put(b"second half of a bank".to_vec()).unwrap();
+        let hex = |h: [u8; 32]| h.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let mut enc = Encoder::default();
+        let tree = json!({"k": "box", "c": [{"k": "audio", "key": "p", "p": {
+            "soundfont": [{"asset": hex(a)}, {"asset": hex(b)}],
+            "notes": [[0, 144, 60, 100], [500, 128, 60, 0]],
+            "notes_seq": 1
+        }}]});
+        enc.render(&tree, false).unwrap();
+        let font = enc.atom("soundfont");
+        let node = &enc.prev.as_ref().unwrap().children[0];
+        let parts = node
+            .node()
+            .props
+            .iter()
+            .find(|(x, _)| *x == font)
+            .unwrap()
+            .1
+            .clone();
+        assert_eq!(
+            parts,
+            WireValue::List(vec![WireValue::Asset(a), WireValue::Asset(b)])
+        );
+
+        let refused = |p: Json| {
+            Encoder::default()
+                .render(
+                    &json!({"k": "box", "c": [{"k": "audio", "key": "x", "p": p}]}),
+                    false,
+                )
+                .unwrap_err()
+        };
+        assert!(refused(json!({"src": {"asset": hex(a)}, "notes": []})).contains("not both"));
+        assert!(refused(json!({"soundfont": "bank.sf2"})).contains("list of assets"));
+        assert!(refused(json!({"soundfont": [{"asset": "abc"}]})).contains("64 hex"));
     }
 
     #[test]

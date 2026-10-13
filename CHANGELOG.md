@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added
+
+- EUI: a `file_save` handler can answer with the file —
+  `{"state": state, "save": bytes}`, a string or a list of bytes — and the
+  server sends it to the node as `Blob` frames, so a button can offer a
+  download (`docs/eui/events`, "Answering a save"). Until now a save dialog
+  opened and nothing could be written to it.
+- EUI: the catalogue `soli new <app> --eui` writes is nine files, with
+  `score()` — music notation from LilyPond input, engraved into one canvas —
+  the music glyphs and the letters it draws with (`eui_builders_score.sl`,
+  `eui_builders_smufl.sl`, `eui_builders_letters.sl`, synced from the EUI
+  repository). `score()` sets title pages and tempo marks, lays music out
+  on A4, draws repeats with their endings and bars of rest (`R1*4`,
+  gathered under `\compressEmptyMeasures`), tuplets (`\tuplet 3/2 { … }`)
+  forced `\break` / `\pageBreak`, and expression — dynamics, hairpins,
+  articulations, words over and under notes — drawn as one canvas per
+  system, so an edit resends only its system; `score_midi(src)` writes the
+  same source as a MIDI file; several staves (piano, staff group, choir)
+  with instrument names, one MIDI track per staff (its instrument, volume
+  and pan from `midiInstrument`, `midiMaximumVolume`, `midiPanPosition`); `score_pdf(src)` writes
+  the A4 pages as a vector PDF. Scripts that open
+  `eui_window` load them as well.
+
 ## [2.25.3] - 2026-10-12
 
 ### Fixed

@@ -536,6 +536,56 @@ const SEND_PATIENCE: std::time::Duration = std::time::Duration::from_secs(2);
 /// Send a frame to every socket attached to an instance: encode once, send to
 /// each, and say how many bytes that was — the one number a dev bar cannot
 /// work out for itself. `deadline` is the render's, shared by all its frames.
+/// The frames that carry a saved file to the node whose `save` the person
+/// answered (01 §6): chunks of at most `MAX_TRANSFER_CHUNK_BYTES`, numbered
+/// from 0, the last one marked so; an empty file is one empty last chunk.
+pub(crate) fn save_frames(node: u32, bytes: &[u8]) -> Vec<Frame> {
+    let chunks: Vec<&[u8]> = if bytes.is_empty() {
+        vec![&[][..]]
+    } else {
+        bytes
+            .chunks(eui_proto::limits::MAX_TRANSFER_CHUNK_BYTES)
+            .collect()
+    };
+    let count = chunks.len();
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(seq, chunk)| {
+            Frame::Blob(eui_proto::Transfer {
+                id: node,
+                seq: u32::try_from(seq).unwrap_or(u32::MAX),
+                flag: if seq + 1 == count {
+                    eui_proto::Chunked::Last
+                } else {
+                    eui_proto::Chunked::More
+                },
+                bytes: chunk.to_vec(),
+            })
+        })
+        .collect()
+}
+
+/// What a handler answered a `file_save` with, as bytes: a string is its
+/// UTF-8, a list is one byte per element (each 0 to 255). Anything else is
+/// not a file, and the save is aborted with the reason.
+pub(crate) fn save_bytes(answer: &serde_json::Value) -> Result<Vec<u8>, String> {
+    match answer {
+        serde_json::Value::String(text) => Ok(text.as_bytes().to_vec()),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|v| {
+                v.as_u64()
+                    .and_then(|n| u8::try_from(n).ok())
+                    .ok_or_else(|| format!("a saved file's bytes are 0 to 255, not {v}"))
+            })
+            .collect(),
+        other => Err(format!(
+            "a saved file is a string or a list of bytes, not {other}"
+        )),
+    }
+}
+
 fn send_frame(instance: &LiveViewInstance, frame: &Frame, deadline: web_time::Instant) -> usize {
     send_bytes(instance, frame.encode(), deadline)
 }
@@ -701,6 +751,18 @@ fn run_eui_event(
     let _current = stats::Current::enter(instance.id.clone());
 
     let mut state_for_view: Option<Value> = None;
+    // A `file_save` is the person having chosen where a node's `save` goes
+    // (spec 03 §3.2): its handler may answer with the file, in the wrapped
+    // form `{"state": …, "save": bytes}`, and the bytes go to that node as
+    // `Blob` frames (01 §6). Only for this event, so that a bare state with
+    // a `save` key of its own means what it always meant.
+    let saving = data.params.get("kind").and_then(|k| k.as_str()) == Some("file_save");
+    let save_node = data
+        .params
+        .get("node")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok());
+    let mut to_save: Option<serde_json::Value> = None;
     if run_handler && data.event != RESYNC_EVENT {
         let handler_name = crate::live::socket::get_liveview_handler(&component)
             .ok_or_else(|| format!("EUI: no handler for component '{component}'"))?;
@@ -721,7 +783,14 @@ fn run_eui_event(
                         return Err(format!("EUI: handler '{handler_name}' {problem}"));
                     }
                 }
-                let json = value_to_json(&result);
+                let mut json = value_to_json(&result);
+                if saving {
+                    if let Some(map) = json.as_object_mut() {
+                        if map.get("state").is_some_and(serde_json::Value::is_object) {
+                            to_save = map.remove("save");
+                        }
+                    }
+                }
                 let bare = json.as_object().is_some_and(handler_return_is_bare);
                 let unwrapped = unwrap_handler_return(json);
                 if let Some(reason) = unwrapped.close {
@@ -761,6 +830,22 @@ fn run_eui_event(
                 ));
             }
             Err(e) => return Err(format!("EUI: handler '{handler_name}' failed: {e}")),
+        }
+    }
+
+    if let (Some(answer), Some(node)) = (to_save, save_node) {
+        let deadline = web_time::Instant::now() + SEND_PATIENCE;
+        let frames = match save_bytes(&answer) {
+            Ok(bytes) => save_frames(node, &bytes),
+            Err(why) => vec![Frame::Blob(eui_proto::Transfer {
+                id: node,
+                seq: 0,
+                flag: eui_proto::Chunked::Abort,
+                bytes: why.into_bytes(),
+            })],
+        };
+        for frame in frames {
+            send_frame(instance, &frame, deadline);
         }
     }
 
@@ -864,6 +949,49 @@ fn run_eui_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_file_goes_as_numbered_chunks_the_last_one_marked() {
+        let max = eui_proto::limits::MAX_TRANSFER_CHUNK_BYTES;
+        let bytes = vec![7u8; max + 10];
+        let frames = save_frames(42, &bytes);
+        assert_eq!(frames.len(), 2);
+        let Frame::Blob(first) = &frames[0] else {
+            panic!("not a blob")
+        };
+        let Frame::Blob(last) = &frames[1] else {
+            panic!("not a blob")
+        };
+        assert_eq!(
+            (first.id, first.seq, first.flag, first.bytes.len()),
+            (42, 0, eui_proto::Chunked::More, max)
+        );
+        assert_eq!(
+            (last.id, last.seq, last.flag, last.bytes.len()),
+            (42, 1, eui_proto::Chunked::Last, 10)
+        );
+        let Frame::Blob(empty) = &save_frames(3, &[])[0] else {
+            panic!("not a blob")
+        };
+        assert_eq!(
+            (empty.flag, empty.bytes.len()),
+            (eui_proto::Chunked::Last, 0)
+        );
+    }
+
+    #[test]
+    fn a_handler_answers_a_save_with_a_string_or_a_list_of_bytes() {
+        assert_eq!(
+            save_bytes(&serde_json::json!("MThd")).unwrap(),
+            b"MThd".to_vec()
+        );
+        assert_eq!(
+            save_bytes(&serde_json::json!([77, 84, 0, 255])).unwrap(),
+            vec![77, 84, 0, 255]
+        );
+        assert!(save_bytes(&serde_json::json!([256])).is_err());
+        assert!(save_bytes(&serde_json::json!({"a": 1})).is_err());
+    }
 
     #[test]
     fn a_close_is_told_apart_from_an_error() {
