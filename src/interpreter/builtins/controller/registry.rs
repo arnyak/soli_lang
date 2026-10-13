@@ -83,9 +83,18 @@ impl ControllerRegistry {
         self.controllers.get(class_name)
     }
 
-    /// Get a controller by its full name (e.g., "PostsController").
+    /// Get a controller by its full name (e.g., "PostsController"). A
+    /// controller in a bounded context (`Billing::InvoicesController`) is
+    /// registered under the short name its file declares, and under the route
+    /// key of its folder (`billing/invoices`): the qualified name finds it by
+    /// that key. Its layout, looked up by the class name of the running
+    /// instance, used to be missed — the page fell back on the default layout.
     pub fn get_by_name(&self, name: &str) -> Option<&ControllerInfo> {
-        self.controllers.values().find(|c| c.name == name)
+        if let Some(found) = self.controllers.values().find(|c| c.name == name) {
+            return Some(found);
+        }
+        let (route_key, short) = qualified_route_key(name)?;
+        self.controllers.get(&route_key).filter(|c| c.name == short)
     }
 
     /// Get a mutable reference to a controller by its full name.
@@ -97,6 +106,29 @@ impl ControllerRegistry {
     pub fn all(&self) -> Vec<&ControllerInfo> {
         self.controllers.values().collect()
     }
+}
+
+/// `Billing::InvoicesController` → (`billing/invoices`, `InvoicesController`):
+/// the route key a controller in `app/controllers/billing/invoices_controller.sl`
+/// is registered under, and the short name its file declares. `None` for a
+/// name with no module.
+fn qualified_route_key(name: &str) -> Option<(String, &str)> {
+    let (modules, short) = name.rsplit_once("::")?;
+    let resource = short.strip_suffix("Controller")?;
+    let mut segments: Vec<String> = modules.split("::").map(snake_case).collect();
+    segments.push(snake_case(resource));
+    Some((segments.join("/"), short))
+}
+
+fn snake_case(name: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in name.chars().enumerate() {
+        if c.is_uppercase() && i > 0 {
+            out.push('_');
+        }
+        out.extend(c.to_lowercase());
+    }
+    out
 }
 
 /// Scan controllers directory and register all controllers.
@@ -887,6 +919,67 @@ pub fn get_current_controller() -> Option<Value> {
     CURRENT_CONTROLLER.with(|c| c.borrow().clone())
 }
 
+/// The namespace a hook of the current controller reads names in: the
+/// controller's qualified class name when it lives in a bounded context
+/// (`Billing::InvoicesController`), as its methods do. A hook is compiled
+/// from its source text, apart from the class, so it does not inherit the
+/// class's namespace on its own: without this, `Invoice` in a
+/// `before_action` of `module Billing` was an undefined variable while the
+/// same name worked in every action.
+pub fn current_controller_namespace() -> Option<String> {
+    match get_current_controller()? {
+        Value::Instance(inst) => {
+            let name = inst.borrow().class.name.clone();
+            name.contains("::").then_some(name)
+        }
+        _ => None,
+    }
+}
+
+/// Run a hook `program` with `namespace` bound, in an environment enclosed
+/// by the interpreter's, so the names it reads unqualified resolve in its
+/// bounded context; `__result` is read back from that environment. Without a
+/// namespace the program runs in the interpreter's own environment, as before.
+fn interpret_hook(
+    interpreter: &mut Interpreter,
+    program: &crate::ast::Program,
+    namespace: Option<String>,
+    failure: &str,
+) -> Result<Value, String> {
+    let Some(namespace) = namespace else {
+        interpreter
+            .interpret(program)
+            .map_err(|e| format!("{failure}: {e}"))?;
+        return interpreter
+            .environment
+            .borrow()
+            .get("__result")
+            .ok_or_else(|| "Handler did not return a value".to_string());
+    };
+    let outer = interpreter.environment.clone();
+    let mut scoped = crate::interpreter::environment::Environment::with_enclosing(outer.clone());
+    scoped.define(
+        crate::interpreter::domain::NAMESPACE_BINDING.to_string(),
+        Value::String(namespace.into()),
+    );
+    scoped.define("__result".to_string(), Value::Null);
+    let scoped = Rc::new(RefCell::new(scoped));
+    interpreter.environment = scoped.clone();
+    let ran = interpreter.interpret(program);
+    interpreter.environment = outer;
+    ran.map_err(|e| format!("{failure}: {e}"))?;
+    let result = scoped.borrow().get("__result");
+    result.ok_or_else(|| "Handler did not return a value".to_string())
+}
+
+/// The same hook text in two namespaces compiles to two functions.
+fn hook_cache_key(handler_source: &str, namespace: Option<&str>) -> String {
+    match namespace {
+        Some(namespace) => format!("{namespace}\0{handler_source}"),
+        None => handler_source.to_string(),
+    }
+}
+
 /// Clear the current controller.
 pub fn clear_current_controller() {
     CURRENT_VIEW_DIR.with(|c| *c.borrow_mut() = None);
@@ -959,32 +1052,47 @@ fn normalize_empty_handler_body(src: &str) -> String {
 /// the source is not one lambda, or the hook was demoted to the interpreter
 /// (`demote_hook_function`).
 pub fn hook_function(handler_source: &str, source_line: usize) -> Option<Rc<Function>> {
+    let namespace = current_controller_namespace();
+    let cache_key = hook_cache_key(handler_source, namespace.as_deref());
     HOOK_FUNCTIONS.with(|cache| {
         if let Some(known) = cache
             .borrow()
             .get(&source_line)
-            .and_then(|by_source| by_source.get(handler_source))
+            .and_then(|by_source| by_source.get(&cache_key))
         {
             return known.clone();
         }
-        let built = build_hook_function(handler_source, source_line).map(Rc::new);
+        let built = build_hook_function(handler_source, source_line).map(|mut hook| {
+            // The VM compiler reads a function's namespace from its closure
+            // (`vm::compiler::namespace_of`), as for a method of a nested class.
+            if let Some(namespace) = &namespace {
+                let mut env = crate::interpreter::environment::Environment::new();
+                env.define(
+                    crate::interpreter::domain::NAMESPACE_BINDING.to_string(),
+                    Value::String(namespace.clone().into()),
+                );
+                hook.closure = Rc::new(RefCell::new(env));
+            }
+            Rc::new(hook)
+        });
         cache
             .borrow_mut()
             .entry(source_line)
             .or_default()
-            .insert(handler_source.to_string(), built.clone());
+            .insert(cache_key, built.clone());
         built
     })
 }
 
 /// Keep a hook on the interpreter for the rest of this thread's life.
 pub fn demote_hook_function(handler_source: &str, source_line: usize) {
+    let cache_key = hook_cache_key(handler_source, current_controller_namespace().as_deref());
     HOOK_FUNCTIONS.with(|cache| {
         cache
             .borrow_mut()
             .entry(source_line)
             .or_default()
-            .insert(handler_source.to_string(), None);
+            .insert(cache_key, None);
     });
 }
 
@@ -1068,16 +1176,12 @@ pub fn execute_handler_source(
     // Execute — surface errors so a broken hook 500s instead of falling through
     // to the action with a stale/Null `__result` (which `check_for_response`
     // can't recognize as a short-circuit).
-    interpreter
-        .interpret(&program)
-        .map_err(|e| format!("Handler execution error: {}", e))?;
-
-    // Retrieve the result
-    interpreter
-        .environment
-        .borrow()
-        .get("__result")
-        .ok_or_else(|| "Handler did not return a value".to_string())
+    interpret_hook(
+        interpreter,
+        &program,
+        current_controller_namespace(),
+        "Handler execution error",
+    )
 }
 
 /// Compile and execute an after action handler with both req and response.
@@ -1115,16 +1219,12 @@ pub fn execute_after_handler_source(
 
     // Execute — surface errors rather than swallow them so a broken hook
     // returns a proper 500 instead of silently leaving the response unchanged.
-    interpreter
-        .interpret(&program)
-        .map_err(|e| format!("After handler execution error: {}", e))?;
-
-    // Retrieve the result
-    interpreter
-        .environment
-        .borrow()
-        .get("__result")
-        .ok_or_else(|| "After handler did not return a value".to_string())
+    interpret_hook(
+        interpreter,
+        &program,
+        current_controller_namespace(),
+        "After handler execution error",
+    )
 }
 
 /// Create a new controller instance for the given class name.
@@ -1184,6 +1284,23 @@ pub fn setup_controller_context(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_qualified_controller_name_maps_to_its_route_key() {
+        assert_eq!(
+            qualified_route_key("Billing::InvoicesController"),
+            Some(("billing/invoices".to_string(), "InvoicesController"))
+        );
+        assert_eq!(
+            qualified_route_key("RiskManagement::BusinessValuesController"),
+            Some((
+                "risk_management/business_values".to_string(),
+                "BusinessValuesController"
+            ))
+        );
+        assert_eq!(qualified_route_key("PostsController"), None);
+        assert_eq!(qualified_route_key("Billing::Ledger"), None);
+    }
     use super::*;
 
     // The VM runs a hook as a method built from its lambda: the parameters and

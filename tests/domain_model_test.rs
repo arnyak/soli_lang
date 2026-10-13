@@ -964,7 +964,89 @@ fn the_test_runner_preloads_contexts_in_the_servers_order() {
         .collect();
     assert_eq!(
         order,
-        vec!["values/price.sl", "_base.sl", "zebra.sl", "billing/invoice.sl"]
+        vec![
+            "values/price.sl",
+            "_base.sl",
+            "zebra.sl",
+            "billing/invoice.sl"
+        ]
     );
     assert!(solilang::serve::sl_load_order(&root.join("app/missing")).is_empty());
+}
+
+/// A controller in a bounded context: its hooks read the context's classes
+/// unqualified, as its actions do, and its own layout is the one rendered.
+/// Hooks are compiled from the file's text, apart from the class, and used
+/// to miss the module (`Receipt` undefined: 500); the layout was looked up
+/// under the qualified class name and the page fell back on `application`.
+#[test]
+fn a_context_controller_keeps_its_namespace_in_hooks_and_its_layout() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "config/routes.sl",
+        "get(\"/up\", \"health#up\")\nget(\"/billing/receipts\", \"billing/receipts#index\")\n",
+    );
+    write(
+        root,
+        "app/controllers/health_controller.sl",
+        "class HealthController < Controller\n  # GET /up\n  def up(req)\n    \"ok\"\n  end\nend\n",
+    );
+    write(
+        root,
+        "app/models/billing/receipt.sl",
+        "module Billing\n  class Receipt < Model\n    static def label -> String\n      \"reçus\"\n    end\n  end\nend\n",
+    );
+    write(
+        root,
+        "app/controllers/billing/receipts_controller.sl",
+        r#"module Billing
+  class ReceiptsController < Controller
+    static {
+      this.layout = "counter"
+      this.before_action = fn(req) {
+        @label = Receipt.label()
+        req
+      }
+      this.after_action = fn(req, response) {
+        response["headers"]["X-Label"] = Receipt.label()
+        response
+      }
+    }
+
+    # GET /billing/receipts
+    def index(req)
+      @count = Receipt.count
+    end
+  end
+end
+"#,
+    );
+    write(
+        root,
+        "app/views/billing/receipts/index.html.slv",
+        "<p><%= @label %> : <%= @count %></p>\n",
+    );
+    write(
+        root,
+        "app/views/layouts/counter.html.slv",
+        "<main data-layout=\"counter\"><%- yield %></main>\n",
+    );
+    write(
+        root,
+        "app/views/layouts/application.html.slv",
+        "<main data-layout=\"application\"><%- yield %></main>\n",
+    );
+    let server = serve(root);
+    let (status, body) = call(&server, "GET", "/billing/receipts", None);
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body.contains("reçus : 0"),
+        "the before_action did not run in its context: {body}"
+    );
+    assert!(
+        body.contains("data-layout=\"counter\""),
+        "the controller's layout was not used: {body}"
+    );
 }
