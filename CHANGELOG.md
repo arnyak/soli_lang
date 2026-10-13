@@ -25,6 +25,32 @@
   the A4 pages as a vector PDF. Scripts that open
   `eui_window` load them as well.
 
+### Fixed
+
+- Bounded contexts: `soli test` preloads the subfolders of `app/models`,
+  `app/services` and the other auto-loaded folders, in the order
+  `soli serve` loads them (value objects and events first). A spec naming
+  `Billing::Invoice`, defined in `app/models/billing/invoice.sl`, failed
+  with "Undefined variable 'Billing'" while the served app worked
+  (`serve::sl_load_order`).
+- Bounded contexts: a `before_action` / `after_action` of a controller
+  declared in a module reads the module's classes unqualified, as the
+  actions do. Hooks are compiled from the file's text, apart from the
+  class: `Invoice` in a hook of `module Billing` was an undefined variable
+  and every action answered 500. The hook now runs in the controller's
+  namespace, on the VM and on the interpreter.
+- Bounded contexts: `this.layout = "…"` on a controller declared in a
+  module is honoured. The layout was looked up under the qualified class
+  name (`Billing::InvoicesController`) while the registry keeps the short
+  one, and the page fell back on the default layout with no error;
+  `get_by_name` now finds a qualified name by its route key
+  (`billing/invoices`).
+- Coverage: classes declared inside a module are counted. The walk
+  registered a class's methods but not its nested classes, so a file whose
+  code lived in a `module` registered one executable line and reported
+  100 % covered whatever its specs did — an application moved into bounded
+  contexts escaped its coverage gate (`tests/coverage_module_test.rs`).
+
 ## [2.25.3] - 2026-10-12
 
 ### Fixed
