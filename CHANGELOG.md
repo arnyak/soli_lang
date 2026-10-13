@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.26.0] - 2026-10-13
+
 ### Added
 
 - EUI: a `file_save` handler can answer with the file —
