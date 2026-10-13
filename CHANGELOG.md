@@ -50,6 +50,12 @@
 
 ### Fixed
 
+- `soli fmt` is idempotent on a postfix guard too long for one line.
+  `x += a * (b + 0.1) + 0.5 if c` past 120 columns was split at an
+  operator, stranding the `if` on a later line, and the next pass turned it
+  into a block. Such a guard is now printed as a block `if … end` on the
+  first pass, and a block guard is collapsed to postfix only when the result
+  fits on one line.
 - Bounded contexts: `soli test` preloads the subfolders of `app/models`,
   `app/services` and the other auto-loaded folders, in the order
   `soli serve` loads them (value objects and events first). A spec naming

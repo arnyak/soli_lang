@@ -346,6 +346,27 @@ fn postfix_guard_with_a_wrapping_value_is_idempotent() {
     );
 }
 
+/// The same, for a value that is not a collection but simply too long: the
+/// printer splits the arithmetic at an operator to stay under the line limit,
+/// which strands the `if` just the same. Found by `fmt_corpus_test` on the
+/// score catalogue (`eui_builders_score.sl`).
+#[test]
+fn postfix_guard_past_the_line_limit_is_idempotent() {
+    let src = concat!(
+        "def width(cw, changes, skip)\n",
+        "  cw += (score_max(changes[\"key_from\"], 0 - changes[\"key_from\"]) - skip) * ",
+        "(score_glyph(\"accidentalNatural\")[\"advance\"] + 0.1) + 0.5 if skip >= 0\n",
+        "  cw\n",
+        "end\n",
+    );
+    assert_idempotent(src);
+    let once = format_source(src).expect("format_source failed");
+    assert!(
+        once.contains("if skip >= 0\n"),
+        "expected a block guard, got:\n{once}"
+    );
+}
+
 /// The other half of the same story: a postfix guard whose value wraps in the
 /// *source* but which the printer collapses onto one line. `detect_postfix_if_kind`
 /// stopped at the first newline, so the trailing `if` was invisible and pass 1

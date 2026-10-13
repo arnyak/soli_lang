@@ -200,10 +200,19 @@ impl Printer<'_> {
                 // same StmtKind::If as block `if cond ... end`. Inspect the
                 // source bytes at the statement's start to recover the form.
                 if let Some(kw) = detect_postfix_if_kind(self.source, stmt.span.start_usize()) {
-                    if postfix_payload_breaks(then_branch) {
-                        // The source said postfix, but the value wraps — so
-                        // print the block form the *next* pass would produce
-                        // anyway. See `postfix_payload_breaks`.
+                    // The source said postfix, but a value that wraps — a
+                    // collection the printer breaks, or a line past
+                    // MAX_LINE_LENGTH it splits at an operator — strands the
+                    // keyword on a later line. Print the block form the
+                    // *next* pass would produce anyway. See
+                    // `postfix_payload_breaks`.
+                    if !postfix_payload_breaks(then_branch)
+                        && self.try_single_line(|p| {
+                            p.print_postfix_if(condition, then_branch, kw, true)
+                        })
+                    {
+                        self.newline();
+                    } else {
                         match kw {
                             PostfixIfKind::If => {
                                 self.print_if(condition, then_branch, None);
@@ -222,18 +231,22 @@ impl Printer<'_> {
                             }
                         }
                         self.maybe_blank_line_after_guard(then_branch, None);
-                    } else {
-                        self.print_postfix_if(condition, then_branch, kw, true);
                     }
-                } else if let Some(inner) = self.guard_clause_to_rewrite(
-                    stmt,
-                    condition,
-                    then_branch,
-                    else_branch.is_some(),
-                ) {
+                } else if self
+                    .guard_clause_to_rewrite(stmt, condition, then_branch, else_branch.is_some())
+                    .is_some_and(|inner| {
+                        // The width estimate can miss a condition the printer
+                        // splits; a postfix that wraps would be expanded back
+                        // by the next pass, so keep it only on one line.
+                        self.try_single_line(|p| {
+                            p.print_postfix_if(condition, inner, PostfixIfKind::If, false)
+                        })
+                    })
+                {
                     // Block form `if cond ... end` with a single guard-style
-                    // body collapses to idiomatic postfix `expr if cond`.
-                    self.print_postfix_if(condition, inner, PostfixIfKind::If, false);
+                    // body collapses to idiomatic postfix `expr if cond`
+                    // (already printed by the single-line trial above).
+                    self.newline();
                     self.last_stmt_rewrote_to_postfix = true;
                 } else {
                     self.print_if(condition, then_branch, else_branch.as_deref());
@@ -245,13 +258,15 @@ impl Printer<'_> {
                 then_branch,
                 else_branch,
             } => {
-                if let Some(inner) = self.guard_clause_to_rewrite(
-                    stmt,
-                    condition,
-                    then_branch,
-                    else_branch.is_some(),
-                ) {
-                    self.print_postfix_if(condition, inner, PostfixIfKind::Unless, false);
+                if self
+                    .guard_clause_to_rewrite(stmt, condition, then_branch, else_branch.is_some())
+                    .is_some_and(|inner| {
+                        self.try_single_line(|p| {
+                            p.print_postfix_if(condition, inner, PostfixIfKind::Unless, false)
+                        })
+                    })
+                {
+                    self.newline();
                     self.last_stmt_rewrote_to_postfix = true;
                 } else {
                     self.print_unless(condition, then_branch, else_branch.as_deref());
@@ -418,7 +433,7 @@ impl Printer<'_> {
     /// Emit `expr if cond` / `expr unless cond`. The condition stored on the
     /// AST for `unless` form is `Unary{Not, inner}` (the parser desugars
     /// `expr unless cond` to `if !cond`); we strip that wrapper so the
-    /// printed condition is the original `cond`.
+    /// printed condition is the original `cond`. The caller ends the line.
     fn print_postfix_if(
         &mut self,
         condition: &Expr,
@@ -472,7 +487,6 @@ impl Printer<'_> {
                 self.without_do_blocks(|p| p.print_expr(cond));
             }
         }
-        self.newline();
     }
 
     fn print_unless(&mut self, condition: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) {
