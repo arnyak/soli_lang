@@ -587,6 +587,29 @@ chart_donut_legend_row(id, j, parts[j], labels[j] ?? ("Part " + str(j + 1)), tot
 
 <sub>Real use — `eui_builders.sl (inside `chart_donut`):3523`.</sub>
 
+## Music notation
+
+`eui_builders_score.sl` engraves LilyPond input into canvases — `score(src, {"width": 640})` for a
+screen, `{"page": "a4"}` for A4 pages; `score_midi(src)` writes the same source as a Standard MIDI
+File and `score_pdf(src)` as a vector PDF.
+
+```soli
+score("\\relative c' { c4 d e f | g1 }", {"width": 640})
+```
+
+When the server is built with EUI, four builtins do the work natively, through the `eui-score`
+crate: `eui_score_layout(src, width, layout)`, `eui_score_bands(laid, sp, opts, total)`,
+`eui_score_midi(src, opts)` and `eui_score_pdf(src, title)`. They draw path for path, and write
+byte for byte, what the Soli engraver does — its golden tests hold the two together — about two
+hundred times faster: a symphony redraws in a frame rather than a fifth of a second. `score()`,
+`score_midi()` and `score_pdf()` call them when `defined("eui_score_layout")` and fall back to Soli
+otherwise, so the catalogue runs unchanged on either. A source the engraver refuses throws the same
+`score: … (at character N)` message from both.
+
+A page is a column of bands, each two stacked canvases: the music in its plain ink, and over it
+what `opts["marks"]` lights. Moving the playhead or the selection changes only the second — a few
+paths, not the system's quarter-megabyte. Screen pages are not numbered; A4 pages and the PDF are.
+
 ## Dev bar
 
 #### `dev_figure(label, value, tone)`

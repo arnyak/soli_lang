@@ -30,7 +30,7 @@ an attack on every reader. `EUI_TRACE=1` prints what was dropped and why.
 
 ## Every event kind
 
-29 of them. A view declares a handler by name under the node's `"on"` hash;
+30 of them. A view declares a handler by name under the node's `"on"` hash;
 a kind the view has not declared cannot arrive.
 
 | Kind | Fires when |
@@ -59,6 +59,7 @@ a kind the view has not declared cannot arrive.
 | `window` | The window itself changed — moved, resized, closed. |
 | `ended` | Media finished playing. |
 | `time_update` | Media playback position advanced. |
+| `midi` | The person played their MIDI instrument. See below. |
 | `wake` | The session's own clock fired. See below. |
 | `file_pick` | A file dialog returned a choice. |
 | `file_save` | A save dialog returned a destination. |
@@ -68,6 +69,29 @@ a kind the view has not declared cannot arrive.
 `file_pick`, `file_save`, `location` and `nfc_tag` are answered by the client rather
 than the server, and the last two are compiled only for a phone: a desktop has no tag
 reader and no positioning it can reach, so the code behind them is not built for it.
+
+### Coalesced events
+
+`pointer_move`, `scroll`, `resize` and `drag_over` carry the latest value:
+the client sends at most one per frame per node. The server folds them once
+more against what has already arrived: an unbroken run of the same kind on
+the same node and handler, waiting behind a handler that is still running,
+is handled once, with the last value. Nothing else is folded or reordered.
+A handler slower than a frame — a score editor redrawing a page under a
+dragged note — therefore follows the hand rather than replaying a second of
+queued moves after the release.
+
+### MIDI instruments
+
+A node holding a `midi` handler hears the person's MIDI keyboard while the
+application has the `midi` capability (`eui_capabilities("midi")` in
+`config/routes.sl`, granted by the person) and its window is in front. The
+event's value is a list of `[t_ms, status, data1, data2]` — every channel
+message since the last event, in order, never coalesced. System messages
+(SysEx included) never leave the client. On an `audio` node that is playing,
+`t_ms` is the sound's position, so a recording lines up with the backing
+track. An application that asks for `midi` requires protocol 9 at the
+handshake (EUI 06 §1.4).
 
 ### Answering a save
 

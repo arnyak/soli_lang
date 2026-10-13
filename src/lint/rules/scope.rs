@@ -274,6 +274,10 @@ const WELL_KNOWN_GLOBALS: &[&str] = &[
     "eui_name",
     "eui_stats",
     "eui_capabilities",
+    "eui_score_layout",
+    "eui_score_bands",
+    "eui_score_midi",
+    "eui_score_pdf",
     // Streaming responses
     "sse",
     "stream",

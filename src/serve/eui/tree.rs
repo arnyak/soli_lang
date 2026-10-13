@@ -2134,6 +2134,8 @@ fn scroll_offset(kind: NodeKind, v: &Json) -> Result<(i64, i64), String> {
 fn since(kind: EventKind) -> u32 {
     match kind {
         EventKind::Level => 3,
+        // The person's MIDI instruments (EUI 06 §1.4).
+        EventKind::Midi => 9,
         _ => 1,
     }
 }
@@ -2165,6 +2167,7 @@ fn event_kind(name: &str) -> Option<EventKind> {
         "ended" => EventKind::Ended,
         "time_update" => EventKind::TimeUpdate,
         "level" => EventKind::Level,
+        "midi" => EventKind::Midi,
         "wake" => EventKind::Wake,
         "file_pick" => EventKind::FilePick,
         "file_save" => EventKind::FileSave,
@@ -2204,6 +2207,7 @@ pub fn event_name(kind: EventKind) -> &'static str {
         EventKind::Ended => "ended",
         EventKind::TimeUpdate => "time_update",
         EventKind::Level => "level",
+        EventKind::Midi => "midi",
         EventKind::Wake => "wake",
         // EUI 03 §3.2. The client sends these for a node carrying `pick` or
         // `save`, and `event_kind` above deliberately does not take their

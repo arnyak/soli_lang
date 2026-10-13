@@ -1393,6 +1393,22 @@ impl TypeEnvironment {
                     return_type: Box::new(Type::String),
                 },
             );
+            // The native score engraver: a hash, the bands, the MIDI
+            // file's bytes and the PDF.
+            for (name, arity) in [
+                ("eui_score_layout", 3),
+                ("eui_score_bands", 4),
+                ("eui_score_midi", 2),
+                ("eui_score_pdf", 2),
+            ] {
+                self.functions.insert(
+                    name.to_string(),
+                    Type::Function {
+                        params: vec![Type::Any; arity],
+                        return_type: Box::new(Type::Any),
+                    },
+                );
+            }
             self.functions.insert(
                 "eui_wake".to_string(),
                 Type::Function {

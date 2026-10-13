@@ -1214,6 +1214,46 @@ pub fn register_router_builtins(env: &mut Environment) {
         })),
     );
 
+    // eui_score_layout / eui_score_bands / eui_score_midi / eui_score_pdf —
+    // the catalogue's score engraver, native (`serve::eui::score`). The
+    // catalogue's `score()` and the score editor call them when they are
+    // here and engrave in Soli when they are not; the two draw the same.
+    #[cfg(feature = "eui")]
+    {
+        env.define(
+            "eui_score_layout".to_string(),
+            Value::NativeFunction(NativeFunction::new(
+                "eui_score_layout",
+                Some(3),
+                crate::serve::eui::score::layout,
+            )),
+        );
+        env.define(
+            "eui_score_bands".to_string(),
+            Value::NativeFunction(NativeFunction::new(
+                "eui_score_bands",
+                Some(4),
+                crate::serve::eui::score::bands,
+            )),
+        );
+        env.define(
+            "eui_score_midi".to_string(),
+            Value::NativeFunction(NativeFunction::new(
+                "eui_score_midi",
+                Some(2),
+                crate::serve::eui::score::midi,
+            )),
+        );
+        env.define(
+            "eui_score_pdf".to_string(),
+            Value::NativeFunction(NativeFunction::new(
+                "eui_score_pdf",
+                Some(2),
+                crate::serve::eui::score::pdf,
+            )),
+        );
+    }
+
     // eui_wake(component) — render every other live session of an EUI
     // component, now.
     //

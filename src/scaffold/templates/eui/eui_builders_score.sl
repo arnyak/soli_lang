@@ -82,7 +82,7 @@ def score(src, opts)
     return column({"gap": 6, "width": width}, sheets.map { |sheet| score_sheet(sheet, width) })
   end
   sp = opts["staff_space"] ?? 8
-  engraved = score_engrave(src, float(width) / sp)
+  engraved = score_layout(src, float(width) / sp, {})
   score_band_column(engraved, sp, opts, width, int(Math.ceil(engraved["height"] * sp)))
 end
 
@@ -101,7 +101,7 @@ def score_pages(src, opts)
   width = opts["width"] ?? 600
   sp = float(width) / paper["w"]
   line_w = paper["w"] - paper["left"] - paper["right"]
-  engraved = score_engrave_page(src, line_w, {"page_h": paper["h"], "top": paper["top"], "bottom": paper["bottom"], "left": paper["left"], "indent": paper["indent"], "gap": 12.0})
+  engraved = score_layout(src, line_w, {"page_h": paper["h"], "top": paper["top"], "bottom": paper["bottom"], "left": paper["left"], "indent": paper["indent"], "gap": 12.0})
   height = int(paper["h"] * sp)
   sheets = engraved["pages"].map { |pg| score_band_column(engraved, sp, opts.merge({"page_index": pg["index"]}), width, height) }
   {"engraved": engraved, "sp": sp, "pages": sheets, "height": height}
@@ -111,6 +111,25 @@ end
 # under it, so a screen shows where each page ends.
 def score_sheet(sheet, width)
   {"k": "box", "s": {"bg": "surface.raised", "shadow": 2, "width": width, "border": 1, "border_color": "border.subtle"}, "c": [sheet]}
+end
+
+# The engraving a view draws, by `score_engrave_page`'s arguments: lang's
+# native engraver's (`eui_score_layout`, the `eui-score` crate) when the
+# server has it, this file's own otherwise. The two place everything alike
+# to the hundredth of a pixel (eui-score's golden tests hold them to it);
+# the native one answers in a millisecond what this file takes a fifth of a
+# second over for a symphony, and keeps the engraving itself on its side —
+# what it hands back is what a view reads: the systems, their pages and
+# tops, and each bar's items with their numbers and x. `score_band_column`
+# draws either.
+# A refusal comes back as `{"error": message}` and is thrown here, word
+# for word what `score_refuse` throws.
+def score_layout(src, width_ss, layout)
+  return score_engrave_page(src, width_ss, layout) unless defined("eui_score_layout")
+
+  laid = eui_score_layout(src, width_ss, layout)
+  throw laid["error"] unless laid["error"].nil?
+  laid
 end
 
 # Parse, lay out and place everything, in staff spaces: what `score_paths`
@@ -192,7 +211,7 @@ def score_engrave_fresh(src, width_ss, layout)
   for sys in systems
     bottom = sys["bottom"] if sys["bottom"] > bottom
   end
-  {"systems": systems, "height": bottom + 1.0, "width": width_ss, "left": left, "header": head, "pages": pages, "paper": layout["page_h"]}
+  {"systems": systems, "height": bottom + 1.0, "width": width_ss, "left": left, "header": head, "pages": pages, "paper": layout["page_h"], "numbered": score_numbered(layout)}
 end
 
 # The ticks in a whole note. 256 × 105: a 1/32 with three dots is still a
@@ -297,7 +316,7 @@ def score_engrave_many(parsed, width_ss, layout)
     end
     bottom = o["bottom"] if o["bottom"] > bottom
   end
-  {"systems": outer, "height": bottom + 1.0, "width": width_ss, "left": left, "header": head, "pages": pages, "paper": layout["page_h"]}
+  {"systems": outer, "height": bottom + 1.0, "width": width_ss, "left": left, "header": head, "pages": pages, "paper": layout["page_h"], "numbered": score_numbered(layout)}
 end
 
 # One bar of the shared row: the first staff's bar for what a bar is
@@ -1364,6 +1383,11 @@ def score_measures(events)
         cur["bar"] = ev["v"]
         cur["length"] = pos
         cur = nil
+      elsif ev["v"] == ".|:"
+        # A start repeat before the first note: LilyPond draws it at the
+        # start of the first line, after the clef, key and time — where
+        # `\repeat volta` from the very start draws nothing.
+        cur["open_bar"] = true
       else
         score_refuse("a bar line before any music", ev["at"])
       end
@@ -1881,6 +1905,7 @@ end
 # as its ink allows, and overflows only if that is still too wide.
 def score_break(bars, width, indent, rest = 0.0)
   bars[0]["first"] = true
+  bars[0]["open_repeat"] = ".|:" if bars[0]["open_bar"] == true
   count = bars.length
   opening_w = bars.map { |b| score_bar_width(b, 1.0, true) }
   inner_w = bars.map { |b| score_bar_width(b, 1.0, false) }
@@ -3187,6 +3212,8 @@ end
 # instrument (0, a piano) for a staff that names none. Several staves are a
 # format-1 file, a track each, its instrument its `midiInstrument`.
 def score_midi(src, opts = {})
+  return eui_score_midi(src, opts) if defined("eui_score_midi")
+
   parsed = score_parse(src)
   title = (parsed["header"] ?? {})["title"] ?? ""
   staves = parsed["staves"]
@@ -3408,6 +3435,8 @@ end
 # cubic PDF draws. The file is ASCII from end to end, so it travels as a
 # string: `{"state": state, "save": score_pdf(src)}` answers a save.
 def score_pdf(src, opts = {})
+  return eui_score_pdf(src, opts["title"] ?? "") if defined("eui_score_pdf")
+
   paper = score_a4()
   line_w = paper["w"] - paper["left"] - paper["right"]
   engraved = score_engrave_page(src, line_w, {"page_h": paper["h"], "top": paper["top"], "bottom": paper["bottom"], "left": paper["left"], "indent": paper["indent"], "gap": 12.0})
@@ -3550,8 +3579,16 @@ end
 # for them.
 
 # The bands of page `page`: [{"y": px from the page's top, "h": px,
-# "paths": [...]}], their heights adding up to `total` px.
+# "paths": [...], "lit": [...]}], their heights adding up to `total` px.
+# `paths` is the band in the plain ink, whatever is lit; `lit` is a copy
+# of the paths of the items `opts["marks"]` lights, in their colours, drawn
+# over it (`score_band_column`). The playhead and the selection change
+# `lit` alone: a system of a full score is a quarter of a megabyte of
+# paths, and recolouring a note inside it sent all of it again, every
+# tenth of a second, while the music played.
 def score_bands(engraved, sp, opts, total)
+  return eui_score_bands(engraved, sp, opts, total) if engraved["native"] == true
+
   ink = opts["colour"] ?? "text.default"
   marks = opts["marks"] ?? {}
   page = opts["page_index"] ?? 0
@@ -3563,7 +3600,7 @@ def score_bands(engraved, sp, opts, total)
     starts.push([sys, pad, int(Math.floor(sys["top"] * sp + 0.5)) - pad])
   end
   first_y = starts.length > 0 ? score_max(starts[0][2], 0) : total
-  head_key = str(sp) + "|" + ink + "|" + str(page) + "|" + str(engraved["left"]) + "|" + str(engraved["width"]) + "|" + str(engraved["paper"]) + "|" + score_sig_value(engraved["header"])
+  head_key = str(sp) + "|" + ink + "|" + str(page) + "|" + str(engraved["left"]) + "|" + str(engraved["width"]) + "|" + str(engraved["paper"]) + "|" + str(engraved["numbered"]) + "|" + score_sig_value(engraved["header"])
   head = score_memo_get("heads", head_key)
   head = score_memo_put("heads", head_key, {"paths": score_paths_head(engraved, sp, ink, page), "ranges": {}}, 16) if head.nil?
   bands.push({"y": 0, "h": first_y, "drawn": head, "items": []})
@@ -3573,7 +3610,7 @@ def score_bands(engraved, sp, opts, total)
     bands.push({"y": y, "h": 0, "drawn": score_band_drawn(st[0], st[1], sp, ink), "items": score_band_items(st[0])})
   end
   bands[-1]["h"] = score_max(total - bands[-1]["y"], 0)
-  bands.map { |bd| {"y": bd["y"], "h": bd["h"], "paths": score_band_lit(bd, marks)} }
+  bands.map { |bd| {"y": bd["y"], "h": bd["h"], "paths": bd["drawn"]["paths"], "lit": score_band_lit(bd, marks)} }
 end
 
 # The items of a system in drawing order, by their numbers.
@@ -3589,14 +3626,23 @@ def score_band_items(sys)
   out
 end
 
-# A band's paths with the lit items' in their colours; shared when none is.
+# The paths of a band's lit items, copied in their colours.
 def score_band_lit(bd, marks)
   drawn = bd["drawn"]
-  lit = {}
+  out = []
   for item, k in bd["items"]
-    lit[str(k)] = marks[item] if marks.has_key(item)
+    next unless marks.has_key(item)
+
+    span = drawn["ranges"][str(k)]
+    next if span.nil?
+
+    for j in range(span[0], span[1])
+      lit = drawn["paths"][j].map { |v| v }
+      lit[1] = marks[item]
+      out.push(lit)
+    end
   end
-  score_recolour(drawn, lit)
+  out
 end
 
 # One system drawn with its staff's top line `pad` px down, from the cache
@@ -3705,7 +3751,15 @@ def score_paths_plain(engraved, sp, ink, page, ranges)
   paths
 end
 
-# A page's titles if it is the first, its number if it is not.
+# Whether pages are numbered: on paper, which has margins, as LilyPond
+# numbers them. A screen cut into pages (`page_h` and nothing else) has a
+# pager that says which page it is, and a page number set in the text face
+# at a screen's size loses the 4's hairline diagonal.
+def score_numbered(layout)
+  !layout["page_h"].nil? && !layout["top"].nil?
+end
+
+# A page's titles if it is the first, its number if it is numbered.
 def score_paths_head(engraved, sp, ink, page)
   paths = []
   left = engraved["left"] ?? 0.0
@@ -3717,7 +3771,7 @@ def score_paths_head(engraved, sp, ink, page)
       end
     end
   end
-  if page > 0 && !engraved["paper"].nil?
+  if page > 0 && engraved["numbered"] == true
     # LilyPond's page numbers: from the second page, at the top, on the
     # outside edge — right on odd pages, left on even ones.
     number = str(page + 1)
@@ -3728,11 +3782,15 @@ def score_paths_head(engraved, sp, ink, page)
   paths
 end
 
-# A page as a column of band canvases, `total` px tall in all.
+# A page as a column of bands, `total` px tall in all: each its canvas in
+# the plain ink and, laid over it, a canvas of what is lit — so lighting a
+# note changes the second, a few paths, and never the first.
 def score_band_column(engraved, sp, opts, width, total)
   bands = score_bands(engraved, sp, opts, total)
   # A plain box, not `column()`: the bands stack with no gap and nothing else.
-  {"k": "box", "s": {"display": "column", "width": width}, "c": bands.filter { |bd| bd["h"] > 0 }.map { |bd| canvas(width, bd["h"], bd["paths"]) }}
+  {"k": "box", "s": {"display": "column", "width": width}, "c": bands.filter { |bd| bd["h"] > 0 }.map { |bd|
+    {"k": "box", "s": {"display": "stack", "width": width, "height": bd["h"]}, "c": [canvas(width, bd["h"], bd["paths"]), canvas(width, bd["h"], bd["lit"] ?? [])]}
+  }}
 end
 
 # A tempo mark: bold words, then the beat in brackets — a small note, an

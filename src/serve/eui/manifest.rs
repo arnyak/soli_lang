@@ -251,7 +251,13 @@ fn sign(
         // style byte of `2`, both decode errors before EUI 4. An
         // application that declared one is refused at the handshake, with a
         // reason, rather than mid-batch with a dead session.
-        protocol_min: if super::fonts::any() {
+        // `midi` raises it to 9 (EUI 01 §2.1): a client that does not know
+        // bit 2048 refuses the manifest. Capped at the version this soli
+        // speaks, so it reads 9 from the release that brings the protocol
+        // there and a range never closes before it.
+        protocol_min: if capabilities & eui_proto::caps::MIDI != 0 {
+            9.min(eui_proto::PROTOCOL_VERSION)
+        } else if super::fonts::any() {
             4
         } else if capabilities & eui_proto::caps::SCENE != 0 {
             2

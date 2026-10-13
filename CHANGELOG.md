@@ -24,6 +24,22 @@
   and pan from `midiInstrument`, `midiMaximumVolume`, `midiPanPosition`); `score_pdf(src)` writes
   the A4 pages as a vector PDF. Scripts that open
   `eui_window` load them as well.
+- EUI: the score engraver is native. With the `eui` feature, four builtins
+  — `eui_score_layout`, `eui_score_bands`, `eui_score_midi`,
+  `eui_score_pdf` — engrave through the `eui-score` crate, path for path
+  and byte for byte what the Soli engraver makes and about two hundred
+  times faster; `score()`, `score_midi()`, `score_pdf()` and the score
+  editor use them when they are defined. A page's bands are two stacked
+  canvases, the music and what is lit over it, so the playhead resends a
+  few paths instead of a system; screen pages are no longer numbered
+  (`docs/eui/widgets-data`, "Music notation").
+- EUI: a `midi` event — the person's MIDI instrument, every channel message
+  in order as `[t_ms, status, data1, data2]`, while the `midi` capability
+  is granted; asking for it requires protocol 9 at the handshake
+  (`docs/eui/events`, "MIDI instruments").
+- EUI: a run of `pointer_move`, `scroll`, `resize` or `drag_over` events
+  already queued behind a slow handler is handled once, with the last value,
+  so a dragged note follows the hand instead of replaying the queue.
 
 ### Fixed
 

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use eui_proto::{EventFrame, Frame, Offer, Start, Welcome, PROTOCOL_VERSION};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
 use tokio::sync::oneshot;
@@ -478,11 +478,18 @@ pub fn upgrade(
         // that is the whole of what keeps a socket from writing files
         // nobody offered it.
         let mut uploads: std::collections::HashMap<u32, Upload> = std::collections::HashMap::new();
+        // A frame read ahead while coalescing (below) and not taken: the
+        // next one to handle, before anything more is read.
+        let mut held: Option<Message> = None;
+        let mut ws_ended = false;
         loop {
-            if !connected {
+            if !connected || ws_ended {
                 break;
             }
-            let msg = tokio::select! {
+            let msg = if let Some(m) = held.take() {
+                m
+            } else {
+                tokio::select! {
                 next = ws_read.next() => match next {
                     Some(Ok(msg)) => msg,
                     _ => break,
@@ -501,6 +508,7 @@ pub fn upgrade(
                         .to_le_bytes();
                     let _ = sender.try_send(Ok(Message::Binary(Frame::Ping(nonce).encode())));
                     continue;
+                }
                 }
             };
             if !budget.allow() {
@@ -528,7 +536,7 @@ pub fn upgrade(
                 }
                 _ => continue,
             };
-            let frame = match Frame::decode(&bytes) {
+            let mut frame = match Frame::decode(&bytes) {
                 Ok(f) => f,
                 Err(e) => {
                     let _ = sender.try_send(Ok(Message::Binary(
@@ -541,6 +549,50 @@ pub fn upgrade(
                     break;
                 }
             };
+            // 06 §2: a coalesced event — a `pointer_move`, a `scroll`, a
+            // `resize`, a `drag_over` — carries the latest value, and one
+            // the same node has already sent again is stale before it is
+            // handled. The client coalesces per frame; this coalesces
+            // against what is waiting here, which a frame cannot see. Each
+            // event is handled before the next is read, so a handler slower
+            // than the frames — a score editor redrawing a page under a
+            // dragged note, 60 ms an event against a move every 16 — used
+            // to leave the moves queued in the socket, and the note followed
+            // the hand a second late. Only frames already arrived are
+            // looked at, and only an unbroken run of the same event on the
+            // same node is folded: anything else is kept, in order.
+            let key = match &frame {
+                Frame::Event(e) if coalesced(e.event) => Some((e.event, e.node, e.name)),
+                _ => None,
+            };
+            if let Some((kind, node, name)) = key {
+                while let Some(next) = ws_read.next().now_or_never() {
+                    let Some(Ok(next)) = next else {
+                        // The socket ended behind the run: this event is
+                        // still handled, and the loop ends after it.
+                        ws_ended = true;
+                        break;
+                    };
+                    let later = match &next {
+                        Message::Binary(b) => match Frame::decode(b) {
+                            Ok(Frame::Event(e))
+                                if e.event == kind && e.node == node && e.name == name =>
+                            {
+                                Some(e)
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    match later {
+                        Some(e) if budget.allow() => frame = Frame::Event(e),
+                        _ => {
+                            held = Some(next);
+                            break;
+                        }
+                    }
+                }
+            }
             match frame {
                 Frame::Event(e) => {
                     if trace() {
@@ -655,7 +707,15 @@ pub fn upgrade(
                     eprintln!("[EUI] client error {code}: {}", printable(&message));
                     break;
                 }
-                Frame::Hello(_) | Frame::Welcome(_) | Frame::Batch(_) | Frame::Blob(_) => {
+                // `Fetch` and `Asset` are a pipe's (01 §7.3): `Frame::decode`
+                // refuses them on a socket before they get here, and one that
+                // did arrive is answered as any frame going the other way.
+                Frame::Hello(_)
+                | Frame::Welcome(_)
+                | Frame::Batch(_)
+                | Frame::Blob(_)
+                | Frame::Fetch { .. }
+                | Frame::Asset(_) => {
                     let _ = sender.try_send(Ok(Message::Binary(
                         Frame::Error {
                             code: 301,
@@ -1023,6 +1083,15 @@ fn validate(liveview_id: &str, e: &EventFrame) -> Option<(String, serde_json::Va
 /// frame of a session renders on the same thread, where the memo and the
 /// application's own kept objects are. The shared queue is the fallback for
 /// a process that has no pinned queues, such as a test.
+/// The event kinds 06 §2 coalesces: only the latest value of a run counts.
+fn coalesced(kind: eui_proto::EventKind) -> bool {
+    use eui_proto::EventKind;
+    matches!(
+        kind,
+        EventKind::PointerMove | EventKind::Scroll | EventKind::Resize | EventKind::DragOver
+    )
+}
+
 async fn post(
     lv_event_tx: &crossbeam_channel::Sender<LiveViewEventData>,
     sender: &WsSender,

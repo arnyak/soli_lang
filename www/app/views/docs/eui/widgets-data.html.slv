@@ -732,6 +732,13 @@
 <p class="text-gray-500 text-xs mt-3">Real use &mdash; <code>eui_builders.sl (inside `chart_donut`):3523</code></p>
 </div>
     </div>
+    <h2 id="w-music-notation" class="text-2xl font-bold text-white mt-12 mb-6 scroll-mt-24">Music notation</h2>
+    <p class="text-gray-400 mb-6"><code class="text-cyan-400">eui_builders_score.sl</code> engraves LilyPond input into canvases &mdash; <code class="text-cyan-400">score(src, {"width": 640})</code> for a screen, <code class="text-cyan-400">{"page": "a4"}</code> for A4 pages; <code class="text-cyan-400">score_midi(src)</code> writes the same source as a Standard MIDI File and <code class="text-cyan-400">score_pdf(src)</code> as a vector PDF.</p>
+<div class="p-4 bg-[#171412] overflow-x-auto rounded-lg mb-6">
+<pre><code class="language-soli text-sm">score("\\relative c' &lbrace; c4 d e f | g1 &rbrace;", &lbrace;"width": 640&rbrace;)</code></pre>
+</div>
+    <p class="text-gray-400 mb-6">When the server is built with EUI, four builtins do the work natively, through the <code class="text-cyan-400">eui-score</code> crate: <code class="text-cyan-400">eui_score_layout(src, width, layout)</code>, <code class="text-cyan-400">eui_score_bands(laid, sp, opts, total)</code>, <code class="text-cyan-400">eui_score_midi(src, opts)</code> and <code class="text-cyan-400">eui_score_pdf(src, title)</code>. They draw path for path, and write byte for byte, what the Soli engraver does &mdash; its golden tests hold the two together &mdash; about two hundred times faster: a symphony redraws in a frame rather than a fifth of a second. <code class="text-cyan-400">score()</code>, <code class="text-cyan-400">score_midi()</code> and <code class="text-cyan-400">score_pdf()</code> call them when <code class="text-cyan-400">defined("eui_score_layout")</code> and fall back to Soli otherwise, so the catalogue runs unchanged on either. A source the engraver refuses throws the same <code class="text-cyan-400">score: &hellip; (at character N)</code> message from both.</p>
+    <p class="text-gray-400 mb-6">A page is a column of bands, each two stacked canvases: the music in its plain ink, and over it what <code class="text-cyan-400">opts["marks"]</code> lights. Moving the playhead or the selection changes only the second &mdash; a few paths, not the system&rsquo;s quarter-megabyte. Screen pages are not numbered; A4 pages and the PDF are.</p>
     <h2 id="w-dev-bar" class="text-2xl font-bold text-white mt-12 mb-6 scroll-mt-24">Dev bar</h2>
     <div class="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden mb-6">
         <div class="px-5 py-3 border-b border-white/5">
