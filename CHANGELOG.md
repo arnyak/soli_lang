@@ -11,6 +11,12 @@
   cache. On a 180-file app (1.4 MB of `.sl`) a worker costs 7.5 MiB instead
   of 16.4, and the process at 2 workers 41.9 MiB instead of 76.7 (8 workers:
   97 MiB instead of 175). Boot time is unchanged.
+- The memory freed while loading the app goes back to the OS at once. The
+  boot thread, each worker and each job worker call `mi_collect` when they
+  have loaded it: mimalloc returns pages when the freeing thread next
+  allocates, and these threads go idle (the boot thread for good), so they
+  kept them. www in `--dev`, 2 workers: 43 -> 36.5 MiB of heap, without
+  `MIMALLOC_PURGE_DELAY=0`.
 - A lambda no longer copies its body each time it is evaluated
   (`xs.map { |x| … }`, a scope, a validation): it shares it.
 - The parser returns its statement, argument and parameter lists at exact

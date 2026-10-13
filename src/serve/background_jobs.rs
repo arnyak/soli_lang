@@ -173,6 +173,8 @@ fn run_pool_worker(id: usize, rx: channel::Receiver<BackgroundJob>, config: Pool
         let result = catch_unwind(AssertUnwindSafe(|| {
             let mut interpreter = Interpreter::new_for_serve();
             build_job_interpreter(id, &mut interpreter, &config);
+            // Idle until the first job: give back what loading freed.
+            crate::platform::release_freed_memory();
 
             let runner = interpreter.global_env().borrow().get("__soli_run_job_bg");
             let Some(runner) = runner else {

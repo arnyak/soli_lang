@@ -1037,6 +1037,9 @@ pub fn serve_folder_with_options_and_hooks(
         // bindings, releasing every `Value::Function`/`Value::Class` back-edge.
         interpreter.environment.borrow_mut().reset_for_call();
         drop(interpreter);
+        // This thread parks in the worker-pool join below and never
+        // allocates again, so the allocator would keep these pages.
+        crate::platform::release_freed_memory();
         boot_trace("boot interpreter reclaimed");
     }
 
@@ -1889,6 +1892,10 @@ fn worker_loop(
     } else {
         None
     };
+
+    // Loading the app freed its scratch on this thread; a worker that waits
+    // for its first request allocates nothing, and would keep those pages.
+    crate::platform::release_freed_memory();
 
     // Realtime workers drain these; HTTP-only workers leave them `None` so the
     // `if let Some(..)` guards below skip WS/LiveView entirely, and the `select`

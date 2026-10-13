@@ -258,7 +258,7 @@ The levers, cheapest first:
 | `SOLI_JOB_WORKERS=1` (or `0`) | The job worker pool is a second set of full interpreters. It defaults to `1`; `0` disables the job engine in this process (run `soli jobs` separately). |
 | `SOLI_JOB_VIEW_HELPERS=0` | Drops view helpers (incl. i18n locale tables) from every job interpreter when jobs don't render helper-using templates. |
 | Slim Cargo features | Build only the subsystems you need (see below). Omitting SQL clients and PASETO shrinks the binary and the code pages mapped into every worker. |
-| `MIMALLOC_PURGE_DELAY=0` | mimalloc returns freed pages to the OS promptly instead of after its default delay — trims the RSS left over from the one-time boot-parse churn. Read by the allocator at startup, so set it in the environment before launch. Trade-off: a few more `madvise`/decommit syscalls under churny allocation. |
+| `MIMALLOC_PURGE_DELAY=0` | mimalloc returns freed pages to the OS promptly instead of after its default delay. The leftovers of boot no longer need it: the server hands them back itself once the boot thread and each worker have loaded the app (they would otherwise sit idle on pages they freed). What it still trims is the churn of serving. Read by the allocator at startup, so set it in the environment before launch. Trade-off: a few more `madvise`/decommit syscalls under churny allocation. |
 | Fewer/lazier locales | If most of an app's per-worker memory is i18n tables, load only the locales you serve (or move them to `config/locales/*.yml`, which the framework loads **once** process-wide into a shared store rather than per-worker). |
 
 #### Slim binary (Cargo features)
