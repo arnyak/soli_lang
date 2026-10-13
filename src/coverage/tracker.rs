@@ -398,26 +398,7 @@ impl CoverageTracker {
                     self.collect_lines_from_stmt(path, lines, stmt);
                 }
             }
-            Class(decl) => {
-                for stmt in &decl.class_statements {
-                    self.collect_lines_from_stmt(path, lines, stmt);
-                }
-                if let Some(ctor) = &decl.constructor {
-                    for stmt in &ctor.body {
-                        self.collect_lines_from_stmt(path, lines, stmt);
-                    }
-                }
-                for method in &decl.methods {
-                    for stmt in &method.body {
-                        self.collect_lines_from_stmt(path, lines, stmt);
-                    }
-                }
-                for field in &decl.fields {
-                    if let Some(init) = &field.initializer {
-                        self.collect_lines_from_expr(path, lines, init);
-                    }
-                }
-            }
+            Class(decl) => self.collect_lines_from_class(path, lines, decl),
             Enum(decl) => {
                 // Only the user-defined methods carry real source lines; the
                 // synthesized variant machinery has no source span.
@@ -428,6 +409,40 @@ impl CoverageTracker {
                 }
             }
             Interface(_) | Import(_) | Export(_) => {}
+        }
+    }
+
+    /// A class's executable lines — and those of the classes declared inside
+    /// it. A bounded context is a `module Billing` around its classes: before
+    /// the nested ones were walked, a file whose code lives in a module
+    /// registered one line (the `module` itself), and reported 100 % covered
+    /// whatever its specs did.
+    fn collect_lines_from_class(
+        &mut self,
+        path: &PathBuf,
+        lines: &[&str],
+        decl: &crate::ast::ClassDecl,
+    ) {
+        for stmt in &decl.class_statements {
+            self.collect_lines_from_stmt(path, lines, stmt);
+        }
+        if let Some(ctor) = &decl.constructor {
+            for stmt in &ctor.body {
+                self.collect_lines_from_stmt(path, lines, stmt);
+            }
+        }
+        for method in &decl.methods {
+            for stmt in &method.body {
+                self.collect_lines_from_stmt(path, lines, stmt);
+            }
+        }
+        for field in &decl.fields {
+            if let Some(init) = &field.initializer {
+                self.collect_lines_from_expr(path, lines, init);
+            }
+        }
+        for nested in &decl.nested_classes {
+            self.collect_lines_from_class(path, lines, nested);
         }
     }
 

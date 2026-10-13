@@ -443,7 +443,11 @@ fn ordered_sl_files(dir: &Path) -> Result<Vec<PathBuf>, RuntimeError> {
     let mut files = Vec::new();
     collect_sl_files(dir, &mut files)?;
     let (first, rest): (Vec<_>, Vec<_>) = files.into_iter().partition(|(_, values)| *values);
-    Ok(first.into_iter().chain(rest).map(|(path, _)| path).collect())
+    Ok(first
+        .into_iter()
+        .chain(rest)
+        .map(|(path, _)| path)
+        .collect())
 }
 
 /// The order `soli serve` loads `app/models`, `app/services` and the other
