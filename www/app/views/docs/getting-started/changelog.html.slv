@@ -28,6 +28,11 @@
             <li><strong class="text-white">A lambda shares its body.</strong> Evaluating <code class="text-cyan-400">xs.map { |x| … }</code>, a scope or a validation no longer copies the block&rsquo;s statements each time.</li>
             <li><strong class="text-white">A smaller AST.</strong> The parser returns its lists at exact capacity, and <code class="text-cyan-400">Stmt</code>/<code class="text-cyan-400">Expr</code> shrank to 192/72 bytes: that app&rsquo;s cached AST is 11.1&nbsp;MiB instead of 14.8.</li>
         </ul>
+        <h3 id="unreleased-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">A <code class="text-cyan-400">--dev</code> server no longer grows with every edit of an app in bounded contexts.</strong> A class declared inside a <code class="text-cyan-400">module</code> (<code class="text-cyan-400">app/models/billing/</code>) got a new environment each time; its methods closed over it, so on every hot reload &mdash; which re-runs every model file in every worker &mdash; the old class stayed alive with all its methods and closures. One <code class="text-cyan-400">soli serve --dev</code> of an app being refactored reached 15&nbsp;GB in two days. Redeclaring such a class now reuses its environment and lets the old one go, as at the top level.</li>
+            <li><strong class="text-white">Model callbacks are registered once.</strong> <code class="text-cyan-400">before_save("x")</code> and the others were appended again on each hot reload, by each worker; after a day of edits one <code class="text-cyan-400">save</code> ran each callback thousands of times.</li>
+        </ul>
     </section>
 
     <section id="v2-26-0" class="mb-16 scroll-mt-24">

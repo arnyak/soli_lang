@@ -1118,10 +1118,11 @@ impl Interpreter {
             // Save the current environment
             let previous_env = self.environment.clone();
 
-            // Create a new environment that inherits from the parent
-            let nested_env = Rc::new(RefCell::new(Environment::with_enclosing(
-                previous_env.clone(),
-            )));
+            // The environment the nested class is declared in, enclosing the
+            // parent's — the one it was declared in before, when it is
+            // declared again in the same place (see `nested_class_env`).
+            let nested_env =
+                nested_class_env(&qualified_class_name(&nested_decl.name), &previous_env);
 
             // Define the parent class in the nested environment
             nested_env.borrow_mut().define(
@@ -1224,6 +1225,56 @@ pub(crate) fn qualified_class_name(name: &str) -> String {
     })
 }
 
+thread_local! {
+    /// The environment each nested class was declared in, by qualified name.
+    /// Weak: the class keeps its environment alive (its methods close over
+    /// it), and nothing here keeps either.
+    static NESTED_CLASS_ENVS: RefCell<HashMap<String, std::rc::Weak<RefCell<Environment>>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// The environment a nested class declares itself in.
+///
+/// It defines the class, and the class's methods close over it: a cycle,
+/// which for a top-level class is harmless, because there the environment is
+/// the global one and declaring the class again — a hot reload re-runs every
+/// model file — rebinds the name and lets the old class go. A nested class
+/// used to get a fresh environment each time, so the old one kept the old
+/// class, and every method and closure of it, for the life of the process:
+/// on an app whose models live in bounded contexts (`module Billing`), each
+/// reload of a `--dev` server leaked a copy of all of them, per worker —
+/// 15 GB in two days of editing one such app.
+///
+/// So the environment is reused when the same class is declared again in
+/// the same scope: alive still, and enclosing the same environment (the same
+/// interpreter, the same module). Declaring the class then rebinds it, as at
+/// the top level.
+fn nested_class_env(
+    qualified: &str,
+    enclosing: &Rc<RefCell<Environment>>,
+) -> Rc<RefCell<Environment>> {
+    let reused = NESTED_CLASS_ENVS.with(|envs| {
+        envs.borrow()
+            .get(qualified)
+            .and_then(std::rc::Weak::upgrade)
+            .filter(|env| {
+                env.borrow()
+                    .enclosing()
+                    .is_some_and(|outer| Rc::ptr_eq(&outer, enclosing))
+            })
+    });
+    if let Some(env) = reused {
+        return env;
+    }
+    let env = Rc::new(RefCell::new(Environment::with_enclosing(enclosing.clone())));
+    NESTED_CLASS_ENVS.with(|envs| {
+        let mut envs = envs.borrow_mut();
+        envs.retain(|_, weak| weak.strong_count() > 0);
+        envs.insert(qualified.to_string(), Rc::downgrade(&env));
+    });
+    env
+}
+
 struct NamespaceGuard;
 
 impl NamespaceGuard {
@@ -1247,4 +1298,56 @@ impl Drop for NamespaceGuard {
 /// binding, which is harmless.
 fn reads_this(body: &[crate::ast::Stmt]) -> bool {
     serde_json::to_string(body).map_or(true, |json| json.contains("\"This\""))
+}
+
+#[cfg(test)]
+mod nested_class_reload_tests {
+    use super::*;
+
+    fn run(interpreter: &mut Interpreter, source: &str) {
+        let tokens = crate::lexer::Scanner::new(source)
+            .scan_tokens()
+            .expect("lexer error");
+        let program = crate::parser::Parser::new(tokens)
+            .parse()
+            .expect("parser error");
+        interpreter.interpret(&program).expect("runtime error");
+    }
+
+    fn contact(interpreter: &Interpreter) -> Rc<Class> {
+        let Some(Value::Class(module)) = interpreter.environment.borrow().get("Billing") else {
+            panic!("Billing is not defined");
+        };
+        let nested = module.nested_classes.borrow();
+        nested.get("Contact").cloned().expect("Billing::Contact")
+    }
+
+    /// Declaring a module's class again — what a hot reload does to every
+    /// model file — lets the previous class go, as it does at the top level.
+    /// It used to stay in a cycle with the environment it was declared in,
+    /// its methods closing over it, and a `--dev` server editing an app of
+    /// bounded contexts grew by a copy of every such class per reload.
+    #[test]
+    fn a_nested_class_declared_again_frees_the_old_one() {
+        let source = "module Billing\n  class Contact\n    def label\n      \"contact\"\n    end\n  end\nend\n";
+        let mut interpreter = Interpreter::new();
+        run(&mut interpreter, source);
+        let first = Rc::downgrade(&contact(&interpreter));
+
+        run(&mut interpreter, source);
+        let second = contact(&interpreter);
+        assert!(
+            first.upgrade().is_none(),
+            "the first Billing::Contact is still alive"
+        );
+
+        // The class declared again keeps its methods.
+        let label = second
+            .methods
+            .borrow()
+            .get("label")
+            .cloned()
+            .expect("label");
+        assert_eq!(label.body.len(), 1);
+    }
 }

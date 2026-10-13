@@ -23,6 +23,22 @@
   capacity, and `Stmt`/`Expr` shrank to 192/72 bytes: that app's cached AST
   is 11.1 MiB instead of 14.8.
 
+### Fixed
+
+- A `--dev` server no longer grows with every edit of an app whose models
+  live in bounded contexts (`module Billing … end` in `app/models/billing/`).
+  A class declared inside a module got a new environment each time it was
+  declared, its methods closed over it, and on each hot reload — which
+  re-runs every model file in every worker — the old class stayed alive in
+  that cycle with all its methods and closures. One `soli serve --dev` of an
+  app being refactored reached 15 GB in two days. A class declared again in
+  the same place now reuses its environment, so redeclaring it lets the old
+  one go, as at the top level: 25 edits of that app grew a 2-worker server
+  by 309 MiB before, and it now levels off.
+- Model callbacks are registered once per name. `before_save("x")` and the
+  others were appended again on each hot reload, by each worker, so after a
+  day of edits one `save` ran each callback thousands of times.
+
 ## [2.26.0] - 2026-10-13
 
 ### Added
