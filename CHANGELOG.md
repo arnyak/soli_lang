@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.26.1] - 2026-10-13
+
 ### Performance
 
 - A server's workers share the parsed code instead of each copying it. Every
