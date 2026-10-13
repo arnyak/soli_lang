@@ -939,3 +939,32 @@ fn a_served_app_loads_and_saves_an_event_sourced_aggregate() {
         serde_json::json!({"balance": 151, "version": 3})
     );
 }
+
+/// `soli test` preloads app/models and app/services for the spec process in
+/// the order `soli serve` loads them: value objects and events first, then
+/// each folder's files, then its subfolders — so a bounded context's model
+/// (`app/models/billing/invoice.sl`) exists in a spec, as it does in the app.
+#[test]
+fn the_test_runner_preloads_contexts_in_the_servers_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(root, "app/models/_base.sl", "module Shared\nend\n");
+    write(root, "app/models/billing/invoice.sl", INVOICE);
+    write(root, "app/models/zebra.sl", "class Zebra < Model\nend\n");
+    write(root, "app/models/values/price.sl", PRICE);
+
+    let order: Vec<String> = solilang::serve::sl_load_order(&root.join("app/models"))
+        .iter()
+        .map(|path| {
+            path.strip_prefix(root.join("app/models"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(
+        order,
+        vec!["values/price.sl", "_base.sl", "zebra.sl", "billing/invoice.sl"]
+    );
+    assert!(solilang::serve::sl_load_order(&root.join("app/missing")).is_empty());
+}

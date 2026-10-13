@@ -430,13 +430,29 @@ pub(crate) fn load_models(
 /// `invoice.sl` names a class that `price.sl` (or `values/price.sl`) would
 /// only define later.
 fn load_sl_dir_recursive(interpreter: &mut Interpreter, dir: &Path) -> Result<(), RuntimeError> {
+    for path in ordered_sl_files(dir)? {
+        execute_file(interpreter, &path)?;
+    }
+    Ok(())
+}
+
+/// The `.sl` files under `dir` in the order [`load_sl_dir_recursive`] runs
+/// them: value-object, domain-event and enum files first, then each
+/// directory's files sorted, then its subdirectories.
+fn ordered_sl_files(dir: &Path) -> Result<Vec<PathBuf>, RuntimeError> {
     let mut files = Vec::new();
     collect_sl_files(dir, &mut files)?;
     let (first, rest): (Vec<_>, Vec<_>) = files.into_iter().partition(|(_, values)| *values);
-    for (path, _) in first.iter().chain(rest.iter()) {
-        execute_file(interpreter, path)?;
-    }
-    Ok(())
+    Ok(first.into_iter().chain(rest).map(|(path, _)| path).collect())
+}
+
+/// The order `soli serve` loads `app/models`, `app/services` and the other
+/// auto-loaded folders in, subfolders included — for `soli test`, whose spec
+/// process preloads the same files and must see the same classes: a model in
+/// a bounded context (`app/models/billing/invoice.sl`) included. Empty when
+/// the folder cannot be read.
+pub fn sl_load_order(dir: &Path) -> Vec<PathBuf> {
+    ordered_sl_files(dir).unwrap_or_default()
 }
 
 /// Whether a file's source declares a value object or an enum — a textual

@@ -693,16 +693,10 @@ pub fn run_test(
         if !dir.is_dir() {
             continue;
         }
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        let mut sorted: Vec<_> = entries
-            .flatten()
-            .filter(|e| e.path().extension().is_some_and(|ext| ext == "sl"))
-            .collect();
-        sorted.sort_by_key(|e| e.path());
-        for entry in sorted {
-            let path = entry.path();
+        // The server's order, subfolders included: a bounded context keeps
+        // its models in `app/models/billing/`, and a spec that names
+        // `Billing::Invoice` needs it preloaded like the server has it.
+        for path in solilang::serve::sl_load_order(&dir) {
             if let Ok(content) = fs::read_to_string(&path) {
                 let absolute = solilang::coverage::coverage_path_key(&path);
                 model_preamble_files.push((absolute, content));
