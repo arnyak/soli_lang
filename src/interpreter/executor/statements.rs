@@ -876,6 +876,20 @@ impl Interpreter {
             use crate::interpreter::builtins::model::register_model_class;
             register_model_class(&class_rc.name, class_rc.clone());
         }
+        // The callbacks the body declares — mixins' `included` hooks, the
+        // static block, the class-level calls — replace the class's when it
+        // has run, so running it again (a hot reload) does not add them twice.
+        // A model inheriting from another starts from its parent's.
+        let callbacks_declaration = extends_model.then(|| {
+            use crate::interpreter::builtins::model::callbacks;
+            let inherited = class_rc
+                .superclass
+                .as_ref()
+                .filter(|sc| sc.name != "Model" && sc.is_model_subclass())
+                .map(|parent| callbacks::registered(&parent.name))
+                .unwrap_or_default();
+            callbacks::Declaration::begin(&class_rc.name, inherited)
+        });
 
         // Initialize static fields
         for (field_name, field_initializer) in static_field_initializers {
@@ -920,6 +934,9 @@ impl Interpreter {
             self.execute_nested_classes(&decl.nested_classes, class_rc.clone())?;
         }
 
+        if let Some(declaration) = callbacks_declaration {
+            declaration.install();
+        }
         Ok(())
     }
 
@@ -1349,5 +1366,20 @@ mod nested_class_reload_tests {
             .cloned()
             .expect("label");
         assert_eq!(label.body.len(), 1);
+    }
+
+    /// A model class declared again keeps one set of callbacks: its body's,
+    /// with a name declared twice still there twice.
+    #[test]
+    fn a_model_declared_again_keeps_its_callbacks_once() {
+        let source = "class ReloadedCallbacks < Model\n  before_save(\"stamp\")\n  before_save(\"stamp\")\n  after_create(\"announce\")\n\n  def stamp\n    true\n  end\n\n  def announce\n    true\n  end\nend\n";
+        let mut interpreter = Interpreter::new();
+        for _ in 0..3 {
+            run(&mut interpreter, source);
+        }
+        let callbacks =
+            crate::interpreter::builtins::model::callbacks::registered("ReloadedCallbacks");
+        assert_eq!(callbacks.before_save, vec!["stamp", "stamp"]);
+        assert_eq!(callbacks.after_create, vec!["announce"]);
     }
 }

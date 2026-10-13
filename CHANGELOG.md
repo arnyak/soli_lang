@@ -35,9 +35,12 @@
   the same place now reuses its environment, so redeclaring it lets the old
   one go, as at the top level: 25 edits of that app grew a 2-worker server
   by 309 MiB before, and it now levels off.
-- Model callbacks are registered once per name. `before_save("x")` and the
-  others were appended again on each hot reload, by each worker, so after a
-  day of edits one `save` ran each callback thousands of times.
+- A model's callbacks are replaced, not added to, when its class body runs
+  again. `before_save("x")` and the others were appended to the process-wide
+  registry on each hot reload, by each worker, so after a day of edits one
+  `save` ran each callback thousands of times. The body's callbacks are now
+  collected while it runs and installed as a whole when it has run; a name
+  the body declares twice still runs twice.
 
 ## [2.26.0] - 2026-10-13
 
