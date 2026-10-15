@@ -20,11 +20,20 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.27.0.</p>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.27.1.</p>
+    </section>
+
+    <section id="v2-27-1" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.27.1 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-15</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">v2.27.0 was tagged but never published (its dependency audit failed on rustls advisories published the day before); its changes ship here.</p>
+        <h3 id="v2-27-1-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">rustls 0.23.46.</strong> Four advisories against 0.23.45: client session values whose <code class="text-cyan-400">Debug</code> output exposes TLS secrets, buffered data sent to the outer server after an ECH rejection, Brotli certificate decompression able to allocate 1&nbsp;GiB before authentication, and an unauthenticated ServerHello able to downgrade later connections to classical key exchange (RUSTSEC-2026-0346 to -0349).</li>
+        </ul>
     </section>
 
     <section id="v2-27-0" class="mb-16 scroll-mt-24">
-        <h2 class="text-3xl font-bold text-white mb-4">v2.27.0 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-15</span></h2>
+        <h2 class="text-3xl font-bold text-white mb-4">v2.27.0 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-15</span> <span class="text-amber-400/70 text-base font-normal">&mdash; tagged, never published</span></h2>
         <p class="text-gray-400 text-sm leading-relaxed mb-8">Flash messages as builtins &mdash; <code class="text-cyan-400">flash</code>, <code class="text-cyan-400">flash_now</code>, <code class="text-cyan-400">flashes</code> &mdash; and a type checker that iterates a parameter annotated <code class="text-cyan-400">Array</code>.</p>
         <h3 id="v2-27-0-web" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Web</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">

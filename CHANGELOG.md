@@ -2,7 +2,20 @@
 
 ## [Unreleased]
 
-## [2.27.0] - 2026-10-15
+## [2.27.1] - 2026-10-15
+
+### Security
+
+* **v2.27.0 was tagged but never published; 2.27.1 is that release.** Its CI
+  stopped at `cargo audit`: four advisories published on 2026-10-14 against
+  rustls 0.23.45 (RUSTSEC-2026-0346 — `Debug` of client session values exposes
+  TLS secrets; -0347 — buffered data sent to the outer server after an ECH
+  rejection; -0348 — Brotli certificate decompression can allocate 1 GiB before
+  authentication; -0349 — an unauthenticated ServerHello can downgrade later
+  connections to classical key exchange). rustls is now 0.23.46, in `Cargo.lock`
+  and `edge/Cargo.lock`. Everything listed under 2.27.0 ships here.
+
+## [2.27.0] - 2026-10-15 [NOT PUBLISHED]
 
 ### Added
 
