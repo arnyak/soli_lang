@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.27.0] - 2026-10-15
+
 ### Added
 
 - Flash messages are builtins: `flash(type, message)` queues a message in the
