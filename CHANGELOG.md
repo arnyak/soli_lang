@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Flash messages are builtins: `flash(type, message)` queues a message in the
+  session for the next request, `flashes()` takes the queue out and returns it
+  as `{"type", "message"}` hashes (the same list to every call in a request,
+  so a layout and a partial can both read it), and `flash_now(type, message)`
+  adds one for the current render only. The docs had been calling `flash()`
+  as a builtin — it never was one, and an action following them failed with
+  `Undefined variable 'flash'`; `soli lint` and `soli check` knew the name,
+  so neither caught it. The queue uses the `_flashes` session key and the
+  shape of the helper the session docs used to have apps write, and an app's
+  own `def flash` still replaces the builtin. A page with nothing queued costs
+  one session read and no write.
+
 ## [2.26.1] - 2026-10-13
 
 ### Performance

@@ -110,7 +110,6 @@ const REQUEST_ONLY: &[&str] = &[
     "headers",
     "cookies",
     "session",
-    "flash",
     "current_user",
     "errors",
     "render",

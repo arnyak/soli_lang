@@ -51,6 +51,8 @@ const WELL_KNOWN_GLOBALS: &[&str] = &[
     "session",
     "current_user",
     "flash",
+    "flash_now",
+    "flashes",
     "errors",
     "set_cookie",
     "read_cookie",

@@ -79,7 +79,7 @@ impl TypeChecker {
     /// Declare the names that only exist while a request is served, for a file
     /// that belongs to an application.
     ///
-    /// `req`, `params`, `session`, `cookies`, `flash`, `current_user` are
+    /// `req`, `params`, `session`, `cookies`, `current_user` are
     /// injected into the handler's scope by the server; `render` and
     /// `redirect` are registered builtins deliberately kept out of the general
     /// namespace, because a standalone script calling them cannot work. A

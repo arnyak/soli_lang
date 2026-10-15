@@ -145,6 +145,33 @@ get("/admin", "admin#dashboard", ["auth", "role:admin"]);
 post("/users", "users#create", ["auth", "role:admin"]);
 ```
 
+## Flash Messages
+
+A flash is a message that survives exactly one redirect. `flash(type, message)` queues it in the session; `flashes()` in the layout takes it out and shows it once.
+
+```soli
+# POST /posts
+def create(req)
+  @post = Post.create(permit(params, {"title": true}))
+  return render("posts/new", {}, {"status": 422}) if @post._errors
+
+  flash("success", "Post saved.")
+  redirect(post_path(@post))
+end
+```
+
+```erb
+<%# app/views/layouts/application.html.slv %>
+<% flashes().each do |f| %>
+  <div class="flash flash-<%= f.type %>"><%= f.message %></div>
+<% end %>
+```
+
+- `flashes()` returns an array of `{"type", "message"}` hashes. Its first call in a request takes the queue out of the session; later calls answer the same list, so a layout and a partial can both read it. A page with nothing queued costs one session read and no write.
+- `flash_now(type, message)` adds a message to this request's `flashes()` only — the form re-rendered with errors. It never touches the session.
+- A `flash` set before the request's first `flashes()` shows in that render; one set after it waits for the next request.
+- The queue lives under the session key `_flashes`. An app that defines its own `def flash` keeps it: the `def` replaces the builtin.
+
 ## API Reference
 
 | Function | Description |
@@ -156,6 +183,9 @@ post("/users", "users#create", ["auth", "role:admin"]);
 | `session_delete(key)` | Remove key and return value |
 | `session_regenerate()` | Create new session ID |
 | `session_destroy()` | Destroy entire session |
+| `flash(type, message)` | Queue a message for the next request |
+| `flash_now(type, message)` | A message for this request's render only |
+| `flashes()` | Take and return the messages to show now |
 
 ## Storage
 

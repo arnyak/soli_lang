@@ -138,7 +138,7 @@ if order.can_pay?
   order.pay!
 else
   # legal-but-unmet guard, or wrong source state
-  flash[:error] = "This order can't be paid yet."
+  flash_now("error", "This order can't be paid yet.")
 end
 ```
 

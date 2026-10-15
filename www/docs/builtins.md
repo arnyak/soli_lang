@@ -4253,6 +4253,59 @@ Gets the current session ID.
 
 ---
 
+## Flash Messages
+
+A flash survives exactly one redirect: set it in the action that redirects, show it on the page the browser lands on. Messages queue in the session under `_flashes` as `{"type", "message"}` hashes. An app that defines its own `def flash` keeps it — the `def` replaces the builtin.
+
+### flash(type, message)
+
+Queues a message for the next request that reads flashes. Creates the session when there is none yet.
+
+**Parameters:**
+- `type` (String) - The kind of message (`"success"`, `"error"`… anything your layout styles)
+- `message` (Any) - The message; any value the session can store
+
+**Returns:** null
+
+**Example:**
+```soli
+# POST /posts
+def create(req)
+  @post = Post.create(permit(params, {"title": true}))
+  return render("posts/new", {}, {"status": 422}) if @post._errors
+
+  flash("success", "Post saved.")
+  redirect(post_path(@post))
+end
+```
+
+### flash_now(type, message)
+
+A message for this request's render only — a form re-rendered with errors. It never reaches the session.
+
+**Returns:** null
+
+```soli
+flash_now("error", "Fix the errors below.")
+render("posts/new", {}, {"status": 422})
+```
+
+### flashes()
+
+The messages to show now: the queued ones, then the `flash_now` ones. The first call in a request takes the queue out of the session; later calls in the same request answer the same list, so a layout and a partial can both read it. A request that never calls it leaves the queue for the next one.
+
+A `flash` set before the first `flashes()` of a request shows in that request's render; one set after it waits for the next request.
+
+**Returns:** Array of `{"type", "message"}` hashes
+
+```erb
+<% flashes().each do |f| %>
+  <div class="flash flash-<%= f.type %>"><%= f.message %></div>
+<% end %>
+```
+
+---
+
 ## Cookies
 
 Cookies are automatically parsed from the `Cookie` header and exposed as a global `cookies` hash, defaulting to `{}` when no cookies are present.

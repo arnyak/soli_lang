@@ -173,6 +173,9 @@ pub(super) fn install(data: &RequestData) -> Scope {
 
     // Clear response cookies from any previous request on this thread.
     clear_response_cookies();
+    // And its flashes: the next visitor would otherwise read the messages the
+    // previous one took out of their session.
+    crate::interpreter::builtins::flash::clear_request_flashes();
     // Reset the static-page response cacheability flags so this request
     // starts clean. set_cookie / session_set trip `mark_response_dirty`
     // and clock / random trip `mark_data_dirty` while the controller

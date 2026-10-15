@@ -21,6 +21,10 @@
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
         <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.26.1.</p>
+        <h3 id="unreleased-web" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Web</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Flash messages are builtins.</strong> <code class="text-cyan-400">flash("success", "Post saved.")</code> before a redirect queues a message in the session; <code class="text-cyan-400">flashes()</code> in the layout takes it out and shows it once, as <code class="text-cyan-400">{"type", "message"}</code> hashes; <code class="text-cyan-400">flash_now(type, message)</code> is for the current render only. The docs had been calling <code class="text-cyan-400">flash()</code> as if it existed &mdash; it never did, and an action that followed them failed with <code class="text-cyan-400">Undefined variable 'flash'</code>. The queue uses the <code class="text-cyan-400">_flashes</code> key and shape of the helper the session docs used to have you write, and an app that defines its own <code class="text-cyan-400">def flash</code> keeps it. <a href="/docs/builtins/session#section-flash" class="text-cyan-400 hover:underline">Session functions</a>.</li>
+        </ul>
     </section>
 
     <section id="v2-26-1" class="mb-16 scroll-mt-24">

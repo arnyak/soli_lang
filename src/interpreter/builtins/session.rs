@@ -1241,6 +1241,27 @@ pub fn finalize_session_cookie(
     session_cookie_if_changed(current, cookie, secure)
 }
 
+/// Serializes the tests that swap the session store or config with those that
+/// need `get_current_store()` to stay the same store for their whole run — in
+/// this module and in its neighbours (`flash`).
+#[cfg(test)]
+pub(crate) static SESSION_STORE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Store `value` under `key` in the current session, creating the session on
+/// first write so a first-time visitor (no Cookie header) still gets a
+/// persisted session and a Set-Cookie. What `session_set` and `flash` share.
+pub fn write_session_value(key: &str, value: JsonValue) {
+    let id = match get_current_session_id() {
+        Some(id) => id,
+        None => {
+            let id = get_current_store().create_session();
+            set_current_session_id(Some(id.clone()));
+            id
+        }
+    };
+    get_current_store().set(&id, key, value);
+}
+
 /// Register session builtins in the given environment.
 pub fn register_session_builtins(env: &mut Environment) {
     // session_get(key) -> Value or null
@@ -1284,18 +1305,7 @@ pub fn register_session_builtins(env: &mut Environment) {
 
             let value = &args[1];
             let json_value = value_to_json(value)?;
-
-            // Lazily create a session on first write so first-time visitors
-            // (no Cookie header) still get a persisted session + Set-Cookie.
-            let id = match get_current_session_id() {
-                Some(id) => id,
-                None => {
-                    let id = get_current_store().create_session();
-                    set_current_session_id(Some(id.clone()));
-                    id
-                }
-            };
-            get_current_store().set(&id, &key, json_value);
+            write_session_value(&key, json_value);
 
             Ok(Value::Null)
         })),
@@ -2225,7 +2235,7 @@ mod tests {
     /// `configure_session_swaps_store_at_runtime` racing a lifecycle test
     /// makes its session data vanish mid-test (observed as a flaky
     /// "data must move from old ID to new ID" failure).
-    static GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use super::SESSION_STORE_TEST_LOCK as GLOBAL_LOCK;
 
     /// SEC-038: SOLI_SESSION_TTL must drive Set-Cookie's Max-Age and the
     /// in-memory store's expiry, not silently fall back to 24h.

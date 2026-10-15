@@ -73,6 +73,7 @@ pub mod es;
 pub mod factories;
 pub mod fcm;
 pub mod file;
+pub mod flash;
 pub mod geo;
 pub mod hash;
 pub mod hex;
@@ -671,6 +672,7 @@ pub fn register_builtins(env: &mut Environment, include_test_builtins: bool) {
 
     // Register session management builtins
     session::register_session_builtins(env);
+    flash::register_flash_builtins(env);
     permit::register_permit_builtins(env);
 
     // Register Job and Cron classes (SolidB-backed background jobs)

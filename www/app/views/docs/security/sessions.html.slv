@@ -136,10 +136,37 @@ session_destroy()</code></pre>
         </div>
     </section>
 
+    <!-- Flash Messages -->
+    <section>
+        <h2 class="flex items-center gap-3 text-2xl font-bold text-white mb-6">
+            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 text-sm border border-emerald-500/30">2</span>
+            Flash Messages
+        </h2>
+        <p class="text-gray-400 mb-4">
+            A flash is a message that survives exactly one redirect. <code>flash(type, message)</code> queues it in the session; <code>flashes()</code> in the layout takes it out and shows it once, as an array of <code>{"type", "message"}</code> hashes. <code>flash_now(type, message)</code> is for the render of the current request only &mdash; a form re-rendered with errors &mdash; and never touches the session.
+        </p>
+        <pre data-filename="app/controllers/posts_controller.sl"><code class="language-soli text-sm"># POST /posts
+def create(req)
+  @post = Post.create(permit(params, {"title": true}))
+  return render("posts/new", {}, {"status": 422}) if @post._errors
+
+  flash("success", "Post saved.")
+  redirect(post_path(@post))
+end</code></pre>
+        <pre data-filename="app/views/layouts/application.html.slv"><code class="language-erb text-sm">&lt;% flashes().each do |f| %&gt;
+  &lt;div class="flash flash-&lt;%= f.type %&gt;"&gt;&lt;%= f.message %&gt;&lt;/div&gt;
+&lt;% end %&gt;</code></pre>
+        <ul class="list-disc pl-6 space-y-2 text-gray-400 mt-4">
+            <li>The first <code>flashes()</code> of a request takes the queue out of the session; later calls answer the same list, so a layout and a partial can both read it. A page with nothing queued costs one session read and no write.</li>
+            <li>A <code>flash</code> set before the request&rsquo;s first <code>flashes()</code> shows in that render; one set after it waits for the next request.</li>
+            <li>The queue lives under the session key <code>_flashes</code>. An app that defines its own <code>def flash</code> keeps it: the <code>def</code> replaces the builtin. Full reference: <a href="/docs/builtins/session#section-flash" class="text-emerald-400 hover:text-emerald-300">Session functions</a>.</li>
+        </ul>
+    </section>
+
     <!-- Security Best Practices -->
     <section>
         <h2 class="flex items-center gap-3 text-2xl font-bold text-white mb-6">
-            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-teal-500/20 text-teal-400 text-sm border border-teal-500/30">2</span>
+            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-teal-500/20 text-teal-400 text-sm border border-teal-500/30">3</span>
             Security Best Practices
         </h2>
         

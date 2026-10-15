@@ -86,6 +86,7 @@ pub(super) fn finish(
 
     // Clear session context
     set_current_session_id(None);
+    crate::interpreter::builtins::flash::clear_request_flashes();
     crate::interpreter::builtins::trust_proxy::set_current_peer_ip(None);
     resp
 }

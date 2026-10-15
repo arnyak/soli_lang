@@ -14254,6 +14254,51 @@
       ]
     },
     {
+      "title": "flash",
+      "type": "function",
+      "category": "Session",
+      "path": "/docs/builtins/session#fn-flash",
+      "signature": "flash(type, message)",
+      "description": "Queue a flash message for the next request (survives one redirect)",
+      "keywords": [
+        "flash",
+        "notice",
+        "message",
+        "redirect",
+        "session"
+      ]
+    },
+    {
+      "title": "flash_now",
+      "type": "function",
+      "category": "Session",
+      "path": "/docs/builtins/session#fn-flash-now",
+      "signature": "flash_now(type, message)",
+      "description": "A flash message for this request's render only",
+      "keywords": [
+        "flash",
+        "now",
+        "notice",
+        "message",
+        "render"
+      ]
+    },
+    {
+      "title": "flashes",
+      "type": "function",
+      "category": "Session",
+      "path": "/docs/builtins/session#fn-flashes",
+      "signature": "flashes()",
+      "description": "The flash messages to show now, as {type, message} hashes; takes the queue out of the session",
+      "keywords": [
+        "flash",
+        "flashes",
+        "notice",
+        "messages",
+        "layout"
+      ]
+    },
+    {
       "title": "button_to",
       "type": "function",
       "category": "Views",
