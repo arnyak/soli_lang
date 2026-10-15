@@ -157,6 +157,22 @@ impl TypeChecker {
             }
         }
 
+        // Writing `@errors` sets a field. When the class declares no field of
+        // that name but has a method of it (`static def errors(…)`), the member
+        // lookup answers the method's type, and the write was refused as
+        // "expected (Hash, Bool) -> Any[], found Any[]".
+        if let ExprKind::Member { object, name } = &target.kind {
+            if let Type::Class(class) = self.check_expr(object)? {
+                if let Some(class_def) = self.env.get_class(&class.name) {
+                    if class_def.find_field_with_owner(name).is_none()
+                        && class_def.find_method_with_owner(name).is_some()
+                    {
+                        return Ok(value_type);
+                    }
+                }
+            }
+        }
+
         let target_type = self.check_expr(target)?;
 
         if !value_type.is_assignable_to(&target_type) {

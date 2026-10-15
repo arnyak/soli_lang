@@ -16,6 +16,17 @@
   own `def flash` still replaces the builtin. A page with nothing queued costs
   one session read and no write.
 
+### Fixed
+
+- The type checker no longer refuses `for x in xs` when `xs` is annotated
+  with a bare `Array` ("cannot iterate over unknown") — `xs.each do |x| … end`
+  always passed, and so did `if`/`while` on a value it cannot type. It also
+  no longer checks `@errors = errors` against a method named `errors` (a
+  `static def errors(…)` made the field write a "Type mismatch"). Scripts
+  and `soli check` were affected; a served app runs these loops fine. On the
+  apps checked, 51 false errors go, and two real ones they hid surface
+  (the checker reports one error per file).
+
 ## [2.26.1] - 2026-10-13
 
 ### Performance

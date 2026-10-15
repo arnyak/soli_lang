@@ -395,6 +395,47 @@ fn for_over_array_typechecks() {
     );
 }
 
+// A bare `Array` annotation is a type the checker does not model: `for` must
+// let it through, as `xs.each do |x| … end` and `if` / `while` always did.
+#[test]
+fn for_over_a_bare_array_annotation_typechecks() {
+    check_ok(
+        "
+def total(xs: Array) -> Int
+  sum = 0
+  for x in xs
+    sum = sum + x
+  end
+  sum
+end
+
+let ys: Array = [1, 2]
+for y in ys
+  print(y)
+end
+",
+    );
+}
+
+// `@errors = errors` sets a field; a method of the same name (here a static
+// one) is not the type of that field.
+#[test]
+fn a_field_write_is_not_checked_against_a_method_of_the_same_name() {
+    check_ok(
+        "
+class Form
+  static def errors(infos: Hash, cgv: Bool) -> Int[]
+    []
+  end
+
+  def prepare(errors: Int[])
+    @errors = errors
+  end
+end
+",
+    );
+}
+
 #[test]
 fn for_over_int_errors() {
     let errors = check_err("for x in 5 { let y = x; }");

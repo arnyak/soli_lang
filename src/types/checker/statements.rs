@@ -139,7 +139,12 @@ impl TypeChecker {
                 let iter_type = self.check_expr(iterable)?;
                 let elem_type = match iter_type {
                     Type::Array(inner) => *inner,
-                    Type::Any => Type::Any,
+                    // Unknown is the checker not knowing — a bare `xs: Array`
+                    // annotation, a class it cannot see — not a value known not
+                    // to iterate. `if` and `while` already let it through;
+                    // refusing it here rejected `for x in xs` while
+                    // `xs.each do |x| … end` passed.
+                    Type::Any | Type::Unknown => Type::Any,
                     _ => {
                         return Err(TypeError::General {
                             message: format!("cannot iterate over {}", iter_type),
