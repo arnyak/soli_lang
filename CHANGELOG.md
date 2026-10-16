@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.27.2] - 2026-10-16
+
 ### Security
 
 * **zip 9.0.4.** Every `zip` release before 9.0.3 was yanked on 2026-10-16
