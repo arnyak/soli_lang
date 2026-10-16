@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Security
+
+* **zip 9.0.4.** Every `zip` release before 9.0.3 was yanked on 2026-10-16
+  for security advisories (GHSA-vv5m-jxxh-4627, GHSA-4v9h-p7m9-rh26,
+  GHSA-4684-h2q9-2vcp, more announced — zip-rs/zip2#1075); Soli read and wrote
+  xlsx through 8.6.0, and `cargo audit --deny warnings` failed on the yanked
+  crate. calamine 0.36.1, the latest release, still requires zip ^8.6, so it is
+  vendored in `vendor/calamine` with tafia/calamine#741 applied (zip 9.0 and a
+  4-line `file_names()` change) and wired in by `[patch.crates-io]`, until
+  calamine publishes on zip 9. See `vendor/calamine/VENDORED.md`.
+
 ## [2.27.1] - 2026-10-15
 
 ### Security
