@@ -6,9 +6,9 @@
 # under `src/scaffold/templates/eui/`; each file is kept byte for byte
 # identical with its copy there by `scripts/sync-catalogue.sh`.
 #
-# The catalogue is six files, cut where the calls already stopped
+# The catalogue is nine files, cut where the calls already stopped
 # crossing. This one holds the primitives and the controls the rest is
-# built from; the other four are leaves that call in and are never called
+# built from; the others are leaves that call in and are never called
 # back. It is one namespace either way, so the split says where to look,
 # not what to import, and no file depends on which loads first.
 #
@@ -18,6 +18,9 @@
 #   eui_builders_feed.sl      tags, dragging, feed
 #   eui_builders_markdown.sl  the document, its rows, and the editor
 #   eui_builders_tw.sl        tw("..."): Tailwind-style classes as EUI styles
+#   eui_builders_score.sl     score("..."): LilyPond's input, engraved
+#   eui_builders_smufl.sl     the glyph outlines score() draws, generated
+#   eui_builders_letters.sl   the letters of its titles and tempo marks, generated
 #
 #   {"k": kind, "s": style, "t": text, "c": children, "on": handlers, "key": key, "p": props}
 #
