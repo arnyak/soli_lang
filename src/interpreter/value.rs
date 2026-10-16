@@ -2032,6 +2032,40 @@ impl Class {
             .and_then(|cache| cache.get(name).cloned())
     }
 
+    /// [`Self::find_native_method`], unless a method written in Soli overrides
+    /// it: `def delete(force)` in `class Post < Model` is what `post.delete`
+    /// means, not the `Model#delete` native it inherits. The nearer
+    /// declaration wins, as for any inherited method.
+    pub fn find_native_method_unshadowed(&self, name: &str) -> Option<Rc<NativeFunction>> {
+        let native = self.find_native_method(name)?;
+        if self.user_method_overrides_native(name) {
+            return None;
+        }
+        Some(native)
+    }
+
+    /// Does a method written in Soli (tree-walker or bytecode) come before the
+    /// native `name` on the way up from this class? The walk only runs when
+    /// both exist, so a class with no such override pays two cached lookups.
+    pub fn user_method_overrides_native(&self, name: &str) -> bool {
+        if self.find_method(name).is_none() && self.find_vm_method(name).is_none() {
+            return false;
+        }
+        let mut class = Some(self);
+        while let Some(current) = class {
+            if current.methods.borrow().contains_key(name)
+                || current.vm_methods.borrow().contains_key(name)
+            {
+                return true;
+            }
+            if current.native_methods.contains_key(name) {
+                return false;
+            }
+            class = current.superclass.as_deref();
+        }
+        false
+    }
+
     /// Find a static method in this class or its superclass chain.
     pub fn find_static_method(&self, name: &str) -> Option<Rc<Function>> {
         if let Some(method) = self.static_methods.get(name) {
@@ -2299,8 +2333,8 @@ impl Instance {
         if let Some(value) = self.fields.get(name) {
             return Some(value.clone());
         }
-        // Then check class native methods
-        if let Some(native) = self.class.find_native_method(name) {
+        // Then check class native methods, unless Soli overrides them
+        if let Some(native) = self.class.find_native_method_unshadowed(name) {
             return Some(Value::NativeFunction((*native).clone()));
         }
         // Then check class methods - convert Rc<Function> to Value::Function

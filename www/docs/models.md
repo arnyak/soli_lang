@@ -1361,6 +1361,24 @@ end
 
 The veto fires at the first `false` — subsequent before-callbacks in the chain don't run. Use this for authorization gates, integrity checks, or any "deny by default" pattern. Mutating-only callbacks (the common case) just don't return `false` and run end-to-end as before.
 
+### Overriding `save`, `delete` and the other writes
+
+A model's own `save`, `update`, `delete`, `restore`, `touch`, `increment` or `decrement` is what a call reaches — `record.delete()`, `record.delete(true)` and the paren-less `record.delete` alike, on both engines — not the `Model` method it overrides. The callbacks, the veto, `dependent:` cascades and the attachment purge belong to the persistence, so they run when the override defers to it with `super`:
+
+```soli
+class Post < Model
+  before_delete("archive")
+
+  def delete
+    return false if @locked
+
+    super.delete()   # before_delete, the veto, cascades, after_delete
+  end
+end
+```
+
+An override that never calls `super` replaces the write, callbacks included. A bare read of an override that takes arguments (`def delete(force)`) is the method itself, as for any method: `post.delete` hands it back uncalled, and `post.delete(true)` runs it.
+
 ## Attachments
 
 First-class file attachments use `has_one_attached` / `has_many_attached`. They default to the **disk** service (`./storage/attachments`, or `SOLI_ATTACHMENTS_PATH`) so a Postgres/SQLite app does not need SoliDB to keep files. Set `service: "s3"` (bucket `SOLI_ATTACHMENTS_BUCKET` or `S3_BUCKET`), `service: "r2"` (Cloudflare R2 — the bucket binding on a [Cloudflare Worker](edge.md#files-uploads-images-and-video), R2's S3 API with the `s3` configuration under `soli serve`) or `service: "solidb"` to store elsewhere. `SOLI_ATTACHMENTS_SERVICE` changes the default for every `has_*_attached` declaration.

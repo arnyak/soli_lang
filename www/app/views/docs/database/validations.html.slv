@@ -501,6 +501,27 @@ end</code></pre>
         The veto fires at the first <code>false</code> &mdash; subsequent before-callbacks in the chain don't run. Use this for authorization gates, integrity checks, or any "deny by default" pattern. Mutating-only callbacks (the common case) just don't return <code>false</code> and run end-to-end as before.
     </p>
 
+    <h3 class="text-lg font-semibold text-white mb-4">Overriding <code>save</code>, <code>delete</code> and the other writes</h3>
+    <p class="text-gray-400 mb-4">
+        A model&rsquo;s own <code>save</code>, <code>update</code>, <code>delete</code>, <code>restore</code>, <code>touch</code>, <code>increment</code> or <code>decrement</code> is what a call reaches &mdash; <code>record.delete()</code>, <code>record.delete(true)</code> and the paren-less <code>record.delete</code> alike, on both engines &mdash; not the <code>Model</code> method it overrides. The callbacks, the veto, <code>dependent:</code> cascades and the attachment purge belong to the persistence, so they run when the override defers to it with <code>super</code>:
+    </p>
+    <div class="rounded-lg bg-[#171412] overflow-hidden mb-4">
+        <div class="p-4 overflow-x-auto">
+            <pre><code class="language-soli text-sm">class Post &lt; Model
+  before_delete("archive")
+
+  def delete
+    return false if @locked
+
+    super.delete()   # before_delete, the veto, cascades, after_delete
+  end
+end</code></pre>
+        </div>
+    </div>
+    <p class="text-gray-400 mb-12">
+        An override that never calls <code>super</code> replaces the write, callbacks included. A bare read of an override that takes arguments (<code>def delete(force)</code>) is the method itself, as for any method: <code>post.delete</code> hands it back uncalled, and <code>post.delete(true)</code> runs it.
+    </p>
+
     <h2 class="text-2xl font-bold text-white mb-6">Complete Example</h2>
 
     <div class="rounded-lg bg-[#171412] overflow-hidden mb-12">

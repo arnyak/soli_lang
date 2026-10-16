@@ -6602,6 +6602,80 @@ mod tests {
         );
     }
 
+    /// `def delete(force)` on a model is what `post.delete` reads: a method
+    /// taking an argument, left uncalled. The paren-less path used to take the
+    /// `Model#delete` native the class inherits, and delete the row.
+    #[test]
+    fn test_vm_bare_model_mutator_reads_the_models_own_method() {
+        use crate::interpreter::value::{Class, Function, Instance};
+        use std::collections::HashMap;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        static NATIVE_RAN: AtomicBool = AtomicBool::new(false);
+        NATIVE_RAN.store(false, Ordering::SeqCst);
+
+        let mut native_methods: HashMap<String, Rc<NativeFunction>> = HashMap::new();
+        native_methods.insert(
+            "delete".to_string(),
+            Rc::new(NativeFunction::new_auto_invocable(
+                "Model.delete",
+                Some(0),
+                |_| {
+                    NATIVE_RAN.store(true, Ordering::SeqCst);
+                    Ok(Value::Bool(true))
+                },
+            )),
+        );
+        let model_base = Rc::new(Class {
+            name: "Model".to_string(),
+            native_methods,
+            ..Default::default()
+        });
+        let record_class = Rc::new(Class {
+            name: "OwnDeleteRecord".to_string(),
+            superclass: Some(model_base),
+            ..Default::default()
+        });
+        let program = Parser::new(
+            Scanner::new("def delete(force)\n  force\nend")
+                .scan_tokens()
+                .expect("lex"),
+        )
+        .parse()
+        .expect("parse");
+        let crate::ast::stmt::StmtKind::Function(decl) = &program.statements[0].kind else {
+            panic!("expected a def");
+        };
+        record_class.methods.borrow_mut().insert(
+            "delete".to_string(),
+            Rc::new(Function {
+                name: "delete".to_string(),
+                params: decl.params.clone().into(),
+                body: Rc::new(decl.body.clone()),
+                ..Function::default()
+            }),
+        );
+        assert!(record_class.is_model_subclass());
+        let record = Value::Instance(Rc::new(RefCell::new(Instance::new(record_class))));
+
+        let source = "let x = record.delete";
+        let tokens = Scanner::new(source).scan_tokens().expect("lexer error");
+        let program = Parser::new(tokens).parse().expect("parser error");
+        let module = Compiler::compile(&program).expect("compile error");
+        let mut vm = Vm::new();
+        vm.globals.insert("record".to_string(), record);
+        vm.execute(&module.main).expect("bare delete");
+        assert!(
+            !NATIVE_RAN.load(Ordering::SeqCst),
+            "the model's own delete(force) must win over the inherited native"
+        );
+        assert!(
+            !matches!(vm.globals.get("x"), Some(Value::Bool(_))),
+            "a method with a parameter is read, not called: got {:?}",
+            vm.globals.get("x")
+        );
+    }
+
     #[test]
     fn test_vm_model_class_create_runs_on_vm() {
         use crate::interpreter::value::Class;

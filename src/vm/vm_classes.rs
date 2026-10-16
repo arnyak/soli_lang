@@ -727,9 +727,12 @@ impl Vm {
         if !inst_ref.class.is_model_subclass() || inst_ref.fields.contains_key(name) {
             return None;
         }
+        // `def delete(force)` on the model: `post.delete` reads that method, as
+        // the tree-walker does. Taking the native here deleted the row and
+        // never ran the override.
         inst_ref
             .class
-            .find_native_method(name)
+            .find_native_method_unshadowed(name)
             .filter(|native| native.is_auto_invocable || native.arity == Some(0))
     }
 

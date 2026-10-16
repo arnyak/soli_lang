@@ -964,8 +964,9 @@ impl Interpreter {
 
                         let inst_ref = inst_clone.borrow();
 
-                        // Check native methods first
-                        if let Some(native_method) = inst_ref.class.find_native_method(&method_name)
+                        // Native methods first, unless a Soli method overrides one
+                        if let Some(native_method) =
+                            inst_ref.class.find_native_method_unshadowed(&method_name)
                         {
                             drop(inst_ref);
                             let mut new_args = vec![Value::Instance(inst_clone.clone())];
@@ -1799,8 +1800,9 @@ impl Interpreter {
             return Ok(value);
         }
 
-        // Then check for native method
-        if let Some(native_method) = inst_ref.class.find_native_method(name) {
+        // Then the native method, unless a Soli method overrides it
+        // (`def delete(force)` on a model is what `post.delete` reads).
+        if let Some(native_method) = inst_ref.class.find_native_method_unshadowed(name) {
             let class_name = inst_ref.class.name.clone();
             let native_method = native_method.clone();
             drop(inst_ref);

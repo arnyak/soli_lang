@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A model's own `save`, `update`, `delete`, `restore`, `touch`, `increment`
+  or `decrement` is what a call reaches, not the `Model` native it overrides.
+  On the tree-walker (specs, `--dev`) the native always won: with
+  `def delete(force)`, a bare `post.delete` deleted the row and skipped the
+  override, `post.delete(true)` failed with "expected 0, got 1", and even a
+  zero-argument `def delete` was never called. On the VM the paren-less read
+  took the native too. Both engines now resolve the nearer declaration, as
+  for any inherited method; the callbacks, veto, cascades and attachment
+  purge run when the override calls `super.delete()` / `super.save()`, which
+  the tree-walker now routes through them as the VM already did. No app in
+  the test set overrode these methods.
+
 ## [2.27.2] - 2026-10-16
 
 ### Security

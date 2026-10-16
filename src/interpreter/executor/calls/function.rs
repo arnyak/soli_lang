@@ -620,6 +620,14 @@ impl Interpreter {
                     {
                         return Ok(result);
                     }
+                    if let Value::Super(superclass) = &obj_val {
+                        let superclass = superclass.clone();
+                        if let Some(result) =
+                            self.run_model_super_hooks(&superclass, name, arguments, span)?
+                        {
+                            return Ok(result);
+                        }
+                    }
                 }
 
                 let all_positional = arguments
@@ -683,7 +691,7 @@ impl Interpreter {
                                 if inst_ref.fields.contains_key(name.as_str()) {
                                     None
                                 } else {
-                                    inst_ref.class.find_native_method(name)
+                                    inst_ref.class.find_native_method_unshadowed(name)
                                 }
                             };
                             if let Some(native) = direct_native {
@@ -919,7 +927,70 @@ impl Interpreter {
         match model_stub_for_call(obj_val, name) {
             Some((_, false)) => Ok(None),
             Some((mock, true)) => self.call_model_spy(obj_val, &mock, name, arguments, span),
+            // `def delete(force)` on the model: the call is the override's, and
+            // the callbacks run if it calls `super.delete()`.
+            None if overrides_model_native(obj_val, name) => Ok(None),
             None => self.run_model_interceptors(obj_val, name, arguments, span),
+        }
+    }
+
+    /// What a callback interceptor calls once its `before_*` callbacks pass:
+    /// the member `name` of `instance` — the `Model` native itself when the
+    /// model overrides it, which only happens under `super.name()`, since the
+    /// interceptors otherwise leave an overridden method alone. Through the
+    /// member route the override would answer, and call itself again.
+    fn model_persistence_callee(
+        &mut self,
+        instance: &Rc<RefCell<Instance>>,
+        name: &str,
+        span: Span,
+    ) -> RuntimeResult<Value> {
+        let native = {
+            let inst = instance.borrow();
+            if inst.class.user_method_overrides_native(name) {
+                inst.class
+                    .find_native_method(name)
+                    .map(|native| (inst.class.name.clone(), native))
+            } else {
+                None
+            }
+        };
+        match native {
+            Some((class_name, native)) => Ok(
+                crate::interpreter::executor::access::member::bind_native_method_to_instance(
+                    instance,
+                    &class_name,
+                    name,
+                    &native,
+                ),
+            ),
+            None => self.evaluate_member_on_value(Value::Instance(instance.clone()), name, span),
+        }
+    }
+
+    /// `super.save()` / `super.delete()` from a model's override of that
+    /// method: the persistence the override defers to, with its callbacks,
+    /// veto and cascades — the interceptors `record.save()` runs when nothing
+    /// overrides it. `None` when the call is not that, or no hook claims it
+    /// (the superclass's native then runs as for any `super.name()`).
+    pub(crate) fn run_model_super_hooks(
+        &mut self,
+        superclass: &Rc<crate::interpreter::value::Class>,
+        name: &str,
+        arguments: &[Argument],
+        span: Span,
+    ) -> RuntimeResult<Option<Value>> {
+        if !is_model_instance_mutator(name)
+            || superclass.find_native_method_unshadowed(name).is_none()
+        {
+            return Ok(None);
+        }
+        let this = self.environment.borrow().get("this");
+        match this {
+            Some(this @ Value::Instance(_)) if is_model_instance(&this) => {
+                self.run_model_interceptors(&this, name, arguments, span)
+            }
+            _ => Ok(None),
         }
     }
 
@@ -957,7 +1028,11 @@ impl Interpreter {
             )));
         }
         let outer = std::mem::replace(&mut self.environment, Rc::new(RefCell::new(scope)));
-        let intercepted = self.run_model_interceptors(obj_val, name, &bound, span);
+        let intercepted = if overrides_model_native(obj_val, name) {
+            Ok(None)
+        } else {
+            self.run_model_interceptors(obj_val, name, &bound, span)
+        };
         self.environment = outer;
         if let Some(result) = intercepted? {
             return Ok(Some(result));
@@ -1196,8 +1271,7 @@ impl Interpreter {
             }
         }
 
-        let callee_val =
-            self.evaluate_member_on_value(Value::Instance(instance.clone()), method_name, span)?;
+        let callee_val = self.model_persistence_callee(&instance, method_name, span)?;
         let result = self.call_value(callee_val, Vec::new(), span)?;
 
         let failed = matches!(&result, Value::String(s) if s.starts_with("Error:"))
@@ -1375,8 +1449,7 @@ impl Interpreter {
 
         // Evaluate the original arguments and dispatch the native method on
         // the already-evaluated receiver.
-        let callee_val =
-            self.evaluate_member_on_value(Value::Instance(instance.clone()), method_name, span)?;
+        let callee_val = self.model_persistence_callee(&instance, method_name, span)?;
         let mut arg_values = Vec::with_capacity(arguments.len());
         for arg in arguments {
             if let Argument::Positional(expr) = arg {
@@ -2643,6 +2716,25 @@ pub(crate) fn is_model_instance_mutator(name: &str) -> bool {
         name,
         "save" | "update" | "delete" | "restore" | "touch" | "increment" | "decrement"
     )
+}
+
+fn is_model_instance(value: &Value) -> bool {
+    matches!(value, Value::Instance(inst) if inst.borrow().class.is_model_subclass())
+}
+
+/// Does the model instance `obj_val` override the native `name` with a method
+/// of its own? Then a call is the override's: the callback interceptors stay
+/// out of it until it calls `super.name()`.
+pub(crate) fn overrides_model_native(obj_val: &Value, name: &str) -> bool {
+    match obj_val {
+        Value::Instance(inst) => {
+            let inst = inst.borrow();
+            inst.class.is_model_subclass()
+                && !inst.fields.contains_key(name)
+                && inst.class.user_method_overrides_native(name)
+        }
+        _ => false,
+    }
 }
 
 /// The stub standing in for `name` on a model receiver (class or instance),

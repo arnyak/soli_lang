@@ -833,11 +833,14 @@ impl Interpreter {
         }
         let obj_val = self.evaluate(object)?;
         self.check_private_access(object, &obj_val, name, span)?;
-        let is_model_instance = matches!(
-            &obj_val,
-            Value::Instance(inst) if inst.borrow().class.is_model_subclass()
-                && !inst.borrow().fields.contains_key(name)
-        );
+        // A model that overrides `name` keeps the member route: its method
+        // is read (and called, when it takes no arguments) like any other.
+        let is_model_instance =
+            matches!(
+                &obj_val,
+                Value::Instance(inst) if inst.borrow().class.is_model_subclass()
+                    && !inst.borrow().fields.contains_key(name)
+            ) && !super::calls::function::overrides_model_native(&obj_val, name);
         if is_model_instance {
             if let Some(result) = self.run_model_call_hooks(&obj_val, name, &[], span)? {
                 return Ok(result);

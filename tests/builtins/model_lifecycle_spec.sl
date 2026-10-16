@@ -59,6 +59,48 @@ class VetoDeleteDoc < Model
   end
 end
 
+# A model's own `delete` / `save` is what a call or a bare read reaches — not
+# the `Model` native it overrides. The callbacks belong to the persistence, so
+# they run when the override defers to it with `super`.
+class GuardedDeleteDoc < Model
+  before_delete("log_before_delete")
+
+  def log_before_delete
+    @delete_chain = (@delete_chain || "") + "before_delete;"
+  end
+
+  def delete(force)
+    @override_arg = force
+    "kept"
+  end
+end
+
+class WrappedDeleteDoc < Model
+  before_delete("log_before_delete")
+
+  def log_before_delete
+    @delete_chain = (@delete_chain || "") + "before_delete;"
+  end
+
+  def delete
+    @delete_chain = (@delete_chain || "") + "override;"
+    super.delete()
+  end
+end
+
+class WrappedSaveDoc < Model
+  before_save("stamp_before_save")
+
+  def stamp_before_save
+    @save_chain = (@save_chain || "") + "before_save;"
+  end
+
+  def save
+    @save_chain = (@save_chain || "") + "override;"
+    super.save()
+  end
+end
+
 class UpdateHookDoc < Model
   before_update("stamp_before_update")
   after_update("stamp_after_update")
@@ -161,7 +203,10 @@ describe("lifecycle hooks") do
   end
 
   after_each() do
-    [HookDoc, VetoCreateDoc, DeleteHookDoc, VetoDeleteDoc, UpdateHookDoc, AttrWhitelistDoc].each do |model|
+    [
+      HookDoc, VetoCreateDoc, DeleteHookDoc, VetoDeleteDoc, UpdateHookDoc, AttrWhitelistDoc,
+      GuardedDeleteDoc, WrappedDeleteDoc, WrappedSaveDoc
+    ].each do |model|
       model.clear_mocks()
       model.delete_all()
     end
@@ -259,6 +304,46 @@ describe("lifecycle hooks") do
       doc = VetoDeleteDoc.create({"title": "keep"})
       doc.delete
       assert_eq(VetoDeleteDoc.count, 1)
+    end
+  end
+
+  describe("a model's own save and delete") do
+    test("a bare read of delete(force) is the method, not a deletion") do
+      doc = GuardedDeleteDoc.create({})
+      method = doc.delete
+      assert_eq(type(method), "Function")
+      assert_null(doc.delete_chain)
+      assert_eq(GuardedDeleteDoc.count, 1)
+    end
+
+    test("delete(true) runs the override, which keeps the row") do
+      doc = GuardedDeleteDoc.create({})
+      assert_eq(doc.delete(true), "kept")
+      assert_eq(doc.override_arg, true)
+      assert_null(doc.delete_chain)
+      assert_eq(GuardedDeleteDoc.count, 1)
+    end
+
+    test("an override calling super.delete() runs the callbacks and deletes") do
+      doc = WrappedDeleteDoc.create({})
+      doc.delete
+      assert_eq(doc.delete_chain, "override;before_delete;")
+      assert_eq(WrappedDeleteDoc.count, 0)
+    end
+
+    test("the same through delete()") do
+      doc = WrappedDeleteDoc.create({})
+      doc.delete()
+      assert_eq(doc.delete_chain, "override;before_delete;")
+      assert_eq(WrappedDeleteDoc.count, 0)
+    end
+
+    test("an override calling super.save() runs before_save and persists") do
+      doc = WrappedSaveDoc.new({"title": "kept"})
+      doc.save
+      assert_eq(doc.save_chain, "override;before_save;")
+      assert(doc._key.present?)
+      assert_eq(WrappedSaveDoc.count, 1)
     end
   end
 
