@@ -13162,6 +13162,24 @@
       ]
     },
     {
+      "title": "pdf_text",
+      "type": "function",
+      "category": "PDF",
+      "path": "/docs/builtins/pdf#def-pdf-text",
+      "signature": "pdf_text(pdf, options?)",
+      "description": "Extract the text of a PDF in reading order, as one string (pages separated by a form feed) or one string per page; select pages with a range or an array.",
+      "keywords": [
+        "pdf",
+        "text",
+        "extract",
+        "extraction",
+        "read",
+        "search",
+        "index",
+        "pdftotext"
+      ]
+    },
+    {
       "title": "pdf_sign",
       "type": "function",
       "category": "PDF",

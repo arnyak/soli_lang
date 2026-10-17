@@ -1155,6 +1155,16 @@ impl TypeEnvironment {
             },
         );
 
+        // pdf_text(pdf, options?) -> String, or an Array of page texts with
+        // `per_page`
+        self.functions.insert(
+            "pdf_text".to_string(),
+            Type::Function {
+                params: vec![Type::String, Type::Any],
+                return_type: Box::new(Type::Any),
+            },
+        );
+
         // pdf_attachments(pdf) -> Array (embedded files: name/mime/size/base64)
         self.functions.insert(
             "pdf_attachments".to_string(),

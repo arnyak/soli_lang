@@ -294,6 +294,52 @@ pub fn register_pdf_builtins(env: &mut Environment) {
         })),
     );
 
+    // The text of a PDF: `pdf_text(pdf)`, pages separated by a form feed;
+    // `{"pages": "2-3"}` for some of them, `{"per_page": true}` for an array.
+    env.define(
+        "pdf_text".to_string(),
+        Value::NativeFunction(NativeFunction::new("pdf_text", None, |args| {
+            if args.is_empty() || args.len() > 2 {
+                return Err(format!(
+                    "pdf_text() expects 1 or 2 arguments (pdf, options?), got {}",
+                    args.len()
+                ));
+            }
+            let source = arg_string(&args[0], "pdf_text", "pdf")?;
+            let pdf = load_pdf_source(&source).map_err(|e| format!("pdf_text(): {e}"))?;
+            let (mut pages, mut per_page) = (None, false);
+            match args.get(1) {
+                None | Some(Value::Null) => {}
+                Some(Value::Hash(options)) => {
+                    let options = options.borrow();
+                    if let Some(selection) = options.get(&HashKey::String("pages".into())) {
+                        pages = Some(
+                            parse_page_selection(selection)
+                                .map_err(|e| format!("pdf_text(): {e}"))?,
+                        );
+                    }
+                    per_page = matches!(
+                        options.get(&HashKey::String("per_page".into())),
+                        Some(Value::Bool(true))
+                    );
+                }
+                Some(other) => {
+                    return Err(format!(
+                        "pdf_text(): expects an options hash, got {}",
+                        other.type_name()
+                    ))
+                }
+            }
+            let texts = soli_pdf::extract_text(&pdf, pages.as_deref())
+                .map_err(|e| format!("pdf_text() failed: {e}"))?;
+            if per_page {
+                let items = texts.into_iter().map(|t| Value::String(t.into())).collect();
+                return Ok(Value::Array(Rc::new(RefCell::new(items))));
+            }
+            Ok(Value::String(texts.join("\u{c}").into()))
+        })),
+    );
+
     // Keep a subset of pages: `pdf_pages(pdf, "1-3,7")` or `pdf_pages(pdf, [1,3])`.
     env.define(
         "pdf_pages".to_string(),

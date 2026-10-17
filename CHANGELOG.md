@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- `pdf_text(pdf, options?)` extracts the text of a PDF (a path or base64, like
+  every `pdf_*`): one string with pages separated by a form feed, or an array
+  of page strings with `per_page: true`; `pages` takes a range or a list. The
+  extractor is new in `soli-pdf` (`extract.rs`) and adds no dependency: it
+  interprets the content stream on lopdf 0.43 — text matrices, `TJ`
+  adjustments, font widths and `/ToUnicode` maps, form XObjects — and rebuilds
+  the lines from where each string lands, so words keep their spaces and a
+  table row stays on one line. lopdf's own `extract_text` ignored positioning
+  and never entered form XObjects, where this crate's letterheads live. No
+  OCR (a scan comes back empty); two text columns side by side read line by
+  line across both; a PDF that needs a password raises.
+
+
 ### Fixed
 
 - A model's own `save`, `update`, `delete`, `restore`, `touch`, `increment`

@@ -209,6 +209,37 @@ describe("PDF toolkit") do
       assert_eq(Base64.decode(attachments[0]["base64"]), "attachment payload")
     end
   end
+
+  describe("text extraction") do
+    test("pdf_text reads the text back, line by line") do
+      text = pdf_text(pdf_from_markdown("# Contract\n\nSigned below by **both** parties."))
+      assert_eq(text, "Contract\nSigned below by both parties.")
+    end
+
+    test("pages are separated by a form feed, or returned one by one") do
+      pdf = pdf_merge([pdf_from_markdown("# First"), pdf_from_markdown("# Second")])
+      assert_eq(pdf_text(pdf), "First\u000cSecond")
+      assert_eq(pdf_text(pdf, {"per_page": true}), ["First", "Second"])
+    end
+
+    test("the pages option picks pages, as a range or a list") do
+      pdf = pdf_merge([pdf_from_markdown("# One"), pdf_from_markdown("# Two"), pdf_from_markdown("# Three")])
+      assert_eq(pdf_text(pdf, {"pages": "2-3"}), "Two\u000cThree")
+      assert_eq(pdf_text(pdf, {"pages": [3, 1], "per_page": true}), ["Three", "One"])
+    end
+
+    test("a page the document does not have raises") do
+      assert_raises("page 2 does not exist") do
+        pdf_text(pdf_from_markdown("# Alone"), {"pages": [2]})
+      end
+    end
+
+    test("a source that is not a PDF raises") do
+      assert_raises("pdf_text()") do
+        pdf_text("not a pdf at all")
+      end
+    end
+  end
 end
 
 describe("Geo static methods") do

@@ -326,6 +326,27 @@ end</code></pre>
             </div>
         </section>
 
+        <section id="def-pdf-text" class="scroll-mt-20 mb-6">
+            <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+                <code class="text-lg font-mono text-amber-400">pdf_text(pdf, options?)</code>
+                <p class="text-gray-400 mt-3 mb-3">The text of a PDF &mdash; one you received or one you made &mdash; for search, indexing or an LLM prompt. <code>pdf</code> is a <strong>path or base64</strong>.</p>
+                <div class="text-sm text-gray-400 space-y-2">
+                    <div>Returns a <strong>String</strong>, pages separated by a form feed (<code>"\u000c"</code>, as <code>pdftotext</code> does), or an <strong>Array</strong> of page strings with <code>per_page: true</code>. <code>pages</code> takes a range string (<code>"2-3"</code>) or an array, in the order given; a page the document does not have raises.</div>
+                    <div>Lines come back in reading order, rebuilt from where each string lands: words keep their spaces, a table row stays on one line, a wider vertical gap becomes an empty line. Text inside form XObjects (letterheads, stamped overlays) is read too; ligatures are spelt out.</div>
+                    <div><strong class="text-white">Limits.</strong> A scanned page has no text and comes back empty (no OCR). Two text columns side by side are read line by line across both. A font with neither a usable encoding nor a <code>/ToUnicode</code> map decodes through the standard encoding. A PDF that needs a password raises; an empty user password reads normally. Not on the Cloudflare Workers build.</div>
+                </div>
+                <pre class="mt-3" data-filename="Index a document page by page"><code class="language-soli text-sm">text  = pdf_text("inbox/contract.pdf")
+
+# An uploaded file carries its bytes as base64 in "data".
+file  = find_uploaded_file(req, "document")
+pages = pdf_text(file["data"], {"per_page": true})
+
+pages.each_with_index do |page, i|
+  Chunk.create({"document": doc._key, "page": i + 1, "text": page})
+end</code></pre>
+            </div>
+        </section>
+
         <section id="def-pdf-sign-verify" class="scroll-mt-20 mb-6">
             <div class="rounded-xl bg-white/5 border border-white/10 p-5">
                 <code class="text-lg font-mono text-amber-400">pdf_sign(pdf, options) &middot; pdf_verify(pdf)</code>

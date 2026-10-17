@@ -252,6 +252,29 @@ end
 - **`pdf_extract_facturx(pdf)`** — returns the embedded invoice XML as a **String**, or **null** if the PDF carries none. Matches the standard attachment names (`factur-x.xml`, `zugferd-invoice.xml`, `xrechnung.xml`, …).
 - **`pdf_attachments(pdf)`** — returns an array of `{ "name", "mime", "size", "base64" }`, one per embedded file (decode `base64` for the bytes). Reads the `/EmbeddedFiles` name tree, falling back to `/AF`.
 
+### pdf_text(pdf, options?)
+
+The text of a PDF — one you received or one you made — for search, indexing or an LLM prompt.
+
+```soli
+text = pdf_text("inbox/contract.pdf")            # every page, separated by a form feed
+pdf_text(pdf, {"pages": "2-3"})                  # some pages: a range string or [2, 3]
+
+# An uploaded file carries its bytes as base64 in "data".
+file = find_uploaded_file(req, "document")
+pages = pdf_text(file["data"], {"per_page": true})   # ["page 1 text", "page 2 text", …]
+
+pages.each_with_index do |page, i|
+  Chunk.create({"document": doc._key, "page": i + 1, "text": page})
+end
+```
+
+- **`pdf`** is a **path or base64**, like every `pdf_*` function.
+- Returns a **String**, pages separated by a form feed (`"\u000c"`, as `pdftotext` does), or an **Array** of page strings with `per_page: true` — the easier way to work page by page. A `pages` selection keeps the order you give it; a page the document does not have raises.
+- Lines come back in reading order, rebuilt from where each string lands on the page: words keep their spaces, a table row stays on one line, and a wider vertical gap becomes an empty line. Text drawn inside form XObjects (letterheads, stamped overlays) is read too. Ligatures (`ﬁ`, `ﬂ`) are spelt out.
+- **Limits.** A scanned page is an image: it has no text and comes back empty (no OCR). Two text columns side by side are read line by line across both columns. A font with neither a usable encoding nor a `/ToUnicode` map gives what its codes mean in the standard encoding. A PDF that needs a password to open raises; one encrypted with an empty user password reads normally.
+- Not on the Cloudflare Workers build (no `pdf_*` function is).
+
 ### pdf_sign(pdf, options) · pdf_verify(pdf)
 
 Sign an **existing** PDF, and verify signatures on one you received.

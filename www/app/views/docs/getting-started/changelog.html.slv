@@ -21,6 +21,10 @@
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
         <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.27.2.</p>
+        <h3 id="unreleased-pdf" class="text-xl font-semibold text-white mb-4 scroll-mt-24">PDF</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Read the text of a PDF: <code class="text-cyan-400">pdf_text</code>.</strong> <code class="text-cyan-400">pdf_text(pdf)</code> returns the text of every page in reading order &mdash; words with their spaces, a table row on one line, letterheads included &mdash; and <code class="text-cyan-400">{"per_page": true}</code> one string per page, for search, indexing or an LLM prompt. <code class="text-cyan-400">pages</code> picks some of them. No OCR: a scanned page comes back empty. <a href="/docs/builtins/pdf#def-pdf-text" class="text-cyan-400 hover:underline">PDF</a></li>
+        </ul>
         <h3 id="unreleased-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">A model&rsquo;s own <code class="text-cyan-400">save</code> or <code class="text-cyan-400">delete</code> is the one called.</strong> On the tree-walker (specs, <code class="text-cyan-400">--dev</code>) the <code class="text-cyan-400">Model</code> native always won: with <code class="text-cyan-400">def delete(force)</code>, a bare <code class="text-cyan-400">post.delete</code> deleted the row, and <code class="text-cyan-400">post.delete(true)</code> failed. Both engines now take the nearer declaration; the callbacks, veto and cascades run when the override calls <code class="text-cyan-400">super.delete()</code>. <a href="/docs/database/validations" class="text-cyan-400 hover:underline">Callbacks</a></li>

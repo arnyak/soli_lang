@@ -225,6 +225,7 @@ const WELL_KNOWN_GLOBALS: &[&str] = &[
     "pdf_verify",
     "pdf_extract_facturx",
     "pdf_attachments",
+    "pdf_text",
     // PDF page previews (PNG)
     "pdf_preview",
     "pdf_preview_from_markdown",
