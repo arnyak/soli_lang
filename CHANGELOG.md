@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.28.0] - 2026-10-17
+
 ### Security
 
 - ammonia 4.2.4 (4.1.8 on the Workers build): RUSTSEC-2026-0373, published

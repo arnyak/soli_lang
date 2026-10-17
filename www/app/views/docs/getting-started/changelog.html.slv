@@ -20,20 +20,25 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.27.2.</p>
-        <h3 id="unreleased-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.0.</p>
+    </section>
+
+    <section id="v2-28-0" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.0 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-17</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Read the text of a PDF with <code class="text-cyan-400">pdf_text</code>, EUI protocol 9's engraved score, a model's own <code class="text-cyan-400">save</code>/<code class="text-cyan-400">delete</code> honoured on both engines, and ammonia 4.2.4.</p>
+        <h3 id="v2-28-0-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">A score the client engraves.</strong> A view can write <code class="text-cyan-400">{"k": "score", "p": {"src": src}}</code>: to a client of EUI protocol 9 the server sends the LilyPond source and nothing else, and <code class="text-cyan-400">score_pick</code> and <code class="text-cyan-400">score_info</code> tell it where a press landed in the music and how many pages there are. An older client is sent the canvases <code class="text-cyan-400">score()</code> draws, engraved natively, so nothing breaks. <a href="/docs/eui/widgets-data#music-notation" class="text-cyan-400 hover:underline">Music notation</a></li>
         </ul>
-        <h3 id="unreleased-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
+        <h3 id="v2-28-0-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">The HTML sanitizer catches <code class="text-cyan-400">URL(...)</code> in styles.</strong> ammonia, behind <code class="text-cyan-400">sanitize_html</code>, matched the CSS <code class="text-cyan-400">url()</code> function case-sensitively (RUSTSEC-2026-0373); it is now 4.2.4, and 4.1.8 on the Workers build.</li>
         </ul>
-        <h3 id="unreleased-pdf" class="text-xl font-semibold text-white mb-4 scroll-mt-24">PDF</h3>
+        <h3 id="v2-28-0-pdf" class="text-xl font-semibold text-white mb-4 scroll-mt-24">PDF</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">Read the text of a PDF: <code class="text-cyan-400">pdf_text</code>.</strong> <code class="text-cyan-400">pdf_text(pdf)</code> returns the text of every page in reading order &mdash; words with their spaces, a table row on one line, letterheads included &mdash; and <code class="text-cyan-400">{"per_page": true}</code> one string per page, for search, indexing or an LLM prompt. <code class="text-cyan-400">pages</code> picks some of them. No OCR: a scanned page comes back empty. <a href="/docs/builtins/pdf#def-pdf-text" class="text-cyan-400 hover:underline">PDF</a></li>
         </ul>
-        <h3 id="unreleased-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
+        <h3 id="v2-28-0-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">A model&rsquo;s own <code class="text-cyan-400">save</code> or <code class="text-cyan-400">delete</code> is the one called.</strong> On the tree-walker (specs, <code class="text-cyan-400">--dev</code>) the <code class="text-cyan-400">Model</code> native always won: with <code class="text-cyan-400">def delete(force)</code>, a bare <code class="text-cyan-400">post.delete</code> deleted the row, and <code class="text-cyan-400">post.delete(true)</code> failed. Both engines now take the nearer declaration; the callbacks, veto and cascades run when the override calls <code class="text-cyan-400">super.delete()</code>. <a href="/docs/database/validations" class="text-cyan-400 hover:underline">Callbacks</a></li>
         </ul>
