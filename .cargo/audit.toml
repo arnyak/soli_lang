@@ -88,4 +88,17 @@ ignore = [
     # ../eui/crates/eui-client/Cargo.toml pins at "7". Remove this waiver once
     # eui-client moves to notify 8 (then `cargo update -p notify && cargo audit`).
     "RUSTSEC-2024-0384",
+
+    # zvariant, zvariant_derive, zbus_names 5.x — unmaintained since 2026-10-16:
+    # zbus 6.0 merged them in (as its `wire` and `names` modules), so the
+    # standalone crates get no more releases. No runtime risk flagged. Build
+    # graph only under the optional `eui-desktop` feature: eui-client ->
+    # accesskit_winit -> accesskit_unix -> atspi / zbus 5 (Linux accessibility
+    # over D-Bus). Blocked upstream: accesskit_unix 0.24.0, the newest
+    # (checked 2026-10-17), still requires zbus ^5.19. Remove these three once
+    # an accesskit_unix on zbus >= 6 reaches eui-client (then
+    # `cargo update -p accesskit_winit && cargo audit`).
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
 ]

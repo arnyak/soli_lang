@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Security
+
+- ammonia 4.2.4 (4.1.8 on the Workers build): RUSTSEC-2026-0373, published
+  2026-10-16 — the sanitizer matched the CSS `url()` function
+  case-sensitively, so a `URL(...)` in a style could slip past it.
+  `sanitize_html` goes through it. The same day's unmaintained notices for
+  zvariant, zvariant_derive and zbus_names (reached only by the optional
+  desktop client, through accesskit's zbus 5) are waived in
+  `.cargo/audit.toml` until accesskit moves to zbus 6.
+
+
 ### Added
 
 - EUI protocol 9's `score` node: a view writes `{"k": "score", "p": {"src":
