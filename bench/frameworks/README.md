@@ -295,7 +295,7 @@ row it sits beside.
 
 Soli's `db_json` binds the query builder to a local before rendering:
 
-```soli
+```ruby
 let rows = Post.pluck(:id, :title, :views).all
 return render_json(rows)
 ```

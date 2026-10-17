@@ -81,7 +81,7 @@ mvc_app/
 
 Apply middleware only to specific routes:
 
-```soli
+```ruby
 // Only /admin/* routes require authentication
 middleware("authenticate", -> {
   get("/admin", "admin#index");
@@ -105,7 +105,7 @@ get("/", "home#index");
 
 Generate standard CRUD routes automatically:
 
-```soli
+```ruby
 resources("users", null);
 
 ```
@@ -116,7 +116,7 @@ Creates: `GET /users`, `POST /users`, `GET /users/:id`, etc.
 
 Group routes under a common prefix:
 
-```soli
+```ruby
 namespace("api", -> {
   middleware("authenticate", -> {
     get("/api/users", "users#index");
@@ -146,7 +146,7 @@ namespace("api", -> {
 
 Configure middleware behavior using special comments:
 
-```soli
+```ruby
 // order: 20          // Execution order (lower runs first)
 // global_only: true  // Only runs globally, cannot be scoped
 // scope_only: true   // Only runs when explicitly scoped
@@ -170,7 +170,7 @@ Available helpers in `routes.sl`:
 
 ## 📝 Example Routes
 
-```soli
+```ruby
 // config/routes.sl
 
 // Scoped authentication middleware
@@ -194,7 +194,7 @@ resources("users", null);
 
 Solilang provides a Rails-like E2E testing framework for testing your controllers with real HTTP requests:
 
-```soli
+```ruby
 describe("PostsController", fn() {
   before_each(fn() {
     as_guest();
@@ -310,7 +310,7 @@ No restart needed!
 
 1. Create `app/controllers/name_controller.sl`:
 
-```soli
+```ruby
 def index(req: Any) {
   return {"status": 200, "body": "Hello!"};
 }
@@ -324,7 +324,7 @@ def show(req: Any) {
 
 2. Add routes in `config/routes.sl`:
 
-```soli
+```ruby
 get("/users", "users#index");
 get("/users/:id", "users#show");
 

@@ -30,7 +30,7 @@ Soli brings Rails' expressiveness to a single Rust binary. You write terse, Ruby
 optional type annotations; the binary runs it on a bytecode VM, serves it, tests it, lints it
 and ships it. There is no `node_modules`, no separate app server and no build step to wire up.
 
-```soli
+```ruby
 # app/controllers/posts_controller.sl — models are auto-loaded
 class PostsController < Controller
   # GET /posts — no render call: posts/index renders with @posts
@@ -186,7 +186,7 @@ my_app/
 
 ### Routing
 
-```soli
+```ruby
 # config/routes.sl
 get("/", "home#index")
 get("/about", "home#about")
@@ -202,7 +202,7 @@ cors("/api/*", {"origins": ["https://app.example.com"]})
 
 ### Models
 
-```soli
+```ruby
 # app/models/post.sl
 class Post < Model
   validates("title", {"presence": true, "min_length": 3})
@@ -260,12 +260,12 @@ Reactive UIs without writing JavaScript:
 </div>
 ```
 
-```soli
+```ruby
 # config/routes.sl
 router_live("counter", "live#counter")
 ```
 
-```soli
+```ruby
 # app/controllers/live_controller.sl
 def counter(event_data)
   count = event_data["state"]["count"] || 0
@@ -284,7 +284,7 @@ state survive updates.
 
 ## Testing
 
-```soli
+```ruby
 # tests/controllers/posts_controller_spec.sl
 describe("PostsController") do
   before_each() do
