@@ -1254,7 +1254,8 @@ impl Encoder {
             Some(on) => self.handlers_from(on, &key)?,
             None => Vec::new(),
         };
-        Ok(self.node(kind, style, key, text, props, scroll_to, focus_to, handlers))
+        let node = self.node(kind, style, key, text, props, scroll_to, focus_to, handlers);
+        self.score_for_protocol(node)
     }
 
     /// [`convert_shallow`] straight off the view's hash: the scalar fields
@@ -1306,7 +1307,124 @@ impl Encoder {
                 }
             }
         };
-        Ok(self.node(kind, style, key, text, props, scroll_to, focus_to, handlers))
+        let node = self.node(kind, style, key, text, props, scroll_to, focus_to, handlers);
+        self.score_for_protocol(node)
+    }
+
+    /// EUI 03 §1.4: a `score` is the source, engraved by the client — from
+    /// protocol 9. A session below it cannot decode the kind, so it is sent
+    /// what the catalogue's `score()` drew before there was one: a column of
+    /// canvases, a band each, engraved here by the native engraver with the
+    /// same colours (`colour`, `marks`, `lit`). The view writes one node and
+    /// every client draws it. The width is the node's own, when its style
+    /// gives one in pixels, and 600 otherwise: an older client cannot say
+    /// how wide it laid the node out, and a server has nothing else to go on.
+    fn score_for_protocol(&mut self, node: TNode) -> Result<TNode, String> {
+        if node.kind != NodeKind::Score || self.protocol() >= 9 {
+            return Ok(node);
+        }
+        let prop = |enc: &mut Self, name: &str| -> Option<WireValue> {
+            let atom = enc.atom(name);
+            node.props
+                .iter()
+                .find(|(a, _)| *a == atom)
+                .map(|(_, v)| v.clone())
+        };
+        let src = match prop(self, "src") {
+            Some(WireValue::Str(s)) => s,
+            Some(WireValue::List(parts)) => parts
+                .iter()
+                .map(|p| match p {
+                    WireValue::Str(s) => Ok(s.as_str()),
+                    _ => Err("EUI: a score's src is a string or a list of strings".to_string()),
+                })
+                .collect::<Result<String, _>>()?,
+            _ => String::new(),
+        };
+        let number = |v: Option<WireValue>| match v {
+            Some(WireValue::Int(n)) => Some(n as f64),
+            Some(WireValue::Float(f)) => Some(f),
+            _ => None,
+        };
+        let a4 = matches!(prop(self, "page"), Some(WireValue::Str(ref s)) if s == "a4");
+        let page_index = number(prop(self, "page_index")).unwrap_or(0.0).max(0.0) as usize;
+        let ink = prop(self, "colour").unwrap_or(WireValue::Str("text.default".into()));
+        let marks = prop(self, "marks");
+        let lit = prop(self, "lit");
+        let width = f64::from(self.style_width(node.style).unwrap_or(600));
+        let (eng, sp, height) = if a4 {
+            let paper = eui_score::Paper::a4();
+            let eng = eui_score::engrave_a4(&src).map_err(|e| e.message)?;
+            let sp = width / paper.w;
+            let h = (paper.h * sp).floor() as i64;
+            (eng, sp, h)
+        } else {
+            let sp = number(prop(self, "staff_space"))
+                .filter(|v| *v > 0.0)
+                .unwrap_or(8.0);
+            let page_h = number(prop(self, "page_height")).filter(|v| *v > 0.0);
+            let layout = eui_score::Layout {
+                page_h: page_h.map(|h| h / sp),
+                ..eui_score::Layout::default()
+            };
+            let eng = eui_score::engrave(&src, width / sp, &layout).map_err(|e| e.message)?;
+            let h = if page_h.is_some() {
+                let page = page_index.min(eng.pages.len().saturating_sub(1));
+                let bottom = eng
+                    .systems
+                    .iter()
+                    .filter(|s| s.page == page)
+                    .map(|s| s.bottom)
+                    .fold(0.0_f64, f64::max);
+                ((bottom + 3.0) * sp).floor() as i64
+            } else {
+                (eng.height * sp).ceil() as i64
+            };
+            (eng, sp, h)
+        };
+        let page = page_index.min(eng.pages.len().saturating_sub(1));
+        let bands = eui_score::bands(&eng, sp, page, height).map_err(|e| e.message)?;
+        let paths_atom = self.atom("paths");
+        let mut column = node;
+        column.kind = NodeKind::Box;
+        column.props.clear();
+        column
+            .handlers
+            .retain(|(k, _)| !matches!(k, EventKind::ScorePick | EventKind::ScoreInfo));
+        for band in bands.iter().filter(|b| b.h > 0) {
+            let style = self.style(StyleRecord {
+                width: eui_proto::Dim::Px(u16::try_from(width as i64).unwrap_or(u16::MAX)),
+                height: eui_proto::Dim::Px(u16::try_from(band.h).unwrap_or(u16::MAX)),
+                ..StyleRecord::default()
+            });
+            let paths = score_band_paths(band, &ink, marks.as_ref(), lit.as_ref());
+            let canvas = self.node(
+                NodeKind::Canvas,
+                style,
+                None,
+                None,
+                vec![(paths_atom, WireValue::List(paths))],
+                None,
+                false,
+                Vec::new(),
+            );
+            column.children.push(Child::Fresh(canvas));
+        }
+        Ok(column)
+    }
+
+    /// The width a style id gives a node, when it gives one in pixels.
+    fn style_width(&self, style: u32) -> Option<u16> {
+        let key = self
+            .styles
+            .iter()
+            .find(|(_, id)| **id == style)
+            .map(|(k, _)| *k)?;
+        let record = StyleRecord::decode(&mut eui_proto::Reader::new(&key)).ok()?;
+        match record.width {
+            eui_proto::Dim::Px(px) => Some(px),
+            _ => None,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1466,6 +1584,25 @@ impl Encoder {
                 self.uniforms_value(v)?
             } else if kind == NodeKind::Canvas && name == "paths" {
                 self.paths_value(v)?
+            } else if kind == NodeKind::Score
+                && name == "src"
+                && v.as_str().is_some_and(|t| t.len() > MAX_INLINE_SRC)
+            {
+                // EUI 03 §1.4: a source past what one inline string holds
+                // goes as a list of them, read as their concatenation. Cut
+                // here, on character boundaries, so that a view writes the
+                // music as one string however long it is.
+                let mut parts = Vec::new();
+                let mut rest = v.as_str().unwrap_or("");
+                while !rest.is_empty() {
+                    let mut cut = rest.len().min(MAX_INLINE_SRC);
+                    while !rest.is_char_boundary(cut) {
+                        cut -= 1;
+                    }
+                    parts.push(WireValue::Str(rest[..cut].to_string()));
+                    rest = &rest[cut..];
+                }
+                WireValue::List(parts)
             } else {
                 self.wire_value(v)?
             };
@@ -1840,6 +1977,90 @@ impl Encoder {
     }
 }
 
+/// A band's paths as canvas values (EUI 03 §1.1, kinds `1` and `5`), in the
+/// ink, an item's `marks` colour instead, and `accent.base` for one in
+/// `lit` — what a protocol-9 client paints from its own engraving.
+fn score_band_paths(
+    band: &eui_score::Band,
+    ink: &WireValue,
+    marks: Option<&WireValue>,
+    lit: Option<&WireValue>,
+) -> Vec<WireValue> {
+    let colour_of = |item: usize| -> Option<WireValue> {
+        if let Some(WireValue::List(items)) = lit {
+            if items
+                .iter()
+                .any(|v| matches!(v, WireValue::Int(n) if usize::try_from(*n).ok() == Some(item)))
+            {
+                return Some(WireValue::Str("accent.base".into()));
+            }
+        }
+        match marks {
+            Some(WireValue::List(pairs)) => pairs.iter().find_map(|pair| match pair {
+                WireValue::List(kv) => match kv.as_slice() {
+                    [WireValue::Int(n), colour] if usize::try_from(*n).ok() == Some(item) => {
+                        Some(colour.clone())
+                    }
+                    _ => None,
+                },
+                _ => None,
+            }),
+            _ => None,
+        }
+    };
+    let mut colours: Vec<Option<WireValue>> = vec![None; band.paths.len()];
+    for (item, range) in &band.ranges {
+        if let Some(c) = colour_of(*item) {
+            for slot in colours.iter_mut().skip(range.start).take(range.len()) {
+                *slot = Some(c.clone());
+            }
+        }
+    }
+    band.paths
+        .iter()
+        .zip(colours)
+        .map(|(p, c)| {
+            let ink = c.as_ref().unwrap_or(ink);
+            match p {
+                eui_score::Path::Rect([x, y, w, h]) => WireValue::List(vec![
+                    WireValue::Int(1),
+                    ink.clone(),
+                    WireValue::Float(*x),
+                    WireValue::Float(*y),
+                    WireValue::Float(*w),
+                    WireValue::Float(*h),
+                    WireValue::Int(0),
+                ]),
+                eui_score::Path::Fill(cmds) => {
+                    let mut out = vec![WireValue::Int(5), ink.clone()];
+                    let mut k = 0;
+                    while let Some(c) = cmds.get(k) {
+                        out.push(WireValue::Int(*c as i64));
+                        let args = match *c as i64 {
+                            0 | 1 => 2,
+                            2 => 4,
+                            3 => 6,
+                            _ => 0,
+                        };
+                        out.extend(
+                            cmds.iter()
+                                .skip(k + 1)
+                                .take(args)
+                                .map(|v| WireValue::Float(*v)),
+                        );
+                        k += 1 + args;
+                    }
+                    WireValue::List(out)
+                }
+            }
+        })
+        .collect()
+}
+
+/// The most one inline string carries (EUI 02 §4.4); a `score`'s longer
+/// source is sent in pieces this size.
+const MAX_INLINE_SRC: usize = 4096;
+
 fn kind_of(name: &str) -> Result<NodeKind, String> {
     Ok(match name {
         "box" => NodeKind::Box,
@@ -1859,6 +2080,7 @@ fn kind_of(name: &str) -> Result<NodeKind, String> {
         "audio" => NodeKind::Audio,
         "video" => NodeKind::Video,
         "scene" => NodeKind::Scene,
+        "score" => NodeKind::Score,
         other => return Err(format!("EUI: unknown node kind '{other}'")),
     })
 }
@@ -2135,7 +2357,7 @@ fn since(kind: EventKind) -> u32 {
     match kind {
         EventKind::Level => 3,
         // The person's MIDI instruments (EUI 06 §1.4).
-        EventKind::Midi => 9,
+        EventKind::Midi | EventKind::ScorePick | EventKind::ScoreInfo => 9,
         _ => 1,
     }
 }
@@ -2168,6 +2390,8 @@ fn event_kind(name: &str) -> Option<EventKind> {
         "time_update" => EventKind::TimeUpdate,
         "level" => EventKind::Level,
         "midi" => EventKind::Midi,
+        "score_pick" => EventKind::ScorePick,
+        "score_info" => EventKind::ScoreInfo,
         "wake" => EventKind::Wake,
         "file_pick" => EventKind::FilePick,
         "file_save" => EventKind::FileSave,
@@ -2208,6 +2432,8 @@ pub fn event_name(kind: EventKind) -> &'static str {
         EventKind::TimeUpdate => "time_update",
         EventKind::Level => "level",
         EventKind::Midi => "midi",
+        EventKind::ScorePick => "score_pick",
+        EventKind::ScoreInfo => "score_info",
         EventKind::Wake => "wake",
         // EUI 03 §3.2. The client sends these for a node carrying `pick` or
         // `save`, and `event_kind` above deliberately does not take their
@@ -3084,6 +3310,112 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn a_score_is_sent_as_source_from_protocol_9_and_as_paths_before() {
+        // EUI 03 §1.4 and 09 §13: the view writes one node; a session of 9
+        // is sent the source and engraves it, an older one is sent the
+        // catalogue's canvases and never hears of the kind or its events.
+        let src = r#"\relative c' { c4 d e f | g1 }"#;
+        let view = json!({"k": "score", "s": {"width": 480}, "p": {"src": src, "staff_space": 8, "marks": [[0, "accent.base"]]}, "on": {"score_pick": "pick", "score_info": "info", "click": "done"}});
+        let mount = |enc: &mut Encoder| -> Subtree {
+            enc.render(&view, false)
+                .unwrap()
+                .into_iter()
+                .flat_map(|b| b.ops)
+                .find_map(|op| match op {
+                    Op::Mount(t) => Some(t),
+                    _ => None,
+                })
+                .expect("a mount")
+        };
+
+        let mut new = Encoder::default();
+        new.set_protocol(9);
+        let t = mount(&mut new);
+        assert_eq!(t.nodes.len(), 1);
+        assert_eq!(t.nodes[0].kind, NodeKind::Score);
+        assert!(
+            t.props
+                .iter()
+                .any(|(_, v)| *v == WireValue::Str(src.into())),
+            "the source goes, and only it: {:?}",
+            t.props
+        );
+        assert!(
+            !t.props
+                .iter()
+                .any(|(_, v)| matches!(v, WireValue::List(l) if l.len() > 4)),
+            "no paths for a client that engraves"
+        );
+        assert!(t.handlers.iter().any(|(k, _)| *k == EventKind::ScorePick));
+
+        let mut old = Encoder::default();
+        old.set_protocol(8);
+        let t = mount(&mut old);
+        assert_eq!(
+            t.nodes[0].kind,
+            NodeKind::Box,
+            "an older client is sent a column"
+        );
+        assert!(
+            t.nodes.iter().skip(1).all(|n| n.kind == NodeKind::Canvas) && t.nodes.len() > 1,
+            "of canvases: {:?}",
+            t.nodes.iter().map(|n| n.kind).collect::<Vec<_>>()
+        );
+        assert!(!t.nodes.iter().any(|n| n.kind == NodeKind::Score));
+        assert!(
+            !t.handlers
+                .iter()
+                .any(|(k, _)| matches!(k, EventKind::ScorePick | EventKind::ScoreInfo)),
+            "and no event it cannot decode"
+        );
+        assert!(
+            t.handlers.iter().any(|(k, _)| *k == EventKind::Click),
+            "everything else still goes"
+        );
+        let painted = t.props.iter().any(|(_, v)| match v {
+            WireValue::List(paths) => paths.iter().any(|p| matches!(p, WireValue::List(f) if f.get(1) == Some(&WireValue::Str("accent.base".into())))),
+            _ => false,
+        });
+        assert!(painted, "with the marked note in its colour");
+
+        // A source longer than one inline string goes in pieces, which a
+        // client reads as their concatenation.
+        let long = format!("\\relative c' {{ {} }}", "c4 d e f ".repeat(1200));
+        let mut new = Encoder::default();
+        new.set_protocol(9);
+        let t = new
+            .render(&json!({"k": "score", "p": {"src": long}}), false)
+            .unwrap()
+            .into_iter()
+            .flat_map(|b| b.ops)
+            .find_map(|op| match op {
+                Op::Mount(t) => Some(t),
+                _ => None,
+            })
+            .unwrap();
+        let joined: String = t
+            .props
+            .iter()
+            .find_map(|(_, v)| match v {
+                WireValue::List(parts) => Some(
+                    parts
+                        .iter()
+                        .map(|p| match p {
+                            WireValue::Str(s) => {
+                                assert!(s.len() <= MAX_INLINE_SRC);
+                                s.as_str()
+                            }
+                            _ => panic!("a piece that is not a string"),
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .expect("the source in pieces");
+        assert_eq!(joined, long);
     }
 
     #[test]

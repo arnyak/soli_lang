@@ -4,6 +4,16 @@
 
 ### Added
 
+- EUI protocol 9's `score` node: a view writes `{"k": "score", "p": {"src":
+  src, …}}` and the server sends the LilyPond source alone, cut into 4 KiB
+  pieces when it is longer, for the client to engrave; the `score_pick` and
+  `score_info` events are names a view may handle, and are left out for a
+  client below 9. To such a client the node is sent as the catalogue's
+  canvases instead, engraved natively by `eui-score` with the same
+  `colour`, `marks` and `lit` (`serve/eui/tree.rs`, `score_for_protocol`).
+  `eui-proto`, `eui-client` and `eui-score` are pinned at `5e28a1c`, eui
+  0.9.0: a session now settles on protocol 9 with a client that speaks it.
+
 - `pdf_text(pdf, options?)` extracts the text of a PDF (a path or base64, like
   every `pdf_*`): one string with pages separated by a form feed, or an array
   of page strings with `per_page: true`; `pages` takes a range or a list. The

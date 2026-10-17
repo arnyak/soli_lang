@@ -610,6 +610,20 @@ A page is a column of bands, each two stacked canvases: the music in its plain i
 what `opts["marks"]` lights. Moving the playhead or the selection changes only the second — a few
 paths, not the system's quarter-megabyte. Screen pages are not numbered; A4 pages and the PDF are.
 
+### A score the client engraves
+
+From EUI protocol 9 a view can write the music itself as a node and leave the engraving to the
+client: `{"k": "score", "p": {"src": src, "staff_space": 8}}`, with `page` (`"screen"` or
+`"a4"`), `page_height`, `page_index`, `marks` (pairs of an item's number and a colour — the
+selection) and `lit` (a playhead). The server sends the source and nothing else; a source longer
+than the 4 KiB one wire string holds is cut into pieces for you, and the client reads them back as
+one. Two events carry back what only the client then knows: `score_pick`, on a press, a move while
+pressed and a release, says where in the music the pointer is — the page, system, staff, line, the
+nearest note and how far it is, the notes either side — and `score_info` says how many pages the
+music took, where each starts, and why a source was refused. A client older than protocol 9 cannot
+draw the kind, so it is sent what `score()` draws instead, engraved here natively; the view does not
+branch, and the two events are not sent to it.
+
 ## Dev bar
 
 #### `dev_figure(label, value, tone)`
