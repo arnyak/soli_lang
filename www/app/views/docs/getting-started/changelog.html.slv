@@ -20,7 +20,16 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.0.</p>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.1.</p>
+    </section>
+
+    <section id="v2-28-1" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.1 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-17</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">EUI protocol 10: a score whose notes the window moves itself.</p>
+        <h3 id="v2-28-1-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">A score the client edits.</strong> Give a <code class="text-cyan-400">score</code> <code class="text-cyan-400">edit: ["pitch"]</code>, <code class="text-cyan-400">selected</code> and a <code class="text-cyan-400">score_edit</code> handler, and a client of EUI protocol 10 moves the selected note itself &mdash; dragged, or with the arrows &mdash; drawing and playing it at once, then sends the new pitches once they settle as <code class="text-cyan-400">[item, head, step, alter, octave]</code> entries. An older session is never sent the handler. eui 0.10.0.</li>
+        </ul>
     </section>
 
     <section id="v2-28-0" class="mb-16 scroll-mt-24">

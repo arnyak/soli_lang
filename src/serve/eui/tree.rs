@@ -1388,9 +1388,12 @@ impl Encoder {
         let mut column = node;
         column.kind = NodeKind::Box;
         column.props.clear();
-        column
-            .handlers
-            .retain(|(k, _)| !matches!(k, EventKind::ScorePick | EventKind::ScoreInfo));
+        column.handlers.retain(|(k, _)| {
+            !matches!(
+                k,
+                EventKind::ScorePick | EventKind::ScoreInfo | EventKind::ScoreEdit
+            )
+        });
         for band in bands.iter().filter(|b| b.h > 0) {
             let style = self.style(StyleRecord {
                 width: eui_proto::Dim::Px(u16::try_from(width as i64).unwrap_or(u16::MAX)),
@@ -2358,6 +2361,8 @@ fn since(kind: EventKind) -> u32 {
         EventKind::Level => 3,
         // The person's MIDI instruments (EUI 06 §1.4).
         EventKind::Midi | EventKind::ScorePick | EventKind::ScoreInfo => 9,
+        // A score the client edits itself (EUI 03 §1.4, 06 §1.5).
+        EventKind::ScoreEdit => 10,
         _ => 1,
     }
 }
@@ -2392,6 +2397,7 @@ fn event_kind(name: &str) -> Option<EventKind> {
         "midi" => EventKind::Midi,
         "score_pick" => EventKind::ScorePick,
         "score_info" => EventKind::ScoreInfo,
+        "score_edit" => EventKind::ScoreEdit,
         "wake" => EventKind::Wake,
         "file_pick" => EventKind::FilePick,
         "file_save" => EventKind::FileSave,
@@ -2434,6 +2440,7 @@ pub fn event_name(kind: EventKind) -> &'static str {
         EventKind::Midi => "midi",
         EventKind::ScorePick => "score_pick",
         EventKind::ScoreInfo => "score_info",
+        EventKind::ScoreEdit => "score_edit",
         EventKind::Wake => "wake",
         // EUI 03 §3.2. The client sends these for a node carrying `pick` or
         // `save`, and `event_kind` above deliberately does not take their
@@ -3310,6 +3317,45 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn score_edit_is_protocol_10() {
+        // EUI 03 §1.4 and 09 §13: a score that edits its own pitches reports
+        // them in `score_edit`, which a session below 10 cannot decode — so
+        // it is never sent the handler, and its client reports the gestures
+        // as it always did.
+        let view = json!({"k": "score", "s": {"width": 480}, "p": {"src": "{ c'4 d'4 }", "edit": ["pitch"], "selected": 1}, "on": {"score_pick": "pick", "score_edit": "edited"}});
+        let handlers = |version: u32| -> Vec<EventKind> {
+            let mut enc = Encoder::default();
+            enc.set_protocol(version);
+            enc.render(&view, false)
+                .unwrap()
+                .into_iter()
+                .flat_map(|b| b.ops)
+                .find_map(|op| match op {
+                    Op::Mount(t) => Some(t.handlers.into_iter().map(|(k, _)| k).collect()),
+                    _ => None,
+                })
+                .expect("a mount")
+        };
+        assert!(
+            handlers(10).contains(&EventKind::ScoreEdit),
+            "a session of 10 hears the edits"
+        );
+        assert!(handlers(10).contains(&EventKind::ScorePick));
+        assert!(
+            !handlers(9).contains(&EventKind::ScoreEdit),
+            "a session of 9 is not sent a handler it cannot decode"
+        );
+        assert!(
+            handlers(9).contains(&EventKind::ScorePick),
+            "and keeps the presses"
+        );
+        assert!(
+            !handlers(8).contains(&EventKind::ScoreEdit),
+            "nor is an older one, drawn as canvases"
+        );
     }
 
     #[test]

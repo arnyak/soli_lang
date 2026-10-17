@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [2.28.1] - 2026-10-17
+
+### EUI
+
+- Protocol 10 (eui 0.10.0): a `score` the client edits. A view that gives
+  a `score` `edit: ["pitch"]`, `selected` and a `score_edit` handler gets
+  the note moved in the window — dragged, or by the arrows — and hears the
+  new pitches once they settle, as `[item, head, step, alter, octave]`
+  entries. `score_edit` is sent only to sessions of protocol 10; an older
+  one is never given the handler. The eui pin moves to dc9529b.
+
 ## [2.28.0] - 2026-10-17
 
 ### Security

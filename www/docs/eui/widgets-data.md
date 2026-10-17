@@ -624,6 +624,16 @@ music took, where each starts, and why a source was refused. A client older than
 draw the kind, so it is sent what `score()` draws instead, engraved here natively; the view does not
 branch, and the two events are not sent to it.
 
+From protocol 10 a score can be **edited by the client**: with `edit: ["pitch"]`, `selected` (the
+item the selection is drawn as) and a `score_edit` handler, the client moves that note's pitch itself
+— a drag carries it by the lines the hand travels, `↑`/`↓` move it a step in the key, a semitone with
+Shift, an octave with Ctrl — draws and plays it at once (`voice: [audio_key, program]` names the
+`audio` node it sounds on), and reports once the music stands still for `edit_after` ms (2000 by
+default), on blur, or before any other event: `score_edit` arrives with a list of
+`[item, head, step, alter, octave]`, one per head that moved. Check each entry and apply what you can;
+the source you send back is the one already drawn. A session below protocol 10 is never sent the
+handler, and its client reports the drag and the keys as `score_pick` and `key_down` as before.
+
 ## Dev bar
 
 #### `dev_figure(label, value, tone)`
