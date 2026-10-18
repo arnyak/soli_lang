@@ -599,12 +599,14 @@ score("\\relative c' { c4 d e f | g1 }", {"width": 640})
 
 When the server is built with EUI, four builtins do the work natively, through the `eui-score`
 crate: `eui_score_layout(src, width, layout)`, `eui_score_bands(laid, sp, opts, total)`,
-`eui_score_midi(src, opts)` and `eui_score_pdf(src, title)`. They draw path for path, and write
-byte for byte, what the Soli engraver does — its golden tests hold the two together — about two
-hundred times faster: a symphony redraws in a frame rather than a fifth of a second. `score()`,
-`score_midi()` and `score_pdf()` call them when `defined("eui_score_layout")` and fall back to Soli
-otherwise, so the catalogue runs unchanged on either. A source the engraver refuses throws the same
-`score: … (at character N)` message from both.
+`eui_score_midi(src, opts)` and `eui_score_pdf(src, title)`. On what both read they draw path for
+path, and write byte for byte, what the Soli engraver does — its golden tests hold the two together,
+but where the native one follows LilyPond: a second voice under `\relative`, and a bar line written
+in one staff — about two hundred times faster: a symphony redraws in a frame rather than a fifth of a
+second. `score()`, `score_midi()` and `score_pdf()` call them when `defined("eui_score_layout")` and
+fall back to Soli otherwise, so the catalogue runs unchanged on either. A source the engraver refuses
+throws the same `score: … (at character N)` message from both. The native engraver reads more:
+what protocol 11 adds (below) is refused by the Soli one, on a server built without EUI.
 
 A page is a column of bands, each two stacked canvases: the music in its plain ink, and over it
 what `opts["marks"]` lights. Moving the playhead or the selection changes only the second — a few
@@ -633,6 +635,15 @@ default), on blur, or before any other event: `score_edit` arrives with a list o
 `[item, head, step, alter, octave]`, one per head that moved. Check each entry and apply what you can;
 the source you send back is the one already drawn. A session below protocol 10 is never sent the
 handler, and its client reports the drag and the keys as `score_pick` and `key_down` as before.
+
+From protocol 11 the source can be **LilyPond as its users write it**: variables and a `\global`,
+`\new Voice` with `\voiceOne`/`\voiceTwo`, `\new Lyrics \lyricsto "voice"`, `\language`, `\fixed`,
+`\transpose`, `q`, `\partial`, cadenzas, grace notes, every clef, fingerings, `\markup`, `\mark`,
+`\ottava`, ornaments, arpeggios, glissandi, tremolos, `\repeat unfold` and `percent`, and three staves
+of other kinds — `\new ChordNames` (or `\chords`), `\new DrumStaff` (or `\drums`) and `\new TabStaff`
+— each drawn as LilyPond draws it, by the client, by `score()` and by `<eui-score>`. The view writes
+the same node: a session of 9 or 10 is sent the picture of a source that uses any of this, engraved
+here, as an older one is, and a source of the old subset still goes as itself.
 
 ## Dev bar
 

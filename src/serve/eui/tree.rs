@@ -1319,8 +1319,13 @@ impl Encoder {
     /// every client draws it. The width is the node's own, when its style
     /// gives one in pixels, and 600 otherwise: an older client cannot say
     /// how wide it laid the node out, and a server has nothing else to go on.
+    ///
+    /// A source that uses what protocol 11 adds — variables, `\new Voice`,
+    /// chord names, drums, a tablature… — goes the same way to a session of
+    /// 9 or 10, whose engraver would refuse it: `eui_score::protocol` says
+    /// which client a source needs, and an older one is sent the picture.
     fn score_for_protocol(&mut self, node: TNode) -> Result<TNode, String> {
-        if node.kind != NodeKind::Score || self.protocol() >= 9 {
+        if node.kind != NodeKind::Score || self.protocol() >= 11 {
             return Ok(node);
         }
         let prop = |enc: &mut Self, name: &str| -> Option<WireValue> {
@@ -1341,6 +1346,11 @@ impl Encoder {
                 .collect::<Result<String, _>>()?,
             _ => String::new(),
         };
+        // A source the engraver refuses goes as itself, for the client to
+        // refuse and say why in `score_info`.
+        if self.protocol() >= 9 && self.protocol() >= eui_score::protocol(&src).unwrap_or(9) {
+            return Ok(node);
+        }
         let number = |v: Option<WireValue>| match v {
             Some(WireValue::Int(n)) => Some(n as f64),
             Some(WireValue::Float(f)) => Some(f),
@@ -3355,6 +3365,47 @@ mod tests {
         assert!(
             !handlers(8).contains(&EventKind::ScoreEdit),
             "nor is an older one, drawn as canvases"
+        );
+    }
+
+    #[test]
+    fn a_score_using_protocol_11_is_sent_as_paths_before_11() {
+        // EUI 03 §1.4 and 09 §13: a source written as LilyPond's users write
+        // it — a variable, chord names — needs a client of 11; a session of
+        // 10 is sent the canvases its engraver could not have drawn, and a
+        // source of the old subset still goes as itself to 9.
+        let src = "harmony = \\chordmode { c1 g:7 }\n<< \\new ChordNames \\harmony \\new Staff { c'1 b1 } >>";
+        let view = json!({"k": "score", "s": {"width": 480}, "p": {"src": src}});
+        let kinds = |protocol: u32, view: &serde_json::Value| -> Vec<NodeKind> {
+            let mut enc = Encoder::default();
+            enc.set_protocol(protocol);
+            enc.render(view, false)
+                .unwrap()
+                .into_iter()
+                .flat_map(|b| b.ops)
+                .find_map(|op| match op {
+                    Op::Mount(t) => Some(t.nodes.iter().map(|n| n.kind).collect()),
+                    _ => None,
+                })
+                .expect("a mount")
+        };
+        assert_eq!(kinds(11, &view), vec![NodeKind::Score], "11 engraves it");
+        for older in [9, 10] {
+            let drawn = kinds(older, &view);
+            assert!(
+                !drawn.contains(&NodeKind::Score),
+                "protocol {older}: {drawn:?}"
+            );
+            assert!(
+                drawn.contains(&NodeKind::Canvas),
+                "protocol {older}: the picture, as canvases"
+            );
+        }
+        let plain = json!({"k": "score", "s": {"width": 480}, "p": {"src": "{ c'4 d' e' f' }"}});
+        assert_eq!(
+            kinds(9, &plain),
+            vec![NodeKind::Score],
+            "the old subset is still the client's to engrave"
         );
     }
 

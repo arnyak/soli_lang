@@ -20,7 +20,16 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.1.</p>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.2.</p>
+    </section>
+
+    <section id="v2-28-2" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.2 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-18</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">EUI protocol 11: a score reads LilyPond as people write it.</p>
+        <h3 id="v2-28-2-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">A score reads LilyPond as people write it.</strong> From EUI protocol 11 a <code class="text-cyan-400">score</code>&rsquo;s source can use variables, <code class="text-cyan-400">\new Voice</code>, <code class="text-cyan-400">\lyricsto</code>, <code class="text-cyan-400">\partial</code>, grace notes, every clef, <code class="text-cyan-400">\transpose</code>, <code class="text-cyan-400">\language</code>, fingerings, <code class="text-cyan-400">\markup</code>, <code class="text-cyan-400">\ottava</code>, ornaments and tremolos, and chord names, drums and a guitar tablature as staves of their own &mdash; each drawn as LilyPond draws it, by the client and by <code class="text-cyan-400">score()</code>. An older session is sent the picture instead, so the view does not branch. eui 0.11.0.</li>
+        </ul>
     </section>
 
     <section id="v2-28-1" class="mb-16 scroll-mt-24">

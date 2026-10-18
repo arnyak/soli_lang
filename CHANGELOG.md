@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [2.28.2] - 2026-10-18
+
+### EUI
+
+- Protocol 11 (eui 0.11.0): a `score`'s source can be LilyPond as people
+  write it — variables, `\new Voice`, `\lyricsto`, `\partial`, grace notes,
+  every clef, `\fixed`, `\transpose`, `\language`, fingerings, `\markup`,
+  `\mark`, `\ottava`, ornaments, tremolos, `\repeat unfold` and `percent`,
+  and `\new ChordNames`, `\new DrumStaff` and `\new TabStaff` — drawn by
+  the client, by `score()` and the native engraver alike. A session of 9 or
+  10 is sent the paths of a source that needs 11 (`eui_score::protocol`),
+  as one below 9 always was; `a_score_using_protocol_11_is_sent_as_paths_before_11`.
+  Under `\relative` a second voice is read from the first's last pitch, and
+  a bar line written in one staff is drawn across the system, as LilyPond
+  does. The eui pin moves to f137388 (eui 0.11.0).
+
 ## [2.28.1] - 2026-10-17
 
 ### EUI
