@@ -93,7 +93,13 @@ grep -nE 'git *=|path *= *"(pdf|codegraph|vendor)' Cargo.toml && {
 }
 
 if $publish; then
-    (cd yaml && cargo publish --allow-dirty)
+    yaml_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' yaml/Cargo.toml)"
+    if curl -sf -A "solilang-publish" \
+        "https://crates.io/api/v1/crates/soli-yaml/$yaml_version" > /dev/null; then
+        echo "soli-yaml $yaml_version is already on crates.io"
+    else
+        (cd yaml && cargo publish --allow-dirty)
+    fi
     cargo publish --allow-dirty
 else
     (cd yaml && cargo publish --dry-run --allow-dirty)
