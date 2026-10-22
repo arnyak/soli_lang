@@ -1,5 +1,5 @@
 //! Folding ranges provider for LSP.
-use tower_lsp::lsp_types::{FoldingRange, FoldingRangeKind};
+use tower_lsp_server::ls_types::{FoldingRange, FoldingRangeKind};
 
 pub fn get_folding_ranges(source: &str) -> Vec<FoldingRange> {
     let mut ranges = Vec::new();

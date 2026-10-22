@@ -1,7 +1,7 @@
 //! Go-to definition provider for LSP.
 use super::util::{extract_word_at_offset, identifier_occurrences, position_to_offset, range_of};
 use crate::lsp::symbols::{ScopedSymbol, SymbolTable};
-use tower_lsp::lsp_types::{GotoDefinitionResponse, Location, Position, Url};
+use tower_lsp_server::ls_types::{GotoDefinitionResponse, Location, Position, Uri};
 
 /// Where the identifier under the cursor is declared in this document (`uri`).
 ///
@@ -12,7 +12,7 @@ pub fn goto_definition(
     source: &str,
     position: Position,
     table: &SymbolTable,
-    uri: &Url,
+    uri: &Uri,
 ) -> Option<GotoDefinitionResponse> {
     let offset = position_to_offset(source, position)?;
     let word = extract_word_at_offset(source, offset)?;
@@ -56,8 +56,8 @@ mod tests {
     use super::*;
     use crate::lsp::symbols::build_symbol_table;
 
-    fn target(source: &str, line: u32, character: u32) -> Option<(Url, Position)> {
-        let uri = Url::parse("file:///app/greet.sl").unwrap();
+    fn target(source: &str, line: u32, character: u32) -> Option<(Uri, Position)> {
+        let uri = "file:///app/greet.sl".parse().unwrap();
         let table = build_symbol_table(source)?;
         match goto_definition(source, Position::new(line, character), &table, &uri)? {
             GotoDefinitionResponse::Scalar(location) => Some((location.uri, location.range.start)),

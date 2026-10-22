@@ -1,7 +1,9 @@
 //! Document symbols provider for LSP.
 use super::util::lsp_range_from_span;
 use crate::lsp::symbols::SymbolTable;
-use tower_lsp::lsp_types::{DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind};
+use tower_lsp_server::ls_types::{
+    DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind,
+};
 
 #[allow(deprecated)]
 pub fn get_document_symbols(source: &str) -> DocumentSymbolResponse {

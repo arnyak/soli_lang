@@ -2,7 +2,7 @@
 
 use crate::lexer::TokenKind;
 use crate::span::Span;
-use tower_lsp::lsp_types::{Position, Range};
+use tower_lsp_server::ls_types::{Position, Range};
 
 /// The identifier around byte `offset` — the unit of `Span::start` and of
 /// `position_to_offset`. It used to index a `Vec<char>` with that byte offset,

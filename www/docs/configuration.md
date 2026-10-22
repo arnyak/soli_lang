@@ -279,7 +279,7 @@ The levers, cheapest first:
 | `pdf` | on | `Pdf` — rendering, Factur-X, PAdES signatures (`soli-pdf`, CMS, X.509) |
 | `cloud` | on | `S3` and the `s3` attachment service (a built-in Signature V4 client; no extra crate) |
 | `mail` | on | `Mailer`, `Imap`, `Pop3` |
-| `lsp` | on | `soli lsp`, the language server (`tower-lsp`) |
+| `lsp` | on | `soli lsp`, the language server (`tower-lsp-server`) |
 | `eui` | on | EUI components — `router_eui`, `eui_capabilities`, `eui_stats` and the `/_eui` session endpoint (`eui-proto`, `blake3`, `ring`) |
 | `sql` | off | Alias for `postgres` + `mysql` + `sqlite` |
 | `solidb-driver` | on | Native SoliDB TCP driver (MessagePack over TCP, one connection per worker). Compiled in and used by default; `SOLI_DB_DRIVER=0` keeps a server on HTTP |

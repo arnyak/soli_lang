@@ -1,7 +1,9 @@
 //! Completions provider for LSP.
 use super::util::position_to_offset;
 use crate::lsp::symbols::SymbolTable;
-use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, CompletionResponse, Position};
+use tower_lsp_server::ls_types::{
+    CompletionItem, CompletionItemKind, CompletionResponse, Position,
+};
 
 const KEYWORDS: &[&str] = &[
     "let",
@@ -132,7 +134,7 @@ pub fn get_completions(
             };
 
             if let Some(type_name) = &scoped.symbol.type_name {
-                item.documentation = Some(tower_lsp::lsp_types::Documentation::String(
+                item.documentation = Some(tower_lsp_server::ls_types::Documentation::String(
                     type_name.clone(),
                 ));
             }

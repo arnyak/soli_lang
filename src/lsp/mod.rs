@@ -12,51 +12,61 @@ pub mod symbols;
 pub mod symbols_lsp;
 mod util;
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use tower_lsp::lsp_types;
-use tower_lsp::lsp_types::{InitializeParams, ServerCapabilities, TextEdit, Url};
-use tower_lsp::{LanguageServer, LspService};
+use tower_lsp_server::ls_types as lsp_types;
+use tower_lsp_server::ls_types::{InitializeParams, ServerCapabilities, TextEdit, Uri};
+use tower_lsp_server::{LanguageServer, LspService};
 
 use crate::lsp::symbols::SymbolTable;
 
 #[derive(Debug)]
 pub struct Backend {
-    client: tower_lsp::Client,
-    documents: Arc<Mutex<HashMap<Url, String>>>,
-    symbol_tables: Arc<Mutex<HashMap<Url, SymbolTable>>>,
+    client: tower_lsp_server::Client,
+    documents: Arc<Mutex<HashMap<Uri, String>>>,
+    symbol_tables: Arc<Mutex<HashMap<Uri, SymbolTable>>>,
 }
 
 impl Backend {
-    fn get_document(&self, uri: &Url) -> Option<String> {
+    fn new(client: tower_lsp_server::Client) -> Self {
+        Self {
+            client,
+            documents: Arc::new(Mutex::new(HashMap::new())),
+            symbol_tables: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn get_document(&self, uri: &Uri) -> Option<String> {
         self.documents.lock().unwrap().get(uri).cloned()
     }
 
-    fn update_document(&self, uri: Url, text: String) {
+    fn update_document(&self, uri: Uri, text: String) {
         self.documents.lock().unwrap().insert(uri, text);
     }
 
-    fn remove_document(&self, uri: &Url) {
+    fn remove_document(&self, uri: &Uri) {
         self.documents.lock().unwrap().remove(uri);
         self.symbol_tables.lock().unwrap().remove(uri);
     }
 
-    fn get_symbol_table(&self, uri: &Url) -> Option<SymbolTable> {
+    fn get_symbol_table(&self, uri: &Uri) -> Option<SymbolTable> {
         self.symbol_tables.lock().unwrap().get(uri).cloned()
     }
 
-    fn update_symbol_table(&self, uri: Url, table: SymbolTable) {
+    fn update_symbol_table(&self, uri: Uri, table: SymbolTable) {
         self.symbol_tables.lock().unwrap().insert(uri, table);
     }
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(
         &self,
         params: InitializeParams,
-    ) -> Result<lsp_types::InitializeResult, tower_lsp::jsonrpc::Error> {
+    ) -> Result<lsp_types::InitializeResult, tower_lsp_server::jsonrpc::Error> {
         log::info!("LSP server initializing...");
         let _ = params;
 
@@ -90,7 +100,7 @@ impl LanguageServer for Backend {
             .await;
     }
 
-    async fn shutdown(&self) -> Result<(), tower_lsp::jsonrpc::Error> {
+    async fn shutdown(&self) -> Result<(), tower_lsp_server::jsonrpc::Error> {
         Ok(())
     }
 
@@ -98,7 +108,7 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
 
-        log::info!("Document opened: {}", uri);
+        log::info!("Document opened: {}", uri.as_str());
         self.update_document(uri.clone(), text.clone());
 
         if let Some(table) = symbols::build_symbol_table(&text) {
@@ -130,14 +140,14 @@ impl LanguageServer for Backend {
 
     async fn did_close(&self, params: lsp_types::DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
-        log::info!("Document closed: {}", uri);
+        log::info!("Document closed: {}", uri.as_str());
         self.remove_document(&uri);
     }
 
     async fn hover(
         &self,
         params: lsp_types::HoverParams,
-    ) -> Result<Option<lsp_types::Hover>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<lsp_types::Hover>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
@@ -150,7 +160,7 @@ impl LanguageServer for Backend {
     async fn completion(
         &self,
         params: lsp_types::CompletionParams,
-    ) -> Result<Option<lsp_types::CompletionResponse>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<lsp_types::CompletionResponse>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
@@ -164,7 +174,7 @@ impl LanguageServer for Backend {
     async fn goto_definition(
         &self,
         params: lsp_types::GotoDefinitionParams,
-    ) -> Result<Option<lsp_types::GotoDefinitionResponse>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<lsp_types::GotoDefinitionResponse>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
@@ -179,7 +189,7 @@ impl LanguageServer for Backend {
     async fn references(
         &self,
         params: lsp_types::ReferenceParams,
-    ) -> Result<Option<Vec<lsp_types::Location>>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<Vec<lsp_types::Location>>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
@@ -192,7 +202,7 @@ impl LanguageServer for Backend {
     async fn rename(
         &self,
         params: lsp_types::RenameParams,
-    ) -> Result<Option<lsp_types::WorkspaceEdit>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<lsp_types::WorkspaceEdit>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
         let new_name = params.new_name;
@@ -206,7 +216,7 @@ impl LanguageServer for Backend {
     async fn document_symbol(
         &self,
         params: lsp_types::DocumentSymbolParams,
-    ) -> Result<Option<lsp_types::DocumentSymbolResponse>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<lsp_types::DocumentSymbolResponse>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document.uri;
 
         if let Some(text) = self.get_document(&uri) {
@@ -218,7 +228,7 @@ impl LanguageServer for Backend {
     async fn formatting(
         &self,
         params: lsp_types::DocumentFormattingParams,
-    ) -> Result<Option<Vec<TextEdit>>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<Vec<TextEdit>>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document.uri;
 
         if let Some(text) = self.get_document(&uri) {
@@ -230,7 +240,7 @@ impl LanguageServer for Backend {
     async fn code_action(
         &self,
         params: lsp_types::CodeActionParams,
-    ) -> Result<Option<Vec<lsp_types::CodeActionOrCommand>>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<Vec<lsp_types::CodeActionOrCommand>>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document.uri;
         let range = params.range;
 
@@ -248,7 +258,7 @@ impl LanguageServer for Backend {
     async fn folding_range(
         &self,
         params: lsp_types::FoldingRangeParams,
-    ) -> Result<Option<Vec<lsp_types::FoldingRange>>, tower_lsp::jsonrpc::Error> {
+    ) -> Result<Option<Vec<lsp_types::FoldingRange>>, tower_lsp_server::jsonrpc::Error> {
         let uri = params.text_document.uri;
         let _ = uri;
 
@@ -260,8 +270,8 @@ impl LanguageServer for Backend {
 }
 
 impl Backend {
-    async fn publish_diagnostics(&self, uri: Url) -> Result<(), tower_lsp::jsonrpc::Error> {
-        use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
+    async fn publish_diagnostics(&self, uri: Uri) -> Result<(), tower_lsp_server::jsonrpc::Error> {
+        use tower_lsp_server::ls_types::{Diagnostic, DiagnosticSeverity};
 
         if let Some(text) = self.get_document(&uri) {
             // A file that does not lex or parse has no lint results; the error
@@ -283,12 +293,10 @@ impl Backend {
                             (d.span.column_usize() + d.message.len()) as u32,
                         );
                         Diagnostic {
-                            range: tower_lsp::lsp_types::Range::new(start, end),
+                            range: lsp_types::Range::new(start, end),
                             severity: Some(DiagnosticSeverity::WARNING),
                             message: d.message,
-                            code: Some(tower_lsp::lsp_types::NumberOrString::String(
-                                d.rule.to_string(),
-                            )),
+                            code: Some(lsp_types::NumberOrString::String(d.rule.to_string())),
                             source: Some("soli".to_string()),
                             ..Default::default()
                         }
@@ -330,7 +338,7 @@ fn syntax_error_diagnostic(error: &crate::error::SolilangError) -> lsp_types::Di
 
 /// Run the Soli LSP server on stdio. Blocks the current thread.
 ///
-/// `tower-lsp` is async, so we spin up a single-threaded tokio runtime here
+/// `tower-lsp-server` is async, so we spin up a single-threaded tokio runtime here
 /// rather than requiring the binary's `main` to be async — keeps the rest of
 /// the CLI synchronous.
 pub fn start_lsp() {
@@ -343,13 +351,9 @@ pub fn start_lsp() {
         let stdin = tokio::io::stdin();
         let stdout = tokio::io::stdout();
 
-        let (service, socket) = LspService::new(|client| Backend {
-            client,
-            documents: Arc::new(Mutex::new(HashMap::new())),
-            symbol_tables: Arc::new(Mutex::new(HashMap::new())),
-        });
+        let (service, socket) = LspService::new(Backend::new);
 
-        tower_lsp::Server::new(stdin, stdout, socket)
+        tower_lsp_server::Server::new(stdin, stdout, socket)
             .serve(service)
             .await;
     });

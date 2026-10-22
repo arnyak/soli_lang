@@ -121,7 +121,7 @@ pdf = ["dep:soli-pdf", "dep:cms"]
 cloud = []
 # `soli lsp` — the language server an editor talks to. A packaged
 # application never starts one.
-lsp = ["dep:tower-lsp"]
+lsp = ["dep:tower-lsp-server"]
 # `Mailer`, `Imap` and `Pop3` — composing, sending and reading mail.
 # Without it the mailer prelude is empty and the three classes are absent.
 mail = ["dep:mail-builder", "dep:mail-parser"]
@@ -355,8 +355,8 @@ zip = { version = "9.0", default-features = false, features = ["deflate"], optio
 # to compile cookie. Drop the ceiling once cookie ships a release built on time 0.3.52.
 time = ">=0.3.47, <0.3.52"
 
-# Language Server Protocol (used by `soli lsp`)
-tower-lsp = { version = "0.20", optional = true }
+# Language Server Protocol (used by `soli lsp`), with native async trait methods.
+tower-lsp-server = { version = "0.23", optional = true }
 log = "0.4"
 # POP3 email reading: sync rustls over std TcpStream + MIME parsing.
 # `ring` provider matches the rest of the build (reqwest/jsonwebtoken use ring, not aws-lc-rs).

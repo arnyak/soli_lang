@@ -1,10 +1,10 @@
 //! Find references provider for LSP.
 use super::util::{extract_word_at_offset, identifier_occurrences, position_to_offset, range_of};
-use tower_lsp::lsp_types::{Location, Position, Url};
+use tower_lsp_server::ls_types::{Location, Position, Uri};
 
 /// Every use of the identifier under the cursor in this document — declaration
 /// and call sites alike, `#{…}` interpolations included, at `uri`.
-pub fn find_references(source: &str, position: Position, uri: &Url) -> Option<Vec<Location>> {
+pub fn find_references(source: &str, position: Position, uri: &Uri) -> Option<Vec<Location>> {
     let offset = position_to_offset(source, position)?;
     let word = extract_word_at_offset(source, offset)?;
     let references: Vec<Location> = identifier_occurrences(source, &word)
@@ -23,7 +23,7 @@ mod tests {
 
     #[test]
     fn a_call_site_and_the_declaration_are_both_references_in_this_document() {
-        let uri = Url::parse("file:///app/greet.sl").unwrap();
+        let uri = "file:///app/greet.sl".parse().unwrap();
         let source = "def greet(name)\n  name\nend\n\nprint(greet(\"x\"))\n";
         let found = find_references(source, Position::new(4, 7), &uri).unwrap();
         assert_eq!(found.len(), 2);

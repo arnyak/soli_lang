@@ -1,9 +1,9 @@
 //! Code actions for LSP: quick fixes for the lint findings on the requested lines.
 use super::util::{identifier_occurrences, range_of};
 use std::collections::HashMap;
-use tower_lsp::lsp_types::{
+use tower_lsp_server::ls_types::{
     CodeAction, CodeActionKind, Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range,
-    TextEdit, Url, WorkspaceEdit,
+    TextEdit, Uri, WorkspaceEdit,
 };
 
 /// For each lint finding on the lines of `range`: a rename for a naming rule
@@ -13,7 +13,7 @@ use tower_lsp::lsp_types::{
 /// They used to be no-ops: the ignore action carried no edit at all, and the
 /// renames matched rule names the linter never emits (`snake_case_function`
 /// for `naming/snake-case`), so they never appeared.
-pub fn get_code_actions(source: &str, range: Range, uri: &Url) -> Vec<CodeAction> {
+pub fn get_code_actions(source: &str, range: Range, uri: &Uri) -> Vec<CodeAction> {
     let Ok(findings) = crate::lint(source) else {
         return Vec::new();
     };
@@ -46,7 +46,7 @@ fn naming_fix(
     source: &str,
     rule: &str,
     message: &str,
-    uri: &Url,
+    uri: &Uri,
     diagnostic: &Diagnostic,
 ) -> Option<CodeAction> {
     let name = message.split('\'').nth(1)?;
@@ -86,7 +86,7 @@ fn ignore_fix(
     source: &str,
     line: u32,
     rule: &str,
-    uri: &Url,
+    uri: &Uri,
     diagnostic: &Diagnostic,
 ) -> CodeAction {
     let line_text = source.lines().nth(line as usize).unwrap_or("");
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn a_camel_case_function_gets_a_rename_of_every_occurrence_and_an_ignore() {
-        let uri = Url::parse("file:///app/x.sl").unwrap();
+        let uri: Uri = "file:///app/x.sl".parse().unwrap();
         let source = "def myFunction(x)\n  x\nend\n\nprint(myFunction(1))\n";
         let actions = get_code_actions(source, whole(source), &uri);
         let rename = actions

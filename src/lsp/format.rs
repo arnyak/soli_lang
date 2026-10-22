@@ -1,5 +1,5 @@
 //! Document formatting provider for LSP.
-use tower_lsp::lsp_types::{Position, Range, TextEdit};
+use tower_lsp_server::ls_types::{Position, Range, TextEdit};
 
 /// Format the whole document with `soli fmt`'s formatter, as one edit.
 ///

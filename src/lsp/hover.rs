@@ -1,6 +1,6 @@
 //! Hover provider for LSP.
 use super::util::{extract_word_at_offset, position_to_offset};
-use tower_lsp::lsp_types::{Hover, HoverContents, MarkedString, Position};
+use tower_lsp_server::ls_types::{Hover, HoverContents, MarkedString, Position};
 
 /// What the identifier under the cursor is: its declaration's kind or type when
 /// the file declares it (at the `def` or at any use), and the builtin's doc for
