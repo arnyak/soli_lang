@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.28.4] - 2026-10-23
+
 ### EUI
 
 - The score engraver (`eui_score_layout`, `eui_score_bands`, `eui_score_pdf`,
