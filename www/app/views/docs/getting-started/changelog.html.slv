@@ -35,7 +35,7 @@
         <h3 id="v2-28-3-dev-tools" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Dev tools</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white"><code class="text-cyan-400">cargo install solilang</code> is current again.</strong> crates.io had been stuck at 0.53; releases are published there again. That build leaves out what depends on crates not on crates.io &mdash; EUI, ES, the native SoliDB driver, PDF, code graph and <code class="text-cyan-400">Spreadsheet</code> &mdash; so the release binaries and the Docker image stay the complete install.</li>
-            <li><strong class="text-white">The language server runs on <code class="text-cyan-400">tower-lsp-server</code>,</strong> the maintained fork of <code class="text-cyan-400">tower-lsp</code>; <code class="text-cyan-400">soli lsp</code> behaves as before.</li>
+            <li><strong class="text-white">The language server runs on <code class="text-cyan-400">tower-lsp-server</code>,</strong> the maintained fork of <code class="text-cyan-400">tower-lsp</code>, with native async methods instead of the <code class="text-cyan-400">async-trait</code> macro. <code class="text-cyan-400">soli lsp</code> behaves as before, and a new test now drives the real server end to end &mdash; open, go to definition, rename, edit, close. Contributed by <a href="https://github.com/seuros" class="text-cyan-400 hover:underline">@seuros</a> in <a href="https://github.com/solisoft/soli_lang/pull/69" class="text-cyan-400 hover:underline">#69</a>.</li>
         </ul>
     </section>
 

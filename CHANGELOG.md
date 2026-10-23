@@ -36,7 +36,11 @@
   not on crates.io. The Linux client template's `Cargo.toml` is renamed
   `Cargo.toml.tmpl` so the published crate carries it.
 - `soli lsp` moves from `tower-lsp` 0.20 to `tower-lsp-server` 0.23 with
-  native async trait methods (#69).
+  native async trait methods, dropping `async-trait`; document URIs are
+  `Uri` (fluent-uri) instead of `Url`. A new end-to-end test drives the real
+  server over an in-memory pipe through initialize, open, definition, rename,
+  change, close and shutdown. `fuzz/Cargo.lock` is regenerated, dropping
+  crates the fuzz target no longer pulls in. (#69, by @seuros)
 
 ## [2.28.2] - 2026-10-18
 
