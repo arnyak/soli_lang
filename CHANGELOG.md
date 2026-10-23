@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.28.3] - 2026-10-23
+
 ### Security
 
 - The framework's own pages are never indexed: every response under
@@ -12,11 +14,10 @@
   say it. An existing `X-Robots-Tag` is kept. The application cannot set it
   itself: these paths answer before it (`accept::stamp_noindex`).
   (#68, by @arnyak)
-
-## [2.28.3] - 2026-10-23
-
-### Security
-
+- Dependencies: rustls-webpki 0.103.16 (RUSTSEC-2026-0382, distrusted
+  intermediates could be accepted), webpki-roots 1.0.11 (RUSTSEC-2026-0381,
+  distrusted emSign intermediates), ctutils 0.4.5 (RUSTSEC-2026-0385,
+  non-constant-time comparisons), and clipboard-win 5.4.3 (5.4.1 was yanked).
 - A request that ended early no longer hands its leftovers to the next
   request on the same worker. `render_json` / `render_text` / `render_jsonp`
   followed by a raise sent that JSON body to the next visitor; a view rendered
