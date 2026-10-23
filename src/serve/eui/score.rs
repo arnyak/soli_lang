@@ -74,13 +74,14 @@ fn layout_of(v: &Value) -> Layout {
         left: n("left"),
         indent: n("indent"),
         gap: n("gap"),
+        even_pages: matches!(get(v, "even_pages"), Some(Value::Bool(true))),
     }
 }
 
 fn key_of(src: &str, width: f64, l: &Layout) -> String {
     format!(
-        "{width}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{src}",
-        l.page_h, l.top, l.bottom, l.left, l.indent, l.gap
+        "{width}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{}|{src}",
+        l.page_h, l.top, l.bottom, l.left, l.indent, l.gap, l.even_pages
     )
 }
 

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### EUI
+
+- The score engraver (`eui_score_layout`, `eui_score_bands`, `eui_score_pdf`,
+  `eui_score_midi`) moves to eui 68b68c1, the revision the browser's
+  `eui-score` wasm already runs, so a page engraved on the server and the same
+  score in the browser agree: 64th and 128th notes, a tuplet inside a tuplet,
+  up to four voices on a staff, several `\addlyrics` verses and any metre are
+  drawn instead of refused; a note longer than what is left of its bar is cut
+  into tied notes; the sustain pedal and `\jump` / `\fine` are drawn. The
+  layout hash takes `even_pages: true` to spread the systems evenly over the
+  pages (LilyPond's `ly:optimal-breaking`) instead of filling each in turn.
+
 ## [2.28.3] - 2026-10-23
 
 ### Security
