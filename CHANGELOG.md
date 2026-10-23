@@ -4,6 +4,11 @@
 
 ## [2.28.4] - 2026-10-23
 
+### Security
+
+- Dependencies: tokio 1.54.1 (RUSTSEC-2026-0386, `AsyncFd::new` and related
+  constructors could violate I/O safety).
+
 ### EUI
 
 - The score engraver (`eui_score_layout`, `eui_score_bands`, `eui_score_pdf`,
