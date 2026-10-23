@@ -20,12 +20,22 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.2.</p>
-        <h3 id="unreleased-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.3.</p>
+    </section>
+
+    <section id="v2-28-3" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.3 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-23</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Security release: a request that ends early no longer leaks into the next one on its worker, and SVG images in a PDF go through the image-source policy. Upgrade from any earlier version.</p>
+        <h3 id="v2-28-3-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">A request that ends early leaves nothing to the next one.</strong> Worker threads serve request after request, and a few values set while a handler ran were only consumed when it finished normally. An action that called <code class="text-cyan-400">render_json</code> and then raised had that JSON sent to the <em>next</em> visitor on the worker; a view rendered from middleware saw the previous request&rsquo;s cookies, headers and path; <code class="text-cyan-400">current_action()</code> in middleware returned the previous action, so <code class="text-cyan-400">authorize(record)</code> could check the wrong policy; and a transaction or <code class="text-cyan-400">grouped</code> block interrupted by a crash stayed open for the next request. Every request and socket event now starts by clearing them.</li>
             <li><strong class="text-white">SVG images in a PDF go through the image-source policy.</strong> An <code class="text-cyan-400">&lt;image href="/path"&gt;</code> inside an SVG was read straight from disk, so <code class="text-cyan-400">pdf_from_markdown</code> of user content could embed any image or attachment on the server. Paths in an SVG are now checked like any other image source, and local image reads are size-capped and limited to regular files.</li>
             <li><strong class="text-white">Tighter request parsing.</strong> An over-deep bracket key (<code class="text-cyan-400">a[][][]&hellip;</code>) is refused before it is built, and plain multipart fields share the <code class="text-cyan-400">SOLI_MAX_PARAM_PAIRS</code> cap (4096) with query strings. Images resized on upload and images in PDFs decode within the same size limits as <code class="text-cyan-400">Image</code>.</li>
+        </ul>
+        <h3 id="v2-28-3-dev-tools" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Dev tools</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white"><code class="text-cyan-400">cargo install solilang</code> is current again.</strong> crates.io had been stuck at 0.53; releases are published there again. That build leaves out what depends on crates not on crates.io &mdash; EUI, ES, the native SoliDB driver, PDF, code graph and <code class="text-cyan-400">Spreadsheet</code> &mdash; so the release binaries and the Docker image stay the complete install.</li>
+            <li><strong class="text-white">The language server runs on <code class="text-cyan-400">tower-lsp-server</code>,</strong> the maintained fork of <code class="text-cyan-400">tower-lsp</code>; <code class="text-cyan-400">soli lsp</code> behaves as before.</li>
         </ul>
     </section>
 

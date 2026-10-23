@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.28.3] - 2026-10-23
+
 ### Security
 
 - A request that ended early no longer hands its leftovers to the next
@@ -26,6 +28,15 @@
 - Upload transforms (`resize` / `convert` on attach) and PDF images decode
   within the `Image` limits (16384 px a side, 256 MiB) rather than any
   dimensions and 512 MiB.
+
+### Tooling
+
+- `scripts/publish-crate.sh` publishes `solilang` (and `soli-yaml`) to
+  crates.io from a staged manifest that drops the features whose crates are
+  not on crates.io. The Linux client template's `Cargo.toml` is renamed
+  `Cargo.toml.tmpl` so the published crate carries it.
+- `soli lsp` moves from `tower-lsp` 0.20 to `tower-lsp-server` 0.23 with
+  native async trait methods (#69).
 
 ## [2.28.2] - 2026-10-18
 
