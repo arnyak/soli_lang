@@ -21,6 +21,12 @@
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
         <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.2.</p>
+        <h3 id="unreleased-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">A request that ends early leaves nothing to the next one.</strong> Worker threads serve request after request, and a few values set while a handler ran were only consumed when it finished normally. An action that called <code class="text-cyan-400">render_json</code> and then raised had that JSON sent to the <em>next</em> visitor on the worker; a view rendered from middleware saw the previous request&rsquo;s cookies, headers and path; <code class="text-cyan-400">current_action()</code> in middleware returned the previous action, so <code class="text-cyan-400">authorize(record)</code> could check the wrong policy; and a transaction or <code class="text-cyan-400">grouped</code> block interrupted by a crash stayed open for the next request. Every request and socket event now starts by clearing them.</li>
+            <li><strong class="text-white">SVG images in a PDF go through the image-source policy.</strong> An <code class="text-cyan-400">&lt;image href="/path"&gt;</code> inside an SVG was read straight from disk, so <code class="text-cyan-400">pdf_from_markdown</code> of user content could embed any image or attachment on the server. Paths in an SVG are now checked like any other image source, and local image reads are size-capped and limited to regular files.</li>
+            <li><strong class="text-white">Tighter request parsing.</strong> An over-deep bracket key (<code class="text-cyan-400">a[][][]&hellip;</code>) is refused before it is built, and plain multipart fields share the <code class="text-cyan-400">SOLI_MAX_PARAM_PAIRS</code> cap (4096) with query strings. Images resized on upload and images in PDFs decode within the same size limits as <code class="text-cyan-400">Image</code>.</li>
+        </ul>
     </section>
 
     <section id="v2-28-2" class="mb-16 scroll-mt-24">

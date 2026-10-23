@@ -65,6 +65,43 @@ pub(super) fn reset_worker_thread_locals(dev_mode: bool) {
     if crate::interpreter::builtins::test_server::is_test_runner_process() {
         crate::interpreter::builtins::test_server::clear_captured_render();
     }
+
+    forget_unfinished_request();
+}
+
+/// Drop what a request that ended early — raised, halted, panicked — left
+/// in flight on this worker.
+///
+/// Each of these is set while a handler runs and only consumed on the path
+/// where it finishes normally, so an early end handed it to the next visitor:
+///
+/// - the `render_json` / `render_text` response: a handler that rendered JSON
+///   and then raised had its body, status and headers sent to the next request;
+/// - the request and headers views read: a view rendered from the next
+///   request's middleware saw the previous visitor's cookies and path, and
+///   `redirect(:back)` sent them to the previous visitor's referer;
+/// - the action name: `authorize(record)` in middleware checked the policy of
+///   the previous request's action;
+/// - a transaction or `grouped` batch a panic interrupted: the next request
+///   wrote into the dead request's uncommitted transaction, or deferred its
+///   reads into its batch.
+///
+/// Also run by a socket event, which shares the worker threads.
+pub(super) fn forget_unfinished_request() {
+    use crate::interpreter::builtins::{model, server, set_current_action, template};
+
+    server::take_fast_path_response();
+    template::clear_current_request();
+    template::clear_current_headers();
+    set_current_action("");
+
+    if model::crud::has_active_tx() {
+        // Rolled back rather than dropped, so a SQL connection goes back to its
+        // pool clean; cleared either way, as a failed rollback leaves it set.
+        let _ = model::crud::rollback_transaction();
+        model::crud::clear_current_tx();
+    }
+    model::batch::discard_stale();
 }
 
 /// What a request begins by forgetting.
@@ -187,5 +224,45 @@ pub(super) fn install(data: &RequestData) -> Scope {
         cookie_pairs,
         cookie_session_id,
         session_id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interpreter::builtins::model::batch;
+    use crate::interpreter::builtins::{current_action_name, server, set_current_action, template};
+    use crate::interpreter::value::Value;
+
+    /// What a request that rendered JSON and then raised left behind used to
+    /// be served to the next visitor on the worker.
+    #[test]
+    fn a_request_that_ended_early_leaves_nothing_for_the_next() {
+        server::set_fast_path_response(server::FastPathResponse {
+            status: 200,
+            headers: Vec::new(),
+            body: r#"{"secret":"alice"}"#.to_string(),
+        });
+        template::set_current_request(Value::String("alice's request".into()));
+        let mut headers = HashPairs::default();
+        headers.insert(
+            crate::interpreter::value::HashKey::String("cookie".into()),
+            Value::String("sid=ALICE".into()),
+        );
+        template::set_current_headers(Value::Hash(std::rc::Rc::new(std::cell::RefCell::new(
+            headers,
+        ))));
+        set_current_action("destroy");
+        assert!(batch::begin());
+        batch::enter_block();
+
+        forget_unfinished_request();
+
+        assert!(server::take_fast_path_response().is_none());
+        assert!(template::get_current_request().is_none());
+        assert!(template::current_header("cookie").is_none());
+        assert_eq!(current_action_name(), "");
+        assert!(!batch::is_active());
+        assert!(!batch::in_block());
     }
 }

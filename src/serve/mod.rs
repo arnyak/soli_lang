@@ -2890,6 +2890,8 @@ fn handle_websocket_event(
     // worker's query/HTTP/span logs only ever filled (see the LiveView/EUI
     // event path below for the measured cost).
     request_scope::forget_request_logs(crate::interpreter::builtins::template::is_dev_mode());
+    // Nor does it inherit what a request that ended early left in flight.
+    request_scope::forget_unfinished_request();
     // Nor does it start under the tenant of whatever this worker ran before;
     // a handler that serves one site's data chooses it (`switch_tenant`).
     crate::db::tenancy::clear();

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Security
+
+- A request that ended early no longer hands its leftovers to the next
+  request on the same worker. `render_json` / `render_text` / `render_jsonp`
+  followed by a raise sent that JSON body to the next visitor; a view rendered
+  from middleware saw the previous request's cookies, headers and path (and
+  `redirect(:back)` its referer); `current_action()` in middleware returned the
+  previous request's action, so `authorize(record)` checked the wrong policy;
+  and a transaction or `grouped` batch a panic interrupted stayed open for the
+  next request. `request_scope::forget_unfinished_request` clears all of it on
+  arrival, for HTTP requests and socket events.
+- An SVG rendered into a PDF no longer reads local files on its own:
+  `<image href="/abs/path">` went through usvg's default resolver, past the
+  image-source policy, so `pdf_from_markdown` of user content could embed any
+  image or attachment on the server, and `/dev/zero` exhausted memory. Paths in
+  an SVG now take the same policy as a top-level image source; local image
+  reads are capped and refused unless they are regular files.
+- Request parsing amplification: a bracket key past the nesting cap
+  (`a[][][]…`) is refused as soon as it is too deep instead of after building
+  every segment (an 8 MiB key allocated 100+ MB), and plain multipart fields
+  share `SOLI_MAX_PARAM_PAIRS` (4096) with query strings and urlencoded bodies.
+- Upload transforms (`resize` / `convert` on attach) and PDF images decode
+  within the `Image` limits (16384 px a side, 256 MiB) rather than any
+  dimensions and 512 MiB.
+
 ## [2.28.2] - 2026-10-18
 
 ### EUI

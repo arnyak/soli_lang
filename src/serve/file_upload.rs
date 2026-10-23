@@ -71,9 +71,16 @@ pub async fn parse_multipart_body(
     let mut multipart = multer::Multipart::new(stream, boundary);
 
     let file_cap = max_upload_files();
+    // The pair cap of a query string or urlencoded body. Plain fields had none
+    // here: an 8 MiB body of empty parts became ~170,000 pairs, several times
+    // the body's size in allocations, before the handler ran.
+    let field_cap = crate::interpreter::builtins::server::max_param_pairs();
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().map(|s| s.to_string()).unwrap_or_default();
         let filename = field.file_name().map(|s| s.to_string());
+        if filename.is_none() && form_fields.len() >= field_cap {
+            continue;
+        }
         let content_type = field
             .content_type()
             .map(|m| m.to_string())
@@ -192,5 +199,28 @@ mod tests {
         };
         let decoded = general_purpose::STANDARD.decode(&*data).unwrap();
         assert_eq!(decoded, vec![0xff, 0xfe, 0x00, 0x42, 0x00]);
+    }
+
+    /// Plain fields stop at the query-string pair cap; files past them still
+    /// arrive.
+    #[test]
+    fn plain_fields_are_capped_like_a_query_string() {
+        let cap = crate::interpreter::builtins::server::max_param_pairs();
+        let mut body = String::new();
+        for _ in 0..cap + 500 {
+            body.push_str("--B\r\nContent-Disposition: form-data; name=\"x[]\"\r\n\r\n1\r\n");
+        }
+        body.push_str(
+            "--B\r\nContent-Disposition: form-data; name=\"f\"; filename=\"a.txt\"\r\n\r\nhi\r\n--B--\r\n",
+        );
+        let (fields, files) = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(parse_multipart_body(
+                Bytes::from(body),
+                "multipart/form-data; boundary=B",
+            ));
+        assert_eq!(fields.len(), cap);
+        assert_eq!(files.len(), 1);
     }
 }

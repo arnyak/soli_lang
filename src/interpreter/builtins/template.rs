@@ -651,6 +651,11 @@ pub fn set_current_headers(headers: Value) {
     CURRENT_HEADERS.with(|h| *h.borrow_mut() = Some(headers));
 }
 
+/// Forget the headers [`set_current_headers`] recorded.
+pub fn clear_current_headers() {
+    CURRENT_HEADERS.with(|h| *h.borrow_mut() = None);
+}
+
 /// One header of the request being answered, by its lowercase name.
 pub fn current_header(name: &str) -> Option<String> {
     CURRENT_HEADERS.with(|h| {

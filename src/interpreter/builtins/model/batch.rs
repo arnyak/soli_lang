@@ -122,6 +122,15 @@ pub fn in_block() -> bool {
     GROUPED_DEPTH.with(|d| d.get() > 0)
 }
 
+/// Drop a batch and a block depth that a panic left behind. A `grouped` block
+/// interrupted by a panic never ran its `end`, so the next request on the
+/// worker would defer its reads into the dead request's batch.
+pub fn discard_stale() {
+    BATCH.with(|b| b.borrow_mut().take());
+    GROUPED_DEPTH.with(|d| d.set(0));
+    FLUSHING_D1.with(|f| f.set(false));
+}
+
 /// Run a `grouped` block, sharing begin/join/flush with both engines.
 ///
 /// `run` is the block body. `on_flush_err` turns a final-flush failure into

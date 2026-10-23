@@ -136,7 +136,7 @@ fn image_max_dimension_px() -> u32 {
     })
 }
 
-fn safe_image_limits() -> image::Limits {
+pub(crate) fn safe_image_limits() -> image::Limits {
     let mut limits = image::Limits::default();
     limits.max_alloc = Some(image_max_alloc_bytes());
     limits.max_image_width = Some(image_max_dimension_px());

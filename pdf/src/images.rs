@@ -249,10 +249,44 @@ fn fetch_bytes(src: &str, fetch: bool, timeout: Duration) -> Result<Vec<u8>> {
         }
         read_capped(resp, MAX_REMOTE_IMAGE_BYTES, src)
     } else {
-        let path = src.strip_prefix("file://").unwrap_or(src);
-        let resolved = resolve_path(path)?;
-        std::fs::read(resolved).map_err(PdfError::from)
+        read_local_source(src)
     }
+}
+
+/// Largest side, in pixels, of a raster image a PDF embeds. Far beyond any
+/// print resolution; a small file declaring more is a decompression bomb.
+const MAX_IMAGE_DIMENSION_PX: u32 = 16_384;
+/// Most memory one image decode may allocate.
+const MAX_IMAGE_DECODE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Decode a raster image within [`MAX_IMAGE_DIMENSION_PX`] and
+/// [`MAX_IMAGE_DECODE_BYTES`]. `load_from_memory` allowed any dimensions and a
+/// 512 MiB allocation, for a source that may be a user's upload.
+fn decode_limited(bytes: &[u8]) -> Result<image::DynamicImage> {
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| PdfError::Image(format!("decode: {e}")))?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(MAX_IMAGE_DECODE_BYTES);
+    limits.max_image_width = Some(MAX_IMAGE_DIMENSION_PX);
+    limits.max_image_height = Some(MAX_IMAGE_DIMENSION_PX);
+    reader.limits(limits);
+    reader
+        .decode()
+        .map_err(|e| PdfError::Image(format!("decode: {e}")))
+}
+
+/// Read a local image source through the host's path policy. Capped like a
+/// remote one and refused unless it is a regular file: `/dev/zero` read
+/// until the process ran out of memory, and a FIFO hung the worker.
+pub(crate) fn read_local_source(src: &str) -> Result<Vec<u8>> {
+    let path = src.strip_prefix("file://").unwrap_or(src);
+    let resolved = resolve_path(path)?;
+    let file = std::fs::File::open(&resolved)?;
+    if !file.metadata()?.is_file() {
+        return Err(PdfError::Image(format!("{src}: not a regular file")));
+    }
+    read_capped(file, MAX_REMOTE_IMAGE_BYTES, src)
 }
 
 /// Leniently percent-decode a non-base64 `data:` payload. Decodes well-formed
@@ -290,8 +324,7 @@ fn decode(bytes: &[u8], font_bytes: &[&[u8]]) -> Result<ImageData> {
     if looks_like_svg(bytes) {
         return decode_svg(bytes, font_bytes);
     }
-    let img =
-        image::load_from_memory(bytes).map_err(|e| PdfError::Image(format!("decode: {e}")))?;
+    let img = decode_limited(bytes)?;
     let has_alpha = img.color().has_alpha();
     let (w, h) = (img.width() as usize, img.height() as usize);
     let pixels = if has_alpha {

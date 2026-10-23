@@ -782,7 +782,16 @@ fn transform_upload_file(
     if cfg!(target_arch = "wasm32") {
         return Ok(None);
     }
-    let Ok(mut img) = image::load_from_memory(&bytes) else {
+    // SEC-019 limits, as for `Image.new`: `load_from_memory` alone allowed a
+    // 512 MiB allocation and any dimensions for an upload anyone can send.
+    let decoded = image::ImageReader::new(std::io::Cursor::new(&bytes))
+        .with_guessed_format()
+        .ok()
+        .and_then(|mut reader| {
+            reader.limits(super::image::safe_image_limits());
+            reader.decode().ok()
+        });
+    let Some(mut img) = decoded else {
         // Not a decodable image → store the original bytes untouched.
         return Ok(None);
     };

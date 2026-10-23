@@ -861,7 +861,7 @@ mod expand_wildcard_action_tests {
 /// `(String, String)` pairs — roughly thirty times the request's own size in
 /// allocations, per request, per worker — before the nester deduplicated them.
 /// Rack caps this the same way. `SOLI_MAX_PARAM_PAIRS` overrides it.
-fn max_param_pairs() -> usize {
+pub(crate) fn max_param_pairs() -> usize {
     crate::platform::env::var("SOLI_MAX_PARAM_PAIRS")
         .ok()
         .and_then(|v| v.trim().parse::<usize>().ok())
@@ -937,6 +937,12 @@ fn parse_bracket_key(key: &str) -> Option<Vec<ParamSeg>> {
         if !rest.starts_with('[') {
             return None;
         }
+        // Refused as soon as it is too deep, not once every segment is built:
+        // an 8 MiB `a[][][]…` key used to allocate four million segments
+        // (100+ MB) before being turned down.
+        if segs.len() >= MAX_PARAM_DEPTH {
+            return None;
+        }
         let close = rest.find(']')?;
         let inner = &rest[1..close];
         segs.push(if inner.is_empty() {
@@ -945,9 +951,6 @@ fn parse_bracket_key(key: &str) -> Option<Vec<ParamSeg>> {
             ParamSeg::Key(inner.to_string())
         });
         rest = &rest[close + 1..];
-    }
-    if segs.len() > MAX_PARAM_DEPTH {
-        return None;
     }
     Some(segs)
 }
@@ -2261,6 +2264,22 @@ mod nested_param_tests {
         let v = nested(&deep);
         let flat_key = format!("a{}", "[b]".repeat(40));
         assert_eq!(as_str(&get(&v, &flat_key)), "x");
+    }
+
+    #[test]
+    fn an_overdeep_key_is_refused_without_building_its_segments() {
+        // Four million `[]` in an 8 MiB body: refused at the cap, where it used
+        // to build every segment first.
+        let hostile = format!("a{}", "[]".repeat(1_000_000));
+        assert!(parse_bracket_key(&hostile).is_none());
+        // The cap itself is unchanged: base + 31 brackets nest, one more stays flat.
+        let at_cap = format!("a{}", "[b]".repeat(MAX_PARAM_DEPTH - 1));
+        assert_eq!(
+            parse_bracket_key(&at_cap).map(|segs| segs.len()),
+            Some(MAX_PARAM_DEPTH)
+        );
+        let past_cap = format!("a{}", "[b]".repeat(MAX_PARAM_DEPTH));
+        assert!(parse_bracket_key(&past_cap).is_none());
     }
 
     #[test]
