@@ -379,6 +379,8 @@ end
 | Slow queries (`/__soli/slow_queries`) | on, open to this machine | on, behind `SOLI_SLOW_QUERIES_*` / `SOLI_ADMIN_*` |
 | Notifications | when `SOLI_NOTIFY_*` is set (emails go to the dev inbox without SMTP) | when `SOLI_NOTIFY_*` is set |
 
+**Never indexed.** Every response under `/__soli/…` and from `/_health`, `/_ready`, `/_metrics` and `/up` carries `X-Robots-Tag: noindex, nofollow` — the 401 challenge and the 404 of an unconfigured page included — so a search engine that finds the URL neither indexes it nor follows its links. A header the page set itself is kept. Nothing to configure; add the paths to your `robots.txt` too if you want crawlers not to ask at all.
+
 Production logging reuses the same channel buffers as the dev bar (`query`, `http`, `kv`, `timing`) without paying for hot-reload, the bar injection, or the interpreter demotion that `--dev` implies.
 
 ## Limits (honest)

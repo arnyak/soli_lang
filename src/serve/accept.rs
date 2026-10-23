@@ -444,6 +444,10 @@ async fn dispatch(
             .body(full(Bytes::from("Server shutting down")))
             .unwrap());
     }
+    // Operator and probe paths never belong in a search index: stamped
+    // `X-Robots-Tag` below, on every answer — the page, its 401/404 and the
+    // probes alike (`stamp_noindex`).
+    let noindex = is_noindex_path(req.uri().path());
     // Which application serves this. `Host` first, and
     // the URI authority behind it: an HTTP/2 request
     // carries `:authority` instead, which hyper leaves
@@ -502,6 +506,12 @@ async fn dispatch(
         (result, cors_decision)
     })
     .await;
+    let result = result.map(|mut response| {
+        if noindex {
+            stamp_noindex(&mut response);
+        }
+        response
+    });
     match (result, cors_decision) {
         (Ok(mut response), Some(decision)) => {
             for (key, value) in decision.response_headers {
@@ -515,6 +525,78 @@ async fn dispatch(
             Ok(response)
         }
         (result, _) => result,
+    }
+}
+
+/// The framework's own operator pages (`/__soli/…`: jobs, errors, slow
+/// queries, mailers, mobile…) and probes (`/_health`, `/_ready`, `/_metrics`,
+/// `/up`). They answer before the application, so the application cannot
+/// mark them itself; their HTML says `noindex`, but a 401 challenge, a 404 or
+/// a plain-text probe has no HTML to say it in.
+fn is_noindex_path(path: &str) -> bool {
+    path == "/__soli"
+        || path.starts_with("/__soli/")
+        || matches!(path, "/_health" | "/_ready" | "/_metrics" | "/up")
+}
+
+/// `X-Robots-Tag: noindex, nofollow`, unless the response already set one.
+fn stamp_noindex(response: &mut Response<ResponseBody>) {
+    response
+        .headers_mut()
+        .entry("x-robots-tag")
+        .or_insert(hyper::header::HeaderValue::from_static("noindex, nofollow"));
+}
+
+#[cfg(test)]
+mod noindex_tests {
+    use super::{full, is_noindex_path, stamp_noindex, Bytes, Response};
+
+    #[test]
+    fn operator_pages_and_probes_are_noindex() {
+        for path in [
+            "/__soli",
+            "/__soli/jobs",
+            "/__soli/errors",
+            "/__soli/slow_queries/0123456789abcdef/delete",
+            "/__soli/mailers/",
+            "/_health",
+            "/_ready",
+            "/_metrics",
+            "/up",
+        ] {
+            assert!(is_noindex_path(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn application_paths_are_left_alone() {
+        for path in [
+            "/",
+            "/admin",
+            "/__solid",
+            "/_healthz",
+            "/upload",
+            "/soli/jobs",
+            "/openapi",
+        ] {
+            assert!(!is_noindex_path(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn the_header_is_added_once_and_an_existing_one_is_kept() {
+        let mut response = Response::new(full(Bytes::new()));
+        stamp_noindex(&mut response);
+        stamp_noindex(&mut response);
+        let values: Vec<_> = response.headers().get_all("x-robots-tag").iter().collect();
+        assert_eq!(values, ["noindex, nofollow"]);
+
+        let mut own = Response::builder()
+            .header("X-Robots-Tag", "noindex")
+            .body(full(Bytes::new()))
+            .unwrap();
+        stamp_noindex(&mut own);
+        assert_eq!(own.headers()["x-robots-tag"], "noindex");
     }
 }
 

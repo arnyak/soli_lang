@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Security
+
+- The framework's own pages are never indexed: every response under
+  `/__soli/…` (jobs, errors, slow queries, mailers, mobile…) and from the
+  probes `/_health`, `/_ready`, `/_metrics` and `/up` carries
+  `X-Robots-Tag: noindex, nofollow` — the 401 challenge and the 404 of an
+  unconfigured page included, which have no HTML `<meta name="robots">` to
+  say it. An existing `X-Robots-Tag` is kept. The application cannot set it
+  itself: these paths answer before it (`accept::stamp_noindex`).
+  (#68, by @arnyak)
+
 ## [2.28.3] - 2026-10-23
 
 ### Security

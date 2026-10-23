@@ -455,6 +455,8 @@ end</code></pre>
         </table>
     </div>
 
+    <p class="text-gray-400 leading-relaxed mb-12"><strong class="text-white">Never indexed.</strong> Every response under <code>/__soli/…</code> and from <code>/_health</code>, <code>/_ready</code>, <code>/_metrics</code> and <code>/up</code> carries <code>X-Robots-Tag: noindex, nofollow</code> &mdash; the 401 challenge and the 404 of an unconfigured page included &mdash; so a search engine that finds the URL neither indexes it nor follows its links. A header the page set itself is kept. Nothing to configure; add the paths to your <code>robots.txt</code> too if you want crawlers not to ask at all.</p>
+
     <h2 class="text-2xl font-bold text-white mb-6">Limits (honest)</h2>
     <ul class="list-disc pl-6 text-gray-400 space-y-2 mb-12">
         <li>No auto-instrumentation of every third-party client library &mdash; only Soli's own request path, ORM, and <code>HTTP.*</code> client.</li>
