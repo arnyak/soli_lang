@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.28.5] - 2026-10-24
+
 ### EUI
 
 - The score engraver moves to eui d0a4419. LilyPond as real files write it

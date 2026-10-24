@@ -20,8 +20,13 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.4.</p>
-        <h3 id="unreleased-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.5.</p>
+    </section>
+
+    <section id="v2-28-5" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.5 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-24</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">The score engraver reads LilyPond as real files write it.</p>
+        <h3 id="v2-28-5-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
         <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
             <li><strong class="text-white">Real LilyPond files open.</strong> The score engraver passes over layout settings (<code class="text-cyan-400">\override</code>, <code class="text-cyan-400">\tweak</code>, <code class="text-cyan-400">\set</code>, <code class="text-cyan-400">\with</code>, direction switches) with a warning instead of refusing the file, honours <code class="text-cyan-400">\stemUp</code>/<code class="text-cyan-400">\stemDown</code> and <code class="text-cyan-400">\autoBeamOff</code>, and draws breath marks, caesuras, bowings, harmonics, <code class="text-cyan-400">\laissezVibrer</code>, <code class="text-cyan-400">\cresc</code> as words, text spans, and forced and cautionary accidentals. Several <code class="text-cyan-400">\score</code> blocks engrave as movements.</li>
             <li><strong class="text-white">Mid-bar clefs and keys, gathered rests.</strong> A clef or key may change in the middle of a bar, drawn as LilyPond draws it, and <code class="text-cyan-400">\compressMMRests</code> gathers bars of rest into one numbered bar.</li>
