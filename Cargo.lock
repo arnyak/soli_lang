@@ -2578,7 +2578,7 @@ dependencies = [
 [[package]]
 name = "eui-score"
 version = "0.11.0"
-source = "git+https://github.com/solisoft/eui?rev=68b68c1#68b68c17c7f17fc955a409c31dd0bf8c842f3d3c"
+source = "git+https://github.com/solisoft/eui?rev=d0a4419#d0a4419a46c4410c32a85936f540e0fe51b1a015"
 dependencies = [
  "serde_json",
 ]
@@ -7377,7 +7377,7 @@ dependencies = [
  "es-client",
  "eui-client",
  "eui-proto",
- "eui-score 0.11.0 (git+https://github.com/solisoft/eui?rev=68b68c1)",
+ "eui-score 0.11.0 (git+https://github.com/solisoft/eui?rev=d0a4419)",
  "flate2",
  "futures-util",
  "gag",

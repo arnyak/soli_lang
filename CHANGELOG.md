@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### EUI
+
+- The score engraver moves to eui d0a4419. LilyPond as real files write it
+  now opens: `\override`, `\revert`, `\once`, `\tweak`, `\set`, `\with`,
+  direction and style switches, `\layout` / `\midi` contents and unread
+  `\paper` settings are passed over (`eui_score_layout` still engraves;
+  the reasons are the engine's warnings), and `\stemUp` / `\stemDown` and
+  `\autoBeamOff` are honoured. `\breathe`, `\caesura`, bowings,
+  `\flageolet`, `\espressivo`, `\laissezVibrer`, `\repeatTie`, `\cresc` /
+  `\dim` as words and text spans are drawn, as are forced (`cis!`) and
+  cautionary (`cis?`) accidentals. Several `\score` blocks and `\book` /
+  `\bookpart` engrave as movements. A clef or a key may change in the
+  middle of a bar, and `\compressMMRests` gathers bars of rest.
+
 ## [2.28.4] - 2026-10-23
 
 ### Security
