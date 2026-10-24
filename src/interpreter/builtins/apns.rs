@@ -393,7 +393,7 @@ mod tests {
     /// A throwaway P-256 key in the shape Apple issues (PKCS#8 PEM).
     fn test_key_pem() -> String {
         use p256::pkcs8::EncodePrivateKey;
-        let key = SigningKey::random(&mut rand_core::OsRng);
+        let key = <SigningKey as p256::elliptic_curve::Generate>::generate();
         key.to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
             .unwrap()
             .to_string()
@@ -431,7 +431,7 @@ mod tests {
         use p256::ecdsa::VerifyingKey;
         use p256::pkcs8::EncodePrivateKey;
 
-        let key = SigningKey::random(&mut rand_core::OsRng);
+        let key = <SigningKey as p256::elliptic_curve::Generate>::generate();
         let pem = key
             .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
             .unwrap()

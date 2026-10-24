@@ -4,6 +4,11 @@
 
 ## [2.28.5] - 2026-10-24
 
+### Security
+
+- Dependencies: p256 0.14 (crypto-bigint 0.7, RUSTSEC-2026-0387: timing
+  variability in constant-time operations).
+
 ### EUI
 
 - The score engraver moves to eui d0a4419. LilyPond as real files write it

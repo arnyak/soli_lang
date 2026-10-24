@@ -369,13 +369,13 @@ pub fn replace_executable(exe: &Path, bytes: &[u8]) -> Result<(), String> {
 /// A fresh P-256 keypair: (private PKCS#8 PEM, public base64 SEC1).
 pub fn generate_keypair() -> Result<(String, String), String> {
     use p256::pkcs8::EncodePrivateKey;
-    let signing = SigningKey::random(&mut rand_core::OsRng);
+    let signing = <SigningKey as p256::elliptic_curve::Generate>::generate();
     let private_pem = signing
         .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
         .map_err(|e| format!("keygen: {}", e))?
         .to_string();
     let verifying = VerifyingKey::from(&signing);
-    let public_b64 = B64.encode(verifying.to_encoded_point(false).as_bytes());
+    let public_b64 = B64.encode(verifying.to_sec1_point(false).as_bytes());
     Ok((private_pem, public_b64))
 }
 
@@ -456,9 +456,9 @@ mod tests {
     /// that key, and a tampered version does not.
     #[test]
     fn a_signed_manifest_verifies_and_tampering_is_caught() {
-        let signing = SigningKey::random(&mut rand_core::OsRng);
+        let signing = <SigningKey as p256::elliptic_curve::Generate>::generate();
         let verifying = VerifyingKey::from(&signing);
-        let pubkey = B64.encode(verifying.to_encoded_point(false).as_bytes());
+        let pubkey = B64.encode(verifying.to_sec1_point(false).as_bytes());
 
         let mut manifest = sample_manifest();
         let signature: Signature = signing.sign(&canonical_bytes(&manifest).unwrap());

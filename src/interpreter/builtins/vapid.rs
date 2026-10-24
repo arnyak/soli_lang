@@ -34,8 +34,8 @@ use hkdf::Hkdf;
 use p256::{
     ecdh::diffie_hellman,
     ecdsa::{signature::Signer, Signature, SigningKey},
-    elliptic_curve::sec1::FromEncodedPoint,
-    EncodedPoint, PublicKey, SecretKey,
+    elliptic_curve::Generate,
+    PublicKey, SecretKey,
 };
 use rand_core::{OsRng, RngCore};
 use sha2::Sha256;
@@ -190,7 +190,7 @@ pub fn send_to_subscription(
 /// A fresh P-256 VAPID key pair, `(public, private)`, both base64url without
 /// padding — the shapes `vapid_generate_keys()` returns.
 pub fn generate_key_pair() -> (String, String) {
-    let secret = SecretKey::random(&mut OsRng);
+    let secret = SecretKey::generate();
     let public = secret.public_key();
     (
         URL_SAFE_NO_PAD.encode(public.to_sec1_bytes()),
@@ -237,7 +237,7 @@ fn sign_jwt(
         ));
     }
 
-    let signing_key = SigningKey::from_bytes(priv_bytes.as_slice().into())
+    let signing_key = SigningKey::from_slice(&priv_bytes)
         .map_err(|e| format!("vapid_sign(): invalid P-256 private key: {}", e))?;
 
     let exp = current_timestamp().saturating_add(exp_seconds);
@@ -313,16 +313,13 @@ fn encrypt_payload(
         ));
     }
 
-    let ua_point = EncodedPoint::from_bytes(&p256dh)
-        .map_err(|e| format!("vapid_encrypt(): malformed p256dh point: {}", e))?;
-    let ua_public_opt = PublicKey::from_encoded_point(&ua_point);
-    if ua_public_opt.is_none().into() {
-        return Err("vapid_encrypt(): p256dh is not a valid P-256 public key".to_string());
-    }
-    let ua_public = ua_public_opt.unwrap();
+    // `from_sec1_bytes` parses the SEC1 encoding and checks the point is on
+    // the curve, so a malformed or off-curve key is refused here.
+    let ua_public = PublicKey::from_sec1_bytes(&p256dh)
+        .map_err(|_| "vapid_encrypt(): p256dh is not a valid P-256 public key".to_string())?;
 
     // Ephemeral keypair for this push — generated fresh per RFC 8291.
-    let as_secret = SecretKey::random(&mut OsRng);
+    let as_secret = SecretKey::generate();
     let as_public_bytes = as_secret.public_key().to_sec1_bytes().to_vec();
     if as_public_bytes.len() != 65 {
         return Err(format!(
@@ -785,7 +782,7 @@ mod tests {
 
         // Fake a subscriber by generating a P-256 keypair: their p256dh
         // is the uncompressed public point, auth is a 16-byte secret.
-        let ua_secret = SecretKey::random(&mut OsRng);
+        let ua_secret = SecretKey::generate();
         let ua_pub_b64 = URL_SAFE_NO_PAD.encode(ua_secret.public_key().to_sec1_bytes());
         let mut auth = [0u8; 16];
         OsRng.fill_bytes(&mut auth);

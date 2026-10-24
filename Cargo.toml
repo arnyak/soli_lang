@@ -228,7 +228,7 @@ num-bigint = "0.4"
 
 # RSA private-key (PKCS#8 / PKCS#1 PEM) parsing for RsaKey.private_from_pem —
 # extracts (n, d, e) so an SP can *sign* envelopes via Crypto.modexp. We use the
-# lightweight RustCrypto ASN.1 crates (already in-tree via p256) rather than the
+# lightweight RustCrypto ASN.1 crates (der 0.7, as x509-cert and cms use) rather than the
 # `rsa` crate, which carries the unfixable Marvin-attack advisory RUSTSEC-2023-0071
 # — we only parse key material, never run rsa's timing-sensitive sign/decrypt.
 der = "0.7"
@@ -266,7 +266,7 @@ qrcode = { version = "0.14", default-features = false }
 jsonwebtoken = "9"
 
 # VAPID / Web Push (RFC 8291 / 8292): P-256 ECDH+ECDSA, HKDF, AES-128-GCM.
-p256 = { version = "0.13", features = ["ecdh", "ecdsa", "pkcs8"] }
+p256 = { version = "0.14", features = ["ecdh", "ecdsa", "pkcs8"] }
 hkdf = "0.12"
 aes-gcm = "0.10"
 
@@ -449,6 +449,8 @@ rustls-pki-types = { version = "1", features = ["std"] }
 chrono = { version = "0.4", features = ["wasmbind"] }
 getrandom02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+# 0.4 comes with the RustCrypto 0.14 family (p256 -> crypto-bigint 0.7).
+getrandom04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 uuid = { version = "1", features = ["js"] }
 
 # Windows-only dependencies. `windows-sys` is pure Rust bindings — no C
