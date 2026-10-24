@@ -160,6 +160,9 @@ impl Browser {
         let mut command = Command::new(binary);
         if !headed {
             command.arg("--headless=new");
+            // A headless run is a test: the pages it drives may play sound,
+            // which must not reach the speakers of the machine running it.
+            command.arg("--mute-audio");
         }
         command
             .arg(format!("--remote-debugging-port={}", port))
