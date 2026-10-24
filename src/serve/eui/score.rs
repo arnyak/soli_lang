@@ -75,13 +75,25 @@ fn layout_of(v: &Value) -> Layout {
         indent: n("indent"),
         gap: n("gap"),
         even_pages: matches!(get(v, "even_pages"), Some(Value::Bool(true))),
+        systems_per_page: n("systems_per_page")
+            .filter(|s| *s >= 1.0)
+            .map(|s| s as usize),
+        head_room: n("head_room").unwrap_or(0.0),
     }
 }
 
 fn key_of(src: &str, width: f64, l: &Layout) -> String {
     format!(
-        "{width}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{}|{src}",
-        l.page_h, l.top, l.bottom, l.left, l.indent, l.gap, l.even_pages
+        "{width}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{}|{:?}|{}|{src}",
+        l.page_h,
+        l.top,
+        l.bottom,
+        l.left,
+        l.indent,
+        l.gap,
+        l.even_pages,
+        l.systems_per_page,
+        l.head_room
     )
 }
 
