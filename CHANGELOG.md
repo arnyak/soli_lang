@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [2.28.8] - 2026-10-25
+
+### Fixed
+
+- Behind a trusted proxy, the per-IP WebSocket cap
+  (`SOLI_WS_MAX_CONNECTIONS_PER_IP`, 64) counts each client, not the proxy.
+  It was keyed on the TCP peer, so every user behind the proxy shared one
+  quota: a single tab looping on reconnects filled it and every other user's
+  socket was refused with 429 for days. The client is now read as the body
+  budget reads it — `SOLI_CLIENT_IP_HEADER`, else the right-most
+  `X-Forwarded-For` entry — and only when `enable_trust_proxy()` is on
+  (`pipeline::forwarded_client_ip`). Applies to `/ws/*`, LiveView and EUI
+  sockets.
+
 ## [2.28.7] - 2026-10-25
 
 ### EUI

@@ -96,7 +96,7 @@ pub(super) async fn handle(
                 .body(full(Bytes::from("this component needs a session")))
                 .unwrap());
         }
-        let slot = match admit_websocket(&peer_addr.ip().to_string()) {
+        let slot = match admit_websocket(peer_addr.ip(), req.headers()) {
             Ok(slot) => slot,
             Err(refused) => return Ok(*refused),
         };
@@ -182,7 +182,7 @@ pub(super) async fn handle(
 
         // The same admission every socket gets; the slot lives as long
         // as the connection task below.
-        let slot = match admit_websocket(&peer_addr.ip().to_string()) {
+        let slot = match admit_websocket(peer_addr.ip(), req.headers()) {
             Ok(slot) => slot,
             Err(refused) => return Ok(*refused),
         };
@@ -226,7 +226,7 @@ pub(super) async fn handle(
             ws_registry,
             path.to_string(),
             ws_event_tx.clone(),
-            peer_addr.ip().to_string(),
+            peer_addr.ip(),
         )
         .await
     } else {
@@ -446,7 +446,7 @@ async fn handle_websocket_upgrade(
     ws_registry: Arc<WebSocketRegistry>,
     path: String,
     ws_event_tx: channel::Sender<WebSocketEventData>,
-    peer_ip: String,
+    peer: std::net::IpAddr,
 ) -> Result<Response<ResponseBody>, hyper::Error> {
     // Check if this is a valid WebSocket upgrade request
     if !hyper_tungstenite::is_upgrade_request(&req) {
@@ -456,11 +456,7 @@ async fn handle_websocket_upgrade(
             .unwrap());
     }
 
-    let origin_allowed = match peer_ip.parse::<std::net::IpAddr>() {
-        Ok(peer) => super::websocket_origin_allowed_from(req.headers(), peer),
-        Err(_) => super::websocket_origin_allowed(req.headers()),
-    };
-    if !origin_allowed {
+    if !super::websocket_origin_allowed_from(req.headers(), peer) {
         return Ok(forbidden_websocket_origin_response());
     }
 
@@ -468,11 +464,15 @@ async fn handle_websocket_upgrade(
     // point where cookies and headers exist — after the upgrade the connection
     // is a raw frame stream — so anything a handler needs to know about *who*
     // is connected has to be taken now.
-    let ws_context = Arc::new(build_websocket_context(req.uri(), req.headers(), &peer_ip));
+    let ws_context = Arc::new(build_websocket_context(
+        req.uri(),
+        req.headers(),
+        &peer.to_string(),
+    ));
 
     // Admission control before the upgrade: every accepted socket costs a tokio
     // task, a 32-slot channel and a registry entry, none of which were bounded.
-    let connection_slot = match admit_websocket(&peer_ip) {
+    let connection_slot = match admit_websocket(peer, req.headers()) {
         Ok(slot) => slot,
         Err(refused) => return Ok(*refused),
     };
@@ -663,11 +663,18 @@ fn build_websocket_context(
 /// that refuses it. The one gate for every kind of socket — `/ws/*`, LiveView
 /// and EUI — since each costs the same task, queue and registry entry; the
 /// caps are `SOLI_WS_MAX_CONNECTIONS` and `SOLI_WS_MAX_CONNECTIONS_PER_IP`.
+///
+/// The per-IP share is the client's, read through a trusted proxy as the body
+/// budget reads it. Keyed on the TCP peer, every user behind the proxy was one
+/// "address": a single tab looping on reconnects filled the 64 slots and
+/// every other user of the application was refused.
 fn admit_websocket(
-    peer_ip: &str,
+    peer: std::net::IpAddr,
+    headers: &hyper::HeaderMap,
 ) -> Result<crate::serve::websocket::WsConnectionSlot, Box<Response<ResponseBody>>> {
+    let client = super::pipeline::forwarded_client_ip(peer, headers);
     crate::serve::websocket::ws_connection_limiter()
-        .try_acquire(peer_ip)
+        .try_acquire(&client.to_string())
         .map_err(|reason| {
             let (status, message) = match reason {
                 crate::serve::websocket::WsAdmission::ServerFull => (
@@ -795,6 +802,40 @@ mod tests {
         let cfg = default_websocket_config();
         assert_eq!(cfg.max_message_size, Some(1 << 20));
         assert_eq!(cfg.max_frame_size, Some(1 << 20));
+    }
+
+    #[test]
+    fn behind_a_trusted_proxy_each_client_has_its_own_websocket_share() {
+        // Every socket arrives from the proxy's address; one client filling
+        // its share must leave the others theirs (one runaway tab used to take
+        // all 64 slots, and the whole application answered 429).
+        let proxy: std::net::IpAddr = "10.77.0.2".parse().unwrap();
+        let from = |client: &str| {
+            let mut headers = hyper::HeaderMap::new();
+            headers.insert("x-forwarded-for", client.parse().unwrap());
+            headers
+        };
+        let id = super::super::tenant::register(std::env::temp_dir());
+        super::super::tenant::scoped(id, || {
+            crate::interpreter::builtins::trust_proxy::TRUST_PROXY_ENABLED
+                .write(|enabled| *enabled = true);
+            let max = server_constants::ws_max_connections_per_ip();
+            let runaway: Vec<_> = (0..max)
+                .map(|i| {
+                    admit_websocket(proxy, &from("198.18.7.1"))
+                        .unwrap_or_else(|_| panic!("slot {i} should be admitted"))
+                })
+                .collect();
+            let refused = admit_websocket(proxy, &from("198.18.7.1"))
+                .err()
+                .expect("the runaway client is over its share");
+            assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+            assert!(
+                admit_websocket(proxy, &from("198.18.7.2")).is_ok(),
+                "another client behind the same proxy must still get in"
+            );
+            drop(runaway);
+        });
     }
 }
 

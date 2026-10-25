@@ -69,7 +69,7 @@ pub(super) struct Intake {
 /// Read the request into the shape a worker takes, or the response to send
 /// instead — 413 for an oversize body, 503 when the in-flight body budget (or
 /// this client's share of it) is exhausted, 408 for one that never finishes
-/// arriving. `peer_ip` is the TCP peer; see [`body_budget_client`] for how it
+/// arriving. `peer_ip` is the TCP peer; see [`forwarded_client_ip`] for how it
 /// becomes the client the budget is charged to.
 pub(super) async fn intake(
     req: Request<Incoming>,
@@ -144,7 +144,7 @@ pub(super) async fn intake(
             .min(max_body);
         // Charged to this client's share as well as to the whole, so one client
         // cannot hold the entire budget and 503 everyone else.
-        let client = body_budget_client(peer_ip, &headers);
+        let client = forwarded_client_ip(peer_ip, &headers);
         match crate::interpreter::builtins::body_limit::BodyReservation::try_acquire_for(
             want,
             Some(client),
@@ -279,21 +279,23 @@ pub(super) async fn intake(
 /// bytes arrive, so a connection that sends nothing holds almost nothing.
 const INITIAL_BODY_RESERVATION: usize = 64 * 1024;
 
-/// The client a request body's budget is charged to.
+/// The client a request comes from, for the per-client shares: the body
+/// budget and the WebSocket admission cap.
 ///
 /// The TCP peer, unless the application trusts its proxy — then the
 /// address in `SOLI_CLIENT_IP_HEADER` when it names one, else the right-most
 /// `X-Forwarded-For` entry, the address the trusted hop recorded, exactly as
 /// the rate limiter (`rate_limit::extract_client_ip`) derives it.
 /// Without that, every client behind a reverse proxy would share the proxy's
-/// one share of the budget. An unparsable or absent header falls back to the
+/// one share: one runaway client used to fill the per-IP WebSocket cap for
+/// every user of the application. An unparsable or absent header falls back to the
 /// peer.
 ///
 /// `is_trust_proxy_enabled` narrows to `SOLI_TRUSTED_PROXIES` by the peer
 /// recorded in a thread-local that only worker threads set; it is set here for
 /// the one call and cleared again, so a direct client cannot pass for a
 /// trusted hop by sending the header itself.
-fn body_budget_client(
+pub(super) fn forwarded_client_ip(
     peer_ip: std::net::IpAddr,
     headers: &hyper::header::HeaderMap,
 ) -> std::net::IpAddr {
@@ -966,7 +968,7 @@ mod enqueue_tests {
 }
 
 #[cfg(test)]
-mod body_budget_client_tests {
+mod forwarded_client_ip_tests {
     use super::*;
     use crate::interpreter::builtins::trust_proxy::TRUST_PROXY_ENABLED;
     use crate::serve::tenant;
@@ -991,7 +993,7 @@ mod body_budget_client_tests {
     fn without_trust_proxy_the_peer_is_the_client() {
         let peer: std::net::IpAddr = "192.0.2.1".parse().unwrap();
         let client = with_trust_proxy(false, || {
-            body_budget_client(peer, &forwarded("203.0.113.9"))
+            forwarded_client_ip(peer, &forwarded("203.0.113.9"))
         });
         assert_eq!(client, peer, "a spoofed header must not pick the bucket");
     }
@@ -1001,9 +1003,9 @@ mod body_budget_client_tests {
         let peer: std::net::IpAddr = "10.0.0.2".parse().unwrap();
         let (client, garbage, absent) = with_trust_proxy(true, || {
             (
-                body_budget_client(peer, &forwarded("1.1.1.1, 203.0.113.9 ")),
-                body_budget_client(peer, &forwarded("not-an-ip")),
-                body_budget_client(peer, &hyper::header::HeaderMap::new()),
+                forwarded_client_ip(peer, &forwarded("1.1.1.1, 203.0.113.9 ")),
+                forwarded_client_ip(peer, &forwarded("not-an-ip")),
+                forwarded_client_ip(peer, &hyper::header::HeaderMap::new()),
             )
         });
         assert_eq!(client, "203.0.113.9".parse::<std::net::IpAddr>().unwrap());

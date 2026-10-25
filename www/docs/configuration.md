@@ -426,7 +426,7 @@ These knobs control how the request edge handles untrusted input. See the
 | `SOLI_H2_KEEPALIVE_SECS` | Interval between HTTP/2 (h2c) keep-alive `PING`s. A connection that does not acknowledge one within 20 seconds is closed. | `30` |
 | `SOLI_CONN_IDLE_TIMEOUT_SECS` | An HTTP/2 connection with no activity for this long is closed, so idle multiplexed connections do not accumulate. | `60` |
 | `SOLI_WS_MAX_CONNECTIONS` | Maximum simultaneous WebSocket connections across all routes. Each holds a task and a channel; the registry was unbounded. | `10000` |
-| `SOLI_WS_MAX_CONNECTIONS_PER_IP` | Maximum simultaneous WebSocket connections from one peer address. `0` disables the per-IP cap. | `64` |
+| `SOLI_WS_MAX_CONNECTIONS_PER_IP` | Maximum simultaneous WebSocket connections from one client address — behind a trusted proxy (`enable_trust_proxy()`), the forwarded client (`SOLI_CLIENT_IP_HEADER`, else the right-most `X-Forwarded-For`), not the proxy. `0` disables the per-IP cap. | `64` |
 | `SOLI_WS_MAX_MESSAGES_PER_SEC` | Sustained inbound frames per second allowed on one socket before it is closed, so a single connection cannot monopolise the shared realtime queue. `0` disables it. | `100` |
 | `SOLI_WS_MESSAGE_BURST` | Burst allowance on top of `SOLI_WS_MAX_MESSAGES_PER_SEC`. | `200` |
 | `SOLI_WS_ENQUEUE_TIMEOUT_SECS` | How long a WebSocket frame waits for room in the realtime worker queue before the socket is closed with 1013. | `5` |

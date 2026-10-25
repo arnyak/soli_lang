@@ -20,7 +20,40 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.5.</p>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.8.</p>
+    </section>
+
+    <section id="v2-28-8" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.8 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-25</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Behind a reverse proxy, one client can no longer take every WebSocket slot of an application.</p>
+        <h3 id="v2-28-8-real-time" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Real-time</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Behind a proxy, each client gets its own WebSocket share.</strong> The per-IP cap on simultaneous sockets (<code class="text-cyan-400">SOLI_WS_MAX_CONNECTIONS_PER_IP</code>, 64) was keyed on the TCP peer &mdash; the proxy &mdash; so every user of an application behind it shared one quota, and a single tab stuck reconnecting got the whole application&rsquo;s sockets refused with 429. With <code class="text-cyan-400">enable_trust_proxy()</code> on, the cap now counts the client the proxy forwards (<code class="text-cyan-400">SOLI_CLIENT_IP_HEADER</code>, else the right-most <code class="text-cyan-400">X-Forwarded-For</code> entry), as the upload body budget already did. Applies to <code class="text-cyan-400">/ws/*</code>, LiveView and EUI sockets.</li>
+        </ul>
+    </section>
+
+    <section id="v2-28-7" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.7 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-25</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8"><code class="text-cyan-400">\afterGrace</code> reads as LilyPond writes it, and browser specs run muted.</p>
+        <h3 id="v2-28-7-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white"><code class="text-cyan-400">\afterGrace</code> takes post-events on its main note.</strong> Ties, slurs, dynamics and articulations written before the braces &mdash; <code class="text-cyan-400">\afterGrace c''1~ { d''16 }</code> &mdash; attach to the main note, as in LilyPond. A tie from the main note now holds through its after-grace notes in the MIDI instead of the note being struck again.</li>
+        </ul>
+        <h3 id="v2-28-7-dev-tools" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Dev tools</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white"><code class="text-cyan-400">soli test --browser</code> runs muted.</strong> Headless browser runs pass <code class="text-cyan-400">--mute-audio</code>, so pages that play sound no longer reach the speakers of the machine running the specs.</li>
+        </ul>
+    </section>
+
+    <section id="v2-28-6" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.6 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-24</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Page headers and footers, systems per page and selectable text in engraved scores.</p>
+        <h3 id="v2-28-6-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Headers, footers and the copyright are drawn.</strong> <code class="text-cyan-400">\paper</code>&rsquo;s <code class="text-cyan-400">oddHeaderMarkup</code>, <code class="text-cyan-400">evenHeaderMarkup</code>, <code class="text-cyan-400">oddFooterMarkup</code> and <code class="text-cyan-400">evenFooterMarkup</code> are engraved &mdash; words, header fields, the page number, <code class="text-cyan-400">\fill-line</code> and <code class="text-cyan-400">\on-the-fly</code> page tests &mdash; and the copyright sits at the foot of the first page. <code class="text-cyan-400">systems-per-page</code> and <code class="text-cyan-400">max-systems-per-page</code> are honoured; <code class="text-cyan-400">eui_score_layout</code> and <code class="text-cyan-400">eui_score_bands</code> read <code class="text-cyan-400">systems_per_page</code> and <code class="text-cyan-400">head_room</code> from the layout hash.</li>
+            <li><strong class="text-white">Text in a score PDF can be selected.</strong> The PDF writer lays an invisible text layer under every word it draws, so titles, lyrics and markings can be selected, copied and searched; the page looks exactly as before.</li>
+            <li><strong class="text-white"><code class="text-cyan-400">\afterGrace</code> is read.</strong> Its plain and fraction forms are drawn before the next note and played in the last quarter of the main note.</li>
+        </ul>
     </section>
 
     <section id="v2-28-5" class="mb-16 scroll-mt-24">
