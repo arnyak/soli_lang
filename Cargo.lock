@@ -2597,7 +2597,7 @@ dependencies = [
 [[package]]
 name = "eui-score"
 version = "0.11.0"
-source = "git+https://github.com/solisoft/eui?rev=67bc21a#67bc21a28091b091e679a66abcb10c05cc852677"
+source = "git+https://github.com/solisoft/eui?rev=152e704#152e704040c78ec0be81f24aa7a5d855c5f50e84"
 dependencies = [
  "serde_json",
 ]
@@ -7422,7 +7422,7 @@ dependencies = [
 
 [[package]]
 name = "solilang"
-version = "2.28.8"
+version = "2.28.9"
 dependencies = [
  "aes-gcm",
  "ahash",
@@ -7454,7 +7454,7 @@ dependencies = [
  "es-client",
  "eui-client",
  "eui-proto",
- "eui-score 0.11.0 (git+https://github.com/solisoft/eui?rev=67bc21a)",
+ "eui-score 0.11.0 (git+https://github.com/solisoft/eui?rev=152e704)",
  "flate2",
  "futures-util",
  "gag",

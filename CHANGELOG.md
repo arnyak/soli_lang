@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [2.28.9] - 2026-10-25
+
+### EUI
+
+- The score engraver moves to eui 152e704:
+  - Beams, slurs and ties across a piano's two staves (`\change Staff`
+    kneed beams), `\autoChange`, `\showStaffSwitch` and `\crossStaff`.
+  - The common `\override`, `\set`, `\tweak`, `\omit` and `\hide` are
+    followed (directions, offsets, sizes, beam grouping, mark and time
+    signature styles, note-head styles, bar numbers) instead of passed over.
+  - `\RemoveEmptyStaves` hides a staff that rests for a whole system.
+  - `\partCombine` sets two parts on one staff (a2, Solo, chords, voices).
+  - Lines are broken over the whole piece; `\noBreak`, `\noPageBreak` and the
+    `\paper` widths, indents, ragged settings, system spacing and system and
+    page counts are honoured. The `Layout` the server builds is unchanged.
+
 ## [2.28.8] - 2026-10-25
 
 ### Fixed
