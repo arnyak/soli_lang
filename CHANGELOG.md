@@ -6,7 +6,19 @@
 
 ### EUI
 
-- The score engraver moves to eui 152e704:
+- The score engraver moves to eui 354d650 (152e704 first, then the second
+  round of LilyPond work):
+  - Smaller staves: `\magnifyStaff`, `StaffSymbol.staff-space` with
+    `fontSize`, ossia and cue staves.
+  - A `\time` in the middle of a bar, a `\partial` later in a piece, a
+    `\time` written in one staff only (applied to the whole score),
+    polymetre with bars of one length (`\enablePolymeter`,
+    `\scaleDurations`, `timeSignatureFraction`) and voices inside a voice.
+  - Accidentals of notes moved to the other staff counted on that staff;
+    `\partCombine` MIDI plays the part a solo or unison leaves off the staff.
+  - Vertical spacing as LilyPond's springs: crowded pages squeeze, pages with
+    room stretch, skylines keep ink apart; beams sloped and placed by
+    LilyPond's quanting, a `\crossStaff` flag at the joined stem's end.
   - Beams, slurs and ties across a piano's two staves (`\change Staff`
     kneed beams), `\autoChange`, `\showStaffSwitch` and `\crossStaff`.
   - The common `\override`, `\set`, `\tweak`, `\omit` and `\hide` are
