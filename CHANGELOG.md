@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+## [2.28.7] - 2026-10-25
+
+### EUI
+
+- The score engraver moves to eui 67bc21a. `\afterGrace` takes post-events
+  on its main note, as LilyPond writes them: `\afterGrace c''1~ { d''16 }`,
+  a slur, a dynamic or an articulation before the braces. A tie from the
+  main note now holds through its after-grace notes in the MIDI, instead
+  of the note being struck again.
+
+### Fixed
+
+- `soli test --browser`: headless browser runs are muted (`--mute-audio`),
+  so pages that play sound no longer reach the speakers of the machine
+  running the specs.
+
+## [2.28.6] - 2026-10-24
+
+### EUI
+
+- The score engraver moves to eui ada6ba6. `\paper`'s `oddHeaderMarkup`,
+  `evenHeaderMarkup`, `oddFooterMarkup` and `evenFooterMarkup` are drawn
+  (words, header fields, the page number, `\fill-line`, `\on-the-fly`
+  page tests); `systems-per-page` and `max-systems-per-page` are honoured;
+  the copyright is drawn at the foot of the first page. The PDF writer
+  lays an invisible text layer under every word it draws, so a PDF's
+  titles, lyrics and markings can be selected, copied and searched; a
+  page looks exactly as before. `\afterGrace` (and its fraction form) is
+  read, drawn before the next note and played in its main note's last
+  quarter.
+- `eui_score_layout` and `eui_score_bands` read `systems_per_page` and
+  `head_room` from the layout hash.
+
 ## [2.28.5] - 2026-10-24
 
 ### Security
