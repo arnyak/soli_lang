@@ -1243,20 +1243,41 @@ fn index_already_exists(status: u16, body: &str) -> bool {
 }
 
 fn create_index_sync(collection: &str, field: &str) -> Result<(), String> {
+    post_index_sync(
+        collection,
+        serde_json::json!({
+            "name": format!("idx_{}_{}", collection, field.trim_start_matches('_')),
+            "field": field,
+            "type": "hash",
+            "unique": false,
+        }),
+    )
+}
+
+/// A sorted ("persistent") index named `name` on `fields`, in that order,
+/// made unless it exists. A hash index (`ensure_index`) only answers
+/// equality; a query that also filters a range or sorts (the job queue's
+/// claim: `state IN … AND run_at <= now SORT priority, run_at`) needs this.
+pub fn ensure_sorted_index(collection: &str, name: &str, fields: &[&str]) -> Result<(), String> {
+    post_index_sync(
+        collection,
+        serde_json::json!({
+            "name": name,
+            "fields": fields,
+            "type": "persistent",
+            "unique": false,
+        }),
+    )
+}
+
+fn post_index_sync(collection: &str, index: serde_json::Value) -> Result<(), String> {
     let (scheme, host) = solidb_scheme_host();
     let database = get_database_name();
     let url = format!(
         "{}{}/_api/database/{}/index/{}",
         scheme, host, database, collection
     );
-
-    let body = serde_json::json!({
-        "name": format!("idx_{}_{}", collection, field.trim_start_matches('_')),
-        "field": field,
-        "type": "hash",
-        "unique": false,
-    })
-    .to_string();
+    let body = index.to_string();
 
     let client = crate::interpreter::builtins::http_class::db_http_client();
 

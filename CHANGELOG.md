@@ -4,6 +4,14 @@
 
 ## [2.28.9] - 2026-10-25
 
+### Fixed
+
+- Jobs on SoliDB: the queue's claim (`state IN … AND run_at <= now SORT
+  priority, run_at`, every poll) gets a sorted index of its own shape,
+  `idx_jobs_claim`. The hash indexes made at boot served only the state
+  equality, so every poll read the whole queue and showed up as a slow
+  query once done jobs piled up. `crud::ensure_sorted_index` makes it.
+
 ### EUI
 
 - The score engraver moves to eui 354d650 (152e704 first, then the second

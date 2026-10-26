@@ -165,6 +165,21 @@ fn ensure_queue_collections() {
             }
         }
     }
+    // The claim filters a range on run_at and sorts by priority then
+    // run_at: the hash indexes above only serve the state equality, so
+    // every poll read the whole queue. A sorted index in the query's own
+    // order serves all of it (the SQL backends build theirs in
+    // `store::enqueue`).
+    if let Err(e) = crud::ensure_sorted_index(
+        super::JOBS_COLLECTION,
+        "idx_jobs_claim",
+        &["state", "run_at", "priority"],
+    ) {
+        eprintln!(
+            "[jobs] could not index the claim on {}: {e}",
+            super::JOBS_COLLECTION
+        );
+    }
 }
 
 /// How long to keep pruning apart, regardless of how often the loop wakes.
