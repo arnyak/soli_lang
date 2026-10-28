@@ -14,8 +14,9 @@
 
 ### EUI
 
-- The score engraver moves to eui eed4bd9 (152e704 first, then the second
-  round of LilyPond work, and an ossia beamed like any staff):
+- The score engraver moves to eui adc44e0 (152e704 first, then the second
+  round of LilyPond work, an ossia beamed like any staff, and a title too
+  wide for the page broken between words):
   - Smaller staves: `\magnifyStaff`, `StaffSymbol.staff-space` with
     `fontSize`, ossia and cue staves.
   - A `\time` in the middle of a bar, a `\partial` later in a piece, a
