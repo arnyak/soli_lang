@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Modules
+
+- Imports are bounded by the project — the directory of `soli.toml` — and no
+  longer by the directory of the file being run. `soli test` runs each spec
+  from its own folder, so a spec in `tests/billing/` could not import
+  `../support/db.sl` ("resolves outside its allowed root"): specs had to stay
+  flat in `tests/`. Path dependencies (`name = { path = "…" }`) are read
+  from `soli.toml`'s directory too, instead of from that folder. An import
+  that leaves the project is still refused, symlinks included; without a
+  `soli.toml`, nothing changes.
+  `accepts_relative_import_to_a_sibling_folder_of_the_project`,
+  `path_dependency_is_relative_to_soli_toml_not_to_the_base_dir`,
+  `rejects_relative_import_escaping_the_project_of_a_nested_base_dir`.
+
 ## [2.28.9] - 2026-10-25
 
 ### Fixed

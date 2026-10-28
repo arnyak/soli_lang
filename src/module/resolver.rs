@@ -85,6 +85,11 @@ pub struct ModuleResolver {
     base_dir: PathBuf,
     /// Optional package configuration
     package: Option<Package>,
+    /// Directory holding the project's soli.toml, when one was found: the
+    /// project root. Path dependencies are relative to it, and it bounds
+    /// relative imports, so a spec in `tests/colis/` can import
+    /// `../support/x.sl` — still inside the project.
+    package_dir: Option<PathBuf>,
     /// Optional lock file for git dependencies
     lock: Option<LockFile>,
     /// Cache of resolved modules
@@ -97,24 +102,34 @@ impl ModuleResolver {
     /// Create a new module resolver.
     pub fn new(base_dir: &Path) -> Self {
         // Try to find and load package file
-        let (package, lock) = match Package::find(base_dir) {
+        let (package, lock, package_dir) = match Package::find(base_dir) {
             Some(pkg_path) => {
                 let pkg = Package::load(&pkg_path).ok();
                 // Try to load lock file from same directory as soli.toml
                 let lock_path = pkg_path.with_file_name("soli.lock");
                 let lock = LockFile::load(&lock_path).ok();
-                (pkg, lock)
+                let dir = pkg
+                    .as_ref()
+                    .and_then(|_| pkg_path.parent().map(Path::to_path_buf));
+                (pkg, lock, dir)
             }
-            None => (None, None),
+            None => (None, None, None),
         };
 
         ModuleResolver {
             base_dir: base_dir.to_path_buf(),
             package,
+            package_dir,
             lock,
             cache: HashMap::new(),
             resolving: Vec::new(),
         }
+    }
+
+    /// The project root: the directory of soli.toml when there is one, else
+    /// the base directory the resolver was created for.
+    fn project_root(&self) -> &Path {
+        self.package_dir.as_deref().unwrap_or(&self.base_dir)
     }
 
     /// Resolve all imports in a program and return a combined program.
@@ -328,7 +343,9 @@ impl ModuleResolver {
             let parts: Vec<&str> = import_path.split('/').collect();
             if let Some(dep) = pkg.dependencies.get(parts[0]) {
                 let dep_root: PathBuf = match dep {
-                    super::package::Dependency::Path(dep_path) => self.base_dir.join(dep_path),
+                    super::package::Dependency::Path(dep_path) => {
+                        self.project_root().join(dep_path)
+                    }
                     super::package::Dependency::Version(_)
                     | super::package::Dependency::Git { .. } => self
                         .lock
@@ -365,8 +382,8 @@ impl ModuleResolver {
 
     /// Pick the containment root that owns `from_path`. Order of preference:
     /// any matching lockfile cache path → any matching path-dependency root
-    /// → the project `base_dir`. Roots are canonicalised on the fly so
-    /// symlinked paths resolve consistently.
+    /// → the project root (soli.toml's directory, else `base_dir`). Roots are
+    /// canonicalised on the fly so symlinked paths resolve consistently.
     fn containment_root_for(&self, from_path: &Path) -> PathBuf {
         let canonical_from = from_path
             .canonicalize()
@@ -385,7 +402,7 @@ impl ModuleResolver {
         if let Some(pkg) = &self.package {
             for dep in pkg.dependencies.values() {
                 if let super::package::Dependency::Path(p) = dep {
-                    if let Ok(canon_dep) = self.base_dir.join(p).canonicalize() {
+                    if let Ok(canon_dep) = self.project_root().join(p).canonicalize() {
                         if canonical_from.starts_with(&canon_dep) {
                             return canon_dep;
                         }
@@ -394,9 +411,8 @@ impl ModuleResolver {
             }
         }
 
-        self.base_dir
-            .canonicalize()
-            .unwrap_or_else(|_| self.base_dir.clone())
+        let root = self.project_root();
+        root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
     }
 
     /// Reject `resolved` if it does not sit under `root` after both are
@@ -842,5 +858,84 @@ mod tests {
             .resolve_path("helper.sl", &proj.join("main.sl"))
             .expect("bare-name import under base must resolve");
         assert!(resolved.ends_with("helper.sl"));
+    }
+
+    #[test]
+    fn accepts_relative_import_to_a_sibling_folder_of_the_project() {
+        // Layout (the base dir is the spec's folder, as `soli test` sets it):
+        //   <root>/proj/soli.toml
+        //   <root>/proj/tests/colis/a_spec.sl
+        //   <root>/proj/tests/support/db.sl
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("proj");
+        write(
+            &proj.join("soli.toml"),
+            "[package]\nname = \"proj\"\nversion = \"0.1.0\"\n",
+        );
+        write(&proj.join("tests/colis/a_spec.sl"), "");
+        write(&proj.join("tests/support/db.sl"), "");
+
+        let resolver = ModuleResolver::new(&proj.join("tests/colis"));
+        let resolved = resolver
+            .resolve_path("../support/db.sl", &proj.join("tests/colis/a_spec.sl"))
+            .expect("an import that stays in the project must resolve");
+        assert!(
+            resolved.ends_with("tests/support/db.sl"),
+            "{}",
+            resolved.display()
+        );
+    }
+
+    #[test]
+    fn rejects_relative_import_escaping_the_project_of_a_nested_base_dir() {
+        // Layout:
+        //   <root>/proj/soli.toml
+        //   <root>/proj/tests/a_spec.sl
+        //   <root>/outside.sl      (outside the project)
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("proj");
+        write(
+            &proj.join("soli.toml"),
+            "[package]\nname = \"proj\"\nversion = \"0.1.0\"\n",
+        );
+        write(&proj.join("tests/a_spec.sl"), "");
+        write(&tmp.path().join("outside.sl"), "");
+
+        let resolver = ModuleResolver::new(&proj.join("tests"));
+        let err = resolver
+            .resolve_path("../../outside.sl", &proj.join("tests/a_spec.sl"))
+            .expect_err("an escape out of the project must be rejected");
+        match err {
+            ResolveError::ImportError(msg) => {
+                assert!(msg.contains("outside its allowed root"), "{}", msg);
+            }
+            other => panic!("expected ImportError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn path_dependency_is_relative_to_soli_toml_not_to_the_base_dir() {
+        // Layout:
+        //   <root>/proj/soli.toml   (support = { path = "tests/support" })
+        //   <root>/proj/tests/colis/a_spec.sl
+        //   <root>/proj/tests/support/db.sl
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("proj");
+        write(
+            &proj.join("soli.toml"),
+            "[package]\nname = \"proj\"\nversion = \"0.1.0\"\n\n[dependencies]\nsupport = { path = \"tests/support\" }\n",
+        );
+        write(&proj.join("tests/colis/a_spec.sl"), "");
+        write(&proj.join("tests/support/db.sl"), "");
+
+        let resolver = ModuleResolver::new(&proj.join("tests/colis"));
+        let resolved = resolver
+            .resolve_path("support/db.sl", &proj.join("tests/colis/a_spec.sl"))
+            .expect("a path dependency resolves from soli.toml's directory");
+        assert!(
+            resolved.ends_with("tests/support/db.sl"),
+            "{}",
+            resolved.display()
+        );
     }
 }
