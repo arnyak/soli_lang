@@ -11,7 +11,7 @@ Soli ships three production signals out of the box: **metrics**, **structured lo
 | Errors | on (`SOLI_ERRORS=off` to stop) | `_soli_errors` table, shown at `/__soli/errors` |
 | Query time | on (`SOLI_QUERY_STATS=off` to stop) | `_soli_query_stats` table, shown at `/__soli/slow_queries` |
 | Slow queries | on at 200 ms (`SOLI_SLOW_QUERY_MS`, `SOLI_SLOW_QUERIES=off`) | `_soli_slow_queries` table, shown at `/__soli/slow_queries` |
-| Notifications | `SOLI_NOTIFY_WEBHOOKS` / `SOLI_NOTIFY_EMAILS` / a `SoliNotificationJob` / "Notify this device" | Slack, Teams, Discord, Google Chat, any URL, email, your job, Web Push |
+| Notifications | `SOLI_NOTIFY_WEBHOOKS` / `SOLI_NOTIFY_EMAILS` / a `SoliNotificationJob` / "Notify this device" | Slack, Teams, Discord, Google Chat, Campfire, any URL, email, your job, Web Push |
 
 For the full env-var table see [Configuration](configuration.md). This page is the operator guide: what each signal means, how to turn it on, and how the pieces correlate.
 
@@ -307,7 +307,7 @@ Errors and slow queries can tell someone instead of waiting to be looked at. Fou
 **Where they go.** Set any of these; every event goes to all of them:
 
 ```bash
-# Slack, Microsoft Teams, Discord, Google Chat or any URL — comma-separated
+# Slack, Microsoft Teams, Discord, Google Chat, Campfire or any URL — comma-separated
 SOLI_NOTIFY_WEBHOOKS=https://hooks.slack.com/services/T000/B000/XXXX,https://acme.webhook.office.com/webhookb2/...
 
 # Addresses, sent through the app's own mailer (SOLI_SMTP_*)
@@ -318,7 +318,7 @@ SOLI_NOTIFY_FROM=alerts@example.com        # default: SOLI_SMTP_FROM
 SOLI_NOTIFY_URL=https://shop.example.com
 ```
 
-Webhooks are recognised by host and sent the message each product expects: Slack incoming webhooks (`hooks.slack.com`) get formatted text with a link, Microsoft Teams (`*.webhook.office.com`, and Workflows URLs on `*.logic.azure.com` / `*.powerplatform.com`) an Adaptive Card with an **Open in Soli** button, Discord and Google Chat a text message. Any other URL receives the event as JSON:
+Webhooks are recognised by host and sent the message each product expects: Slack incoming webhooks (`hooks.slack.com`) get formatted text with a link, Microsoft Teams (`*.webhook.office.com`, and Workflows URLs on `*.logic.azure.com` / `*.powerplatform.com`) an Adaptive Card with an **Open in Soli** button, Discord and Google Chat a text message. Campfire (the self-hosted 37signals chat) is recognised by its bot URL's path, `https://<your campfire>/rooms/<room id>/<bot key>/messages` (Account → Bots → the room's URL), and gets a short HTML message with an **Open in Soli** link. Campfire has no `@everyone` and no groups: who is alerted is who is in the room, so post to an all-access room to reach everyone, or to a closed room holding only the on-call members to reach a group. Members who want a push for every alert set that room's notifications to *Everything*. Any other URL receives the event as JSON:
 
 ```json
 {

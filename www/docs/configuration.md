@@ -501,7 +501,7 @@ These knobs control how the request edge handles untrusted input. See the
 | `SOLI_MOBILE_PUBLIC_INSTALL` | `0` turns off the public install links (`/__soli/mobile/i/<token>`). | on |
 | `SOLI_ANDROID_KEYSTORE` | Release keystore for `soli mobile build android` (same as `--keystore`); its passwords come from `SOLI_ANDROID_KEYSTORE_PASSWORD`, `SOLI_ANDROID_KEY_PASSWORD` and `SOLI_ANDROID_KEY_ALIAS`. | unset (debug key) |
 | `SOLI_ADMIN_USER` / `SOLI_ADMIN_PASSWORD` / `SOLI_ADMIN_TOKEN` | One set of credentials accepted by every built-in operator page (`/__soli/jobs`, `/__soli/errors`, `/__soli/slow_queries`, `/__soli/mobile`), in addition to each page's own. | unset |
-| `SOLI_NOTIFY_WEBHOOKS` | Comma-separated URLs that receive [notifications](observability.md#notifications). Slack, Microsoft Teams, Discord and Google Chat URLs get their own message format; any other URL gets the event as JSON. | unset |
+| `SOLI_NOTIFY_WEBHOOKS` | Comma-separated URLs that receive [notifications](observability.md#notifications). Slack, Microsoft Teams, Discord, Google Chat and Campfire bot URLs get their own message format; any other URL gets the event as JSON. | unset |
 | `SOLI_NOTIFY_EMAILS` | Comma-separated addresses that receive notifications through the app's mailer (`SOLI_SMTP_*`). | unset |
 | `SOLI_NOTIFY_FROM` | Sender of notification emails. | `SOLI_SMTP_FROM` |
 | `SOLI_NOTIFY_EVENTS` | Which events are sent: any of `error.new`, `error.regressed`, `error.spike`, `slow_query.new`. | all four |

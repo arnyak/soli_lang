@@ -16,8 +16,9 @@
 //! - `SOLI_NOTIFY_EMAILS` — comma-separated addresses, sent through the app's
 //!   own mailer settings (`SOLI_SMTP_*`; in `--dev` the dev inbox).
 //! - `SOLI_NOTIFY_WEBHOOKS` — comma-separated URLs. Slack, Microsoft Teams,
-//!   Discord and Google Chat URLs are recognised by host and sent the message
-//!   shape each expects; any other URL gets the event as JSON, signed with
+//!   Discord and Google Chat URLs are recognised by host, Campfire bot URLs
+//!   (`/rooms/<id>/<bot_key>/messages`, self-hosted) by path, and each is sent
+//!   the message shape it expects; any other URL gets the event as JSON, signed with
 //!   `X-Soli-Signature` (HMAC-SHA256 of the body) when `SOLI_NOTIFY_SECRET` is
 //!   set. URLs go through the same SSRF guard as `Webhook.enqueue`.
 //! - Web Push — every browser an operator subscribed from `/__soli/errors` or
@@ -334,6 +335,7 @@ fn destinations(config: &Config) -> Vec<String> {
             HookKind::Teams => "Teams".to_string(),
             HookKind::Discord => "Discord".to_string(),
             HookKind::GoogleChat => "Google Chat".to_string(),
+            HookKind::Campfire => "Campfire".to_string(),
             HookKind::Generic => "webhook".to_string(),
         })
         .collect();
@@ -374,7 +376,7 @@ pub(crate) fn status_html() -> String {
     destinations.extend(push_destinations());
     let mut out = if destinations.is_empty() {
         "<p class=\"summary\">Notifications are off \u{2014} set <code>SOLI_NOTIFY_WEBHOOKS</code> \
-(Slack, Teams, Discord, Google Chat or any URL) or <code>SOLI_NOTIFY_EMAILS</code>, or turn on \
+(Slack, Teams, Discord, Google Chat, Campfire or any URL) or <code>SOLI_NOTIFY_EMAILS</code>, or turn on \
 push notifications on this device below.</p>"
             .to_string()
     } else {
@@ -557,14 +559,40 @@ fn email_parts(event: &Event, app: &str, url: Option<&str>) -> (String, String, 
     (subject, text, html)
 }
 
-/// Which chat product a webhook URL belongs to, by its host.
+/// Which chat product a webhook URL belongs to, by its host — or, for
+/// Campfire, which is self-hosted, by its bot URL's path.
 #[derive(Debug, PartialEq, Eq)]
 enum HookKind {
     Slack,
     Teams,
     Discord,
     GoogleChat,
+    Campfire,
     Generic,
+}
+
+/// A Campfire bot URL ends `/rooms/<room id>/<user id>-<bot token>/messages`.
+fn is_campfire_bot_path(url: &str) -> bool {
+    let rest = url.split("://").nth(1).unwrap_or("");
+    let Some(path) = rest.find('/').map(|i| &rest[i..]) else {
+        return false;
+    };
+    if path.contains(['?', '#']) {
+        return false;
+    }
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let segments: Vec<&str> = path.trim_end_matches('/').split('/').collect();
+    match segments.as_slice() {
+        [.., "rooms", room, bot_key, "messages"] => {
+            digits(room)
+                && bot_key.split_once('-').is_some_and(|(id, token)| {
+                    digits(id)
+                        && !token.is_empty()
+                        && token.bytes().all(|b| b.is_ascii_alphanumeric())
+                })
+        }
+        _ => false,
+    }
 }
 
 fn hook_kind(url: &str) -> HookKind {
@@ -587,6 +615,8 @@ fn hook_kind(url: &str) -> HookKind {
         HookKind::Discord
     } else if host == "chat.googleapis.com" {
         HookKind::GoogleChat
+    } else if is_campfire_bot_path(url) {
+        HookKind::Campfire
     } else {
         HookKind::Generic
     }
@@ -651,8 +681,27 @@ fn webhook_body(kind: &HookKind, event: &Event, app: &str, url: Option<&str>) ->
                 serde_json::json!({ "text": text })
             }
         }
+        HookKind::Campfire => serde_json::Value::String(campfire_html(event, app, url)),
         HookKind::Generic => event.to_json(app, url),
     }
+}
+
+/// A Campfire bot posts its request body, read raw, as the message's rich
+/// text — so the body is HTML, not JSON.
+fn campfire_html(event: &Event, app: &str, url: Option<&str>) -> String {
+    let esc = super::dev_bar::html_escape;
+    let mut html = format!(
+        "<p><strong>{}</strong></p><pre>{}</pre>",
+        esc(&event.title(app)),
+        esc(&event.summary)
+    );
+    for line in text_lines(event).iter().skip(1) {
+        html.push_str(&format!("<p>{}</p>", esc(line)));
+    }
+    if let Some(url) = url {
+        html.push_str(&format!("<p><a href=\"{}\">Open in Soli</a></p>", esc(url)));
+    }
+    html
 }
 
 fn post_webhook(
@@ -663,11 +712,15 @@ fn post_webhook(
 ) -> Result<(), String> {
     crate::jobs::engine::validate_webhook_url(hook)?;
     let kind = hook_kind(hook);
-    let body = webhook_body(&kind, event, &config.app, url).to_string();
+    let (body, content_type) = match webhook_body(&kind, event, &config.app, url) {
+        // Not JSON: Campfire would try to parse it as request params.
+        serde_json::Value::String(html) => (html, "text/html; charset=utf-8"),
+        json => (json.to_string(), "application/json"),
+    };
     let client = crate::interpreter::builtins::http_class::get_user_http_client().clone();
     let mut request = client
         .post(hook)
-        .header("Content-Type", "application/json")
+        .header("Content-Type", content_type)
         .header("X-Soli-Event", event.kind.name())
         .timeout(Duration::from_secs(10));
     if kind == HookKind::Generic {
@@ -730,6 +783,27 @@ mod tests {
             hook_kind("https://chat.googleapis.com/v1/spaces/x/messages?key=k"),
             HookKind::GoogleChat
         );
+        assert_eq!(
+            hook_kind("https://chat.example.com/rooms/4/12-aB3dE5fG7hJ9/messages"),
+            HookKind::Campfire
+        );
+        assert_eq!(
+            hook_kind("https://example.com/campfire/rooms/4/12-aB3dE5fG7hJ9/messages/"),
+            HookKind::Campfire
+        );
+        // Not a bot key, or not the messages endpoint.
+        assert_eq!(
+            hook_kind("https://chat.example.com/rooms/4/messages"),
+            HookKind::Generic
+        );
+        assert_eq!(
+            hook_kind("https://chat.example.com/rooms/4/12-abc/messages?x=1"),
+            HookKind::Generic
+        );
+        assert_eq!(
+            hook_kind("https://chat.example.com/rooms/x/12-abc/messages"),
+            HookKind::Generic
+        );
         assert_eq!(hook_kind("https://ops.example.com/hook"), HookKind::Generic);
         // A look-alike path is not the product.
         assert_eq!(
@@ -776,6 +850,22 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Error is back"));
+    }
+
+    #[test]
+    fn campfire_gets_escaped_html_with_a_link() {
+        let mut e = event(Kind::ErrorNew);
+        e.summary = "<script>".into();
+        let body = webhook_body(&HookKind::Campfire, &e, "shop", Some("https://x/y?a=1&b=2"));
+        let html = body.as_str().unwrap();
+        assert!(
+            html.starts_with("<p><strong>[shop] New error: &lt;script&gt;</strong></p>"),
+            "{html}"
+        );
+        assert!(html.contains("<pre>&lt;script&gt;</pre>"));
+        assert!(html.contains("<p>from GET /orders/7</p>"));
+        assert!(html.contains("<a href=\"https://x/y?a=1&amp;b=2\">Open in Soli</a>"));
+        assert!(!html.contains("<script>"));
     }
 
     #[test]

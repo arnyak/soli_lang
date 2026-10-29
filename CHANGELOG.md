@@ -16,6 +16,30 @@
   `path_dependency_is_relative_to_soli_toml_not_to_the_base_dir`,
   `rejects_relative_import_escaping_the_project_of_a_nested_base_dir`.
 
+## [2.28.11] - 2026-10-29
+
+### Added
+
+- `HTTP.stream(method, url, options?, body?)`: a response read line by line as
+  it arrives (`stream.next_line`, `nil` at the end; `status`, `headers`,
+  `close`). Its `timeout` is the wait for the next bytes, so an AI model that
+  thinks for minutes and then answers in server-sent events is not cut off as
+  `HTTP.request` cuts it; the SSRF, header and size guards are
+  `HTTP.request`'s.
+
+## [2.28.10] - 2026-10-29
+
+### Added
+
+- Notifications to Campfire. A Campfire bot URL in `SOLI_NOTIFY_WEBHOOKS`
+  (`https://<campfire>/rooms/<room id>/<user id>-<bot token>/messages`) is
+  recognised by its path, since Campfire is self-hosted and has no host to
+  match, and is sent an HTML message (title, summary, detail lines, an
+  **Open in Soli** link) as `text/html`: Campfire posts a bot's raw request
+  body as the message, and a JSON body would show up as JSON. Who is alerted
+  is who is in the room — an all-access room for everyone, a closed room for
+  a group. The operator pages list it as "Campfire" (`notify::HookKind::Campfire`).
+
 ## [2.28.9] - 2026-10-25
 
 ### Fixed
@@ -28,9 +52,12 @@
 
 ### EUI
 
-- The score engraver moves to eui adc44e0 (152e704 first, then the second
-  round of LilyPond work, an ossia beamed like any staff, and a title too
-  wide for the page broken between words):
+- The score engraver moves to eui 7ff6282 (152e704 first, then the second
+  round of LilyPond work, an ossia beamed like any staff, a title too wide
+  for the page broken between words, and LilyPond 2.24's `\segnoMark 1`,
+  `\segno` over a note, `\section`, `\sectionLabel`, `\textMark`, `\volta`
+  in an `\alternative` and `\harmonic`, and each word's range on a page,
+  `paths_words`):
   - Smaller staves: `\magnifyStaff`, `StaffSymbol.staff-space` with
     `fontSize`, ossia and cue staves.
   - A `\time` in the middle of a bar, a `\partial` later in a piece, a

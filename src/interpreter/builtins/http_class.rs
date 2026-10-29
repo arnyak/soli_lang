@@ -2823,6 +2823,9 @@ pub fn register_http_class(env: &mut Environment) {
         })),
     );
 
+    #[cfg(not(target_arch = "wasm32"))]
+    register_http_stream(&mut http_static_methods);
+
     let http_class = Class {
         name: "HTTP".to_string(),
         superclass: None,
@@ -3308,6 +3311,442 @@ fn response_to_value(response: HttpResponse) -> Value {
     );
 
     Value::Hash(Rc::new(RefCell::new(result)))
+}
+
+// ---------------------------------------------------------------------------
+// HTTP.stream — a response read line by line, as it arrives
+// ---------------------------------------------------------------------------
+//
+// `HTTP.request` waits for the whole body, and its timeout counts from the
+// start: an AI model that thinks for ten minutes before it answers in
+// pieces (server-sent events) is cut off. `HTTP.stream` answers as soon as
+// the headers are in, with an object the caller reads one line at a time:
+//
+//     stream = HTTP.stream("POST", url, {"Authorization": "…", "timeout": 120}, body)
+//     line = stream.next_line          # nil once the body is over
+//     stream.status / stream.headers / stream.close
+//
+// Its `timeout` is how long it waits for the next bytes, not for the whole:
+// a stream that keeps sending runs as long as it sends. Plain natives cannot
+// call a Soli block (see `retry.rs`), hence a reader rather than `do |line|`.
+// The same guards as `HTTP.request`: the SSRF check and resolver, the
+// header checks, and the response cap (`SOLI_HTTP_MAX_RESPONSE_BYTES`).
+
+/// The wait for the next bytes when the caller names none, in seconds.
+#[cfg(not(target_arch = "wasm32"))]
+const HTTP_STREAM_IDLE: u64 = 120;
+
+/// A stream's whole length, past which it is cut off however it sends: a day.
+#[cfg(not(target_arch = "wasm32"))]
+const HTTP_STREAM_LONGEST: std::time::Duration = std::time::Duration::from_secs(86_400);
+
+/// One open stream: its response, the bytes read and not yet given out.
+#[cfg(not(target_arch = "wasm32"))]
+struct OpenStream {
+    response: Option<reqwest::Response>,
+    pending: Vec<u8>,
+    read: usize,
+    idle: std::time::Duration,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+thread_local! {
+    /// The open streams of this thread, by the id their object carries.
+    static OPEN_STREAMS: RefCell<HashMap<i64, OpenStream>> = RefCell::new(HashMap::new());
+    static NEXT_STREAM: std::cell::Cell<i64> = const { std::cell::Cell::new(1) };
+    /// The HTTPStream class, built when the HTTP class is registered.
+    static STREAM_CLASS: RefCell<Option<Rc<Class>>> = const { RefCell::new(None) };
+}
+
+/// The next line of `pending` (its `\n` and a `\r` before it taken off), and
+/// what stays after it; none while no `\n` has come.
+#[cfg(not(target_arch = "wasm32"))]
+fn take_line(pending: &mut Vec<u8>) -> Option<String> {
+    let at = pending.iter().position(|b| *b == b'\n')?;
+    let mut line: Vec<u8> = pending.drain(..=at).collect();
+    line.pop();
+    if line.last() == Some(&b'\r') {
+        line.pop();
+    }
+    Some(String::from_utf8_lossy(&line).into_owned())
+}
+
+/// A stream just opened: its id, status and headers.
+#[cfg(not(target_arch = "wasm32"))]
+type OpenedStream = (i64, u16, Vec<(String, String)>);
+
+/// Opens a stream to `url` (checked by the caller) and keeps it under a new id:
+/// `(id, status, headers)`.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_stream(
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: Option<OutgoingBody>,
+    idle: std::time::Duration,
+) -> Result<OpenedStream, String> {
+    let client = get_user_http_client().clone();
+    let (method, url, headers) = (method.to_string(), url.to_string(), headers.to_vec());
+    let response = block_on_user_http_local(async move {
+        let mut request = match method.as_str() {
+            "GET" => client.get(&url),
+            "POST" => client.post(&url),
+            "PUT" => client.put(&url),
+            "DELETE" => client.delete(&url),
+            "PATCH" => client.patch(&url),
+            _ => return Err(format!("HTTP.stream: unsupported method {method}")),
+        };
+        for (key, value) in &headers {
+            request = request.header(key.as_str(), value.as_str());
+        }
+        if let Some(body) = body {
+            request = body.attach(request)?;
+        }
+        // The client's own timeout (30 s) counts the whole answer, body
+        // included: a stream would be cut off after it however steadily it
+        // sends. Here the only limit is the wait for the next bytes.
+        let request = request.timeout(HTTP_STREAM_LONGEST);
+        // Waiting for the headers counts as waiting for bytes.
+        match tokio::time::timeout(idle, send_logged(&method, &url, request)).await {
+            Ok(sent) => sent,
+            Err(_) => Err(format!("HTTP.stream: no answer in {} s", idle.as_secs())),
+        }
+    })?;
+    let status = response.status().as_u16();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|v| (name.to_string(), v.to_string()))
+        })
+        .collect();
+    let id = NEXT_STREAM.with(|n| {
+        let id = n.get();
+        n.set(id + 1);
+        id
+    });
+    OPEN_STREAMS.with(|s| {
+        s.borrow_mut().insert(
+            id,
+            OpenStream {
+                response: Some(response),
+                pending: Vec::new(),
+                read: 0,
+                idle,
+            },
+        )
+    });
+    Ok((id, status, headers))
+}
+
+/// The next line of stream `id`, waiting at most its idle time for more
+/// bytes; none once the body is over (its last line, unended, given first).
+#[cfg(not(target_arch = "wasm32"))]
+fn stream_next_line(id: i64) -> Result<Option<String>, String> {
+    loop {
+        let (response, idle) = {
+            let taken = OPEN_STREAMS.with(|s| {
+                let mut streams = s.borrow_mut();
+                let open = streams.get_mut(&id)?;
+                if let Some(line) = take_line(&mut open.pending) {
+                    return Some(Ok(Some(line)));
+                }
+                match open.response.take() {
+                    Some(response) => Some(Err((response, open.idle))),
+                    None => {
+                        // The body is over: what is left is the last line.
+                        let rest = std::mem::take(&mut open.pending);
+                        Some(Ok(
+                            (!rest.is_empty()).then(|| String::from_utf8_lossy(&rest).into_owned())
+                        ))
+                    }
+                }
+            });
+            match taken {
+                None => return Ok(None),
+                Some(Ok(line)) => return Ok(line),
+                Some(Err(pair)) => pair,
+            }
+        };
+        let mut response = response;
+        let chunk = block_on_user_http_local(async move {
+            let next = match tokio::time::timeout(idle, response.chunk()).await {
+                Ok(Ok(chunk)) => Ok(chunk),
+                Ok(Err(e)) => Err(format!(
+                    "HTTP.stream: the answer broke off: {}",
+                    describe_request_error(&e)
+                )),
+                Err(_) => Err(format!(
+                    "HTTP.stream: nothing received for {} s",
+                    idle.as_secs()
+                )),
+            };
+            next.map(|chunk| (chunk, response))
+        });
+        match chunk {
+            Ok((Some(bytes), response)) => {
+                let over = OPEN_STREAMS.with(|s| {
+                    let mut streams = s.borrow_mut();
+                    let Some(open) = streams.get_mut(&id) else {
+                        return false;
+                    };
+                    open.read += bytes.len();
+                    open.pending.extend_from_slice(&bytes);
+                    open.response = Some(response);
+                    open.read > http_max_response_bytes()
+                });
+                if over {
+                    stream_close(id);
+                    return Err(format!(
+                        "HTTP.stream: the answer passed {} bytes (SOLI_HTTP_MAX_RESPONSE_BYTES)",
+                        http_max_response_bytes()
+                    ));
+                }
+            }
+            // The body is over; the response is dropped, its connection freed.
+            Ok((None, _)) => {}
+            Err(e) => {
+                stream_close(id);
+                return Err(e);
+            }
+        }
+    }
+}
+
+/// Forgets stream `id`, its connection with it.
+#[cfg(not(target_arch = "wasm32"))]
+fn stream_close(id: i64) {
+    OPEN_STREAMS.with(|s| s.borrow_mut().remove(&id));
+}
+
+/// The id an HTTPStream object carries.
+#[cfg(not(target_arch = "wasm32"))]
+fn stream_id(args: &[Value], what: &str) -> Result<i64, String> {
+    if let Some(Value::Instance(inst)) = args.first() {
+        if let Some(Value::Int(id)) = inst.borrow().get("_id") {
+            return Ok(id);
+        }
+    }
+    Err(format!(
+        "{what} must be called on a stream from HTTP.stream"
+    ))
+}
+
+/// `HTTP.stream(method, url, options?, body?)`: `options` as `HTTP.request`'s
+/// (headers, a nested "headers" hash, "multipart"), its "timeout" the wait
+/// for the next bytes (default 120 s).
+#[cfg(not(target_arch = "wasm32"))]
+fn http_stream(args: &[Value]) -> Result<Value, String> {
+    let method = match args.first() {
+        Some(Value::String(s)) => s.to_uppercase(),
+        _ => return Err("HTTP.stream() requires a method and a URL".to_string()),
+    };
+    let url = match args.get(1) {
+        Some(Value::String(s)) => s.to_string(),
+        _ => return Err("HTTP.stream() URL must be a string".to_string()),
+    };
+    validate_url_for_ssrf(&url)?;
+    let idle =
+        extract_timeout(args.get(2))?.unwrap_or(std::time::Duration::from_secs(HTTP_STREAM_IDLE));
+    let mut headers = extract_headers(args.get(2))?;
+    if let Some(Value::Hash(options)) = args.get(2) {
+        for (key, value) in options.borrow().iter() {
+            let HashKey::String(key) = key else { continue };
+            if matches!(key.as_ref(), "timeout" | "headers" | "multipart") {
+                continue;
+            }
+            let value = match value {
+                Value::String(s) => s.to_string(),
+                Value::Null => continue,
+                other => format!("{}", other),
+            };
+            validate_header(key, &value)?;
+            headers.push((key.to_string(), value));
+        }
+    }
+    let body = match args.get(3) {
+        None | Some(Value::Null) => None,
+        Some(v @ (Value::String(_) | Value::Hash(_) | Value::Array(_))) => {
+            Some(outgoing_body(v, args.get(2), "HTTP.stream()")?.0)
+        }
+        Some(other) => Some(OutgoingBody::Text(format!("{}", other))),
+    };
+    let (id, status, response_headers) = open_stream(&method, &url, &headers, body, idle)?;
+    let class = STREAM_CLASS
+        .with(|c| c.borrow().clone())
+        .unwrap_or_else(|| {
+            Rc::new(Class {
+                name: "HTTPStream".to_string(),
+                ..Default::default()
+            })
+        });
+    let mut inst = crate::interpreter::value::Instance::new(class);
+    inst.set("_id", Value::Int(id));
+    inst.set("status", Value::Int(status as i64));
+    let pairs: HashPairs = response_headers
+        .into_iter()
+        .map(|(k, v)| (HashKey::String(k.into()), Value::String(v.into())))
+        .collect();
+    inst.set("headers", Value::Hash(Rc::new(RefCell::new(pairs))));
+    Ok(Value::Instance(Rc::new(RefCell::new(inst))))
+}
+
+/// Registers `HTTP.stream` and the class of what it answers.
+#[cfg(not(target_arch = "wasm32"))]
+fn register_http_stream(static_methods: &mut HashMap<String, Rc<NativeFunction>>) {
+    let mut methods: HashMap<String, Rc<NativeFunction>> = HashMap::new();
+    methods.insert(
+        "next_line".to_string(),
+        Rc::new(NativeFunction::new(
+            "HTTPStream.next_line",
+            Some(0),
+            |args| {
+                let id = stream_id(args, "next_line")?;
+                Ok(stream_next_line(id)?.map_or(Value::Null, |line| Value::String(line.into())))
+            },
+        )),
+    );
+    methods.insert(
+        "close".to_string(),
+        Rc::new(NativeFunction::new("HTTPStream.close", Some(0), |args| {
+            stream_close(stream_id(args, "close")?);
+            Ok(Value::Null)
+        })),
+    );
+    let class = Rc::new(Class {
+        name: "HTTPStream".to_string(),
+        native_methods: methods,
+        ..Default::default()
+    });
+    STREAM_CLASS.with(|c| *c.borrow_mut() = Some(class));
+    static_methods.insert(
+        "stream".to_string(),
+        Rc::new(NativeFunction::new("HTTP.stream", None, http_stream)),
+    );
+}
+
+#[cfg(test)]
+mod http_stream_tests {
+    use super::*;
+    use std::io::Write;
+    use std::net::TcpListener;
+
+    #[test]
+    fn lines_come_out_whole_their_ends_taken_off() {
+        let mut pending = b"data: one\r\ndata: tw".to_vec();
+        assert_eq!(take_line(&mut pending).as_deref(), Some("data: one"));
+        assert_eq!(take_line(&mut pending), None, "no end yet");
+        pending.extend_from_slice(b"o\n\n");
+        assert_eq!(take_line(&mut pending).as_deref(), Some("data: two"));
+        assert_eq!(take_line(&mut pending).as_deref(), Some(""));
+        assert!(pending.is_empty());
+    }
+
+    /// A server that answers the headers, writes `parts` with `gap` between
+    /// them, then waits `hold` before closing.
+    fn slow_server(
+        parts: Vec<&'static str>,
+        gap: std::time::Duration,
+        hold: std::time::Duration,
+    ) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback must be bindable");
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut buf = [0u8; 4096];
+            let _ = std::io::Read::read(&mut stream, &mut buf);
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+            );
+            for part in parts {
+                let _ = stream.write_all(part.as_bytes());
+                let _ = stream.flush();
+                thread::sleep(gap);
+            }
+            thread::sleep(hold);
+        });
+        format!("http://{}/stream", addr)
+    }
+
+    #[test]
+    fn a_stream_is_read_line_by_line_as_it_comes_then_ends() {
+        let url = slow_server(
+            vec!["data: a\n\nda", "ta: b\n\n", "last"],
+            std::time::Duration::from_millis(150),
+            std::time::Duration::ZERO,
+        );
+        let (id, status, headers) =
+            open_stream("GET", &url, &[], None, std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(status, 200);
+        assert!(headers
+            .iter()
+            .any(|(k, v)| k == "content-type" && v == "text/event-stream"));
+        let mut lines = Vec::new();
+        while let Some(line) = stream_next_line(id).unwrap() {
+            lines.push(line);
+        }
+        assert_eq!(
+            lines,
+            ["data: a", "", "data: b", "", "last"],
+            "the last line, unended, comes last"
+        );
+        assert_eq!(stream_next_line(id).unwrap(), None, "over, and forgotten");
+    }
+
+    #[test]
+    fn a_stream_that_keeps_sending_outlives_its_idle_time_and_one_that_stops_does_not() {
+        // 4 pieces 300 ms apart: 1.2 s in all, with an idle time of 1 s.
+        let url = slow_server(
+            vec!["1\n", "2\n", "3\n", "4\n"],
+            std::time::Duration::from_millis(300),
+            std::time::Duration::ZERO,
+        );
+        let (id, _, _) =
+            open_stream("GET", &url, &[], None, std::time::Duration::from_secs(1)).unwrap();
+        let mut count = 0;
+        while stream_next_line(id).unwrap().is_some() {
+            count += 1;
+        }
+        assert_eq!(count, 4);
+        // One piece, then silence longer than the idle time.
+        let url = slow_server(
+            vec!["only\n"],
+            std::time::Duration::ZERO,
+            std::time::Duration::from_secs(3),
+        );
+        let (id, _, _) =
+            open_stream("GET", &url, &[], None, std::time::Duration::from_secs(1)).unwrap();
+        assert_eq!(stream_next_line(id).unwrap().as_deref(), Some("only"));
+        let err = stream_next_line(id).expect_err("silence past the idle time");
+        assert!(err.contains("nothing received for 1 s"), "got: {err}");
+        assert_eq!(stream_next_line(id).unwrap(), None, "closed by the error");
+    }
+
+    #[test]
+    fn http_stream_refuses_what_http_request_refuses() {
+        let err = http_stream(&[
+            Value::String("GET".into()),
+            Value::String("file:///etc/passwd".into()),
+        ])
+        .expect_err("file://");
+        assert!(err.contains("not allowed"), "got: {err}");
+        assert!(
+            http_stream(&[Value::String("GET".into())]).is_err(),
+            "a URL is required"
+        );
+        let err = http_stream(&[
+            Value::String("GET".into()),
+            Value::String("https://example.com/".into()),
+            hash_from_pairs([("timeout".to_string(), Value::String("soon".into()))]),
+        ])
+        .expect_err("a timeout is seconds");
+        assert!(!err.is_empty());
+    }
 }
 
 #[cfg(test)]
