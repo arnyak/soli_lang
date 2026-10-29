@@ -1136,6 +1136,47 @@ response = HTTP.request("GET", "https://api.example.com/slow", {
 })
 ```
 
+### HTTP.stream(method, url, options?, body?)
+
+Opens a request and answers as soon as its headers are in, with an object the
+body is read from one line at a time, as it arrives: an AI model answering in
+server-sent events, a long export, a log tail. `HTTP.request` waits for the
+whole body, and its timeout counts from the start; a stream runs as long as it
+keeps sending.
+
+**Parameters:** as `HTTP.request`'s. The `timeout` (Int|Float seconds, default
+120) is the longest wait **for the next bytes**, not for the whole answer.
+
+**Returns:** an `HTTPStream`:
+- `stream.status` (Int), `stream.headers` (Hash) - read when it opened
+- `stream.next_line` - the next line, its `\n` (and a `\r` before it) taken
+  off; `nil` once the body is over (an unended last line comes first). Raises
+  when nothing arrives for `timeout` seconds, when the connection breaks, and
+  past `SOLI_HTTP_MAX_RESPONSE_BYTES` — the stream is closed then.
+- `stream.close` - lets the connection go before the end
+
+A non-2xx status does not raise: check `stream.status`, its body is readable.
+The SSRF check, the header checks and the redirect policy are `HTTP.request`'s.
+Plain natives cannot call a block, so the stream is read in a loop rather than
+with `do |line|`.
+
+**Example:**
+```soli
+stream = HTTP.stream("POST", "https://api.example.com/v1/chat/completions",
+  {"Authorization": "Bearer " + key, "content-type": "application/json", "timeout": 120},
+  JSON.stringify({"model": model, "stream": true, "messages": messages}))
+raise "refused: #{stream.status}" unless stream.status == 200
+text = ""
+line = stream.next_line
+while !line.nil?
+  if line.starts_with?("data: ") && line != "data: [DONE]"
+    delta = JSON.parse(line.slice(6, line.length))["choices"][0]["delta"]["content"]
+    text = text + delta.to_s
+  end
+  line = stream.next_line
+end
+```
+
 ### HTTP Status Helpers
 
 There are none: `http_ok`, `http_success`, `http_redirect`,

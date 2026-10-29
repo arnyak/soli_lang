@@ -109,6 +109,41 @@ describe("HTTP") do
     end
   end
 
+  describe("stream") do
+    test("reads the answer line by line, then nil") do
+      mock_http_route("/http-spec/events", 200, "data: {\"a\":1}\n\ndata: {\"a\":2}\n\ndata: [DONE]")
+      stream = HTTP.stream("POST", url("events"), {"Authorization": "Bearer k", "timeout": 5}, "{\"q\":1}")
+      assert_eq(stream.status, 200)
+      assert_eq(stream.headers["content-type"], "application/json")
+      lines = []
+      line = stream.next_line
+      while !line.nil?
+        lines.push(line)
+        line = stream.next_line
+      end
+      assert_eq(lines, ["data: {\"a\":1}", "", "data: {\"a\":2}", "", "data: [DONE]"])
+      assert_null(stream.next_line)
+      assert_eq(mock_http_last_body("/http-spec/events"), "{\"q\":1}")
+    end
+
+    test("answers a non-2xx status, its body readable") do
+      stream = HTTP.stream("GET", url("missing"))
+      assert_eq(stream.status, 404)
+      assert_eq(stream.next_line, "{\"error\":\"nope\"}")
+      stream.close
+      assert_null(stream.next_line)
+    end
+
+    test("refuses a URL the SSRF check refuses, and a bad timeout") do
+      assert_raises("not allowed") do
+        HTTP.stream("GET", "file:///etc/passwd")
+      end
+      assert_raises() do
+        HTTP.stream("GET", url("hello"), {"timeout": "soon"})
+      end
+    end
+  end
+
   describe("JSON verbs") do
     test("get_json parses the body") do
       assert_eq(HTTP.get_json(url("users")), {"ok": true})

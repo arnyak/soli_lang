@@ -17,6 +17,15 @@
 
 ## [2.28.9] - 2026-10-25
 
+### Added
+
+- `HTTP.stream(method, url, options?, body?)`: a response read line by line as
+  it arrives (`stream.next_line`, `nil` at the end; `status`, `headers`,
+  `close`). Its `timeout` is the wait for the next bytes, so an AI model that
+  thinks for minutes and then answers in server-sent events is not cut off as
+  `HTTP.request` cuts it; the SSRF, header and size guards are
+  `HTTP.request`'s.
+
 ### Fixed
 
 - Jobs on SoliDB: the queue's claim (`state IN … AND run_at <= now SORT
