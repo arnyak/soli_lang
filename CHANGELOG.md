@@ -14,11 +14,12 @@
 
 ### EUI
 
-- The score engraver moves to eui 104591c (152e704 first, then the second
+- The score engraver moves to eui 7ff6282 (152e704 first, then the second
   round of LilyPond work, an ossia beamed like any staff, a title too wide
   for the page broken between words, and LilyPond 2.24's `\segnoMark 1`,
   `\segno` over a note, `\section`, `\sectionLabel`, `\textMark`, `\volta`
-  in an `\alternative` and `\harmonic`):
+  in an `\alternative` and `\harmonic`, and each word's range on a page,
+  `paths_words`):
   - Smaller staves: `\magnifyStaff`, `StaffSymbol.staff-space` with
     `fontSize`, ossia and cue staves.
   - A `\time` in the middle of a bar, a `\partial` later in a piece, a
