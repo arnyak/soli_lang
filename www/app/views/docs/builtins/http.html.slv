@@ -29,7 +29,8 @@
         <p class="text-gray-400 mb-4">All HTTP functions are accessed via the <code class="text-amber-400">HTTP</code> class:</p>
         <pre data-filename="Example"><code class="language-soli text-sm">response = HTTP.get("https://api.example.com/users")
 response = HTTP.post("https://api.example.com/users", { "name": "Alice" })
-response = HTTP.request("DELETE", "https://api.example.com/users/1")</code></pre>
+response = HTTP.request("DELETE", "https://api.example.com/users/1")
+stream = HTTP.stream("GET", "https://api.example.com/events")   # read line by line</code></pre>
     </section>
 
     <!-- Security: SSRF blocklist & redirects -->
@@ -345,6 +346,37 @@ resp = HTTP.request("PATCH", url, headers, json)
 
 # Custom header plus a 3-second per-call timeout.
 resp = HTTP.request("GET", url, { "Authorization": "Bearer " + token, "timeout": 3 })</code></pre>
+        </section>
+
+        <section id="def-http-stream" class="scroll-mt-20 mb-6">
+            <a href="#def-http-stream" class="group flex items-center gap-2 mb-3">
+                <code class="text-lg font-mono text-amber-400">HTTP.stream(method, url, options?, body?)</code>
+                <svg class="w-4 h-4 opacity-0 group-hover:opacity-100 text-gray-500 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+            </a>
+            <p class="text-gray-400 mb-3">Opens a request and answers as soon as its headers are in, with an object the body is read from one line at a time, as it arrives: an AI model answering in server-sent events, a long export, a log tail. <code class="text-amber-400">HTTP.request</code> waits for the whole body, and its timeout counts from the start; a stream runs as long as it keeps sending.</p>
+            <p class="text-gray-400 mb-3">Parameters are <code class="text-amber-400">HTTP.request</code>&rsquo;s. The <code class="text-amber-400">timeout</code> (seconds, default 120) is the longest wait <strong>for the next bytes</strong>, not for the whole answer.</p>
+            <p class="text-gray-400 mb-3">Returns an <code class="text-amber-400">HTTPStream</code>:</p>
+            <ul class="list-disc list-inside text-gray-400 mb-3 space-y-1">
+                <li><code class="text-amber-400">stream.status</code> (Int) and <code class="text-amber-400">stream.headers</code> (Hash), read when it opened;</li>
+                <li><code class="text-amber-400">stream.next_line</code>: the next line, with its <code>\n</code> (and a <code>\r</code> before it) taken off, or <code class="text-amber-400">nil</code> once the body is over (an unended last line comes first). It raises when nothing arrives for <code class="text-amber-400">timeout</code> seconds, when the connection breaks, and past <code class="text-amber-400">SOLI_HTTP_MAX_RESPONSE_BYTES</code>; the stream is closed then;</li>
+                <li><code class="text-amber-400">stream.close</code> lets the connection go before the end.</li>
+            </ul>
+            <p class="text-gray-400 mb-3">A non-2xx status does not raise: check <code class="text-amber-400">stream.status</code>, its body is readable. The SSRF check, the header checks and the redirect policy are <code class="text-amber-400">HTTP.request</code>&rsquo;s. The stream is read in a loop rather than with <code class="text-amber-400">do |line|</code>: plain natives cannot call a block.</p>
+            <pre data-filename="Example"><code class="language-soli text-sm">stream = HTTP.stream("POST", "https://api.example.com/v1/chat/completions",
+  {"Authorization": "Bearer " + key, "content-type": "application/json", "timeout": 120},
+  JSON.stringify({"model": model, "stream": true, "messages": messages}))
+raise "refused: #{stream.status}" unless stream.status == 200
+text = ""
+line = stream.next_line
+while !line.nil?
+  if line.starts_with?("data: ") &amp;&amp; line != "data: [DONE]"
+    delta = JSON.parse(line.slice(6, line.length))["choices"][0]["delta"]["content"]
+    text = text + delta.to_s
+  end
+  line = stream.next_line
+end</code></pre>
         </section>
     </section>
 

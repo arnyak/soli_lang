@@ -977,6 +977,22 @@
       ]
     },
     {
+      "title": "HTTP.stream",
+      "type": "method",
+      "category": "HTTP",
+      "path": "/docs/builtins/http#def-http-stream",
+      "signature": "HTTP.stream(method, url, options?, body?)",
+      "description": "Read a response line by line as it arrives (server-sent events, AI streaming)",
+      "keywords": [
+        "http",
+        "stream",
+        "sse",
+        "streaming",
+        "ai",
+        "next_line"
+      ]
+    },
+    {
       "title": "HTTP.get_all",
       "type": "method",
       "category": "HTTP",
