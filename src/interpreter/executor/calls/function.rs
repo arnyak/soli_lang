@@ -2497,7 +2497,9 @@ impl Interpreter {
                 }
 
                 // Set current env so `defined()` can inspect the scope chain
-                crate::interpreter::executor::variables::set_current_env(self.environment.clone());
+                let _current_env = crate::interpreter::executor::variables::set_current_env(
+                    self.environment.clone(),
+                );
                 // Wrap the call in a flamegraph `Fn` span when the native
                 // is on the request-path whitelist (render, redirect, …).
                 // Otherwise no-op so cheap builtins (`len`, `str`, …) don't
@@ -2506,7 +2508,6 @@ impl Interpreter {
                 let result = (native.func)(&all_args)
                     .map_err(|msg| RuntimeError::General { message: msg, span })?;
                 drop(_native_span);
-                crate::interpreter::executor::variables::clear_current_env();
 
                 Ok(result)
             }
@@ -2516,8 +2517,11 @@ impl Interpreter {
             }
 
             Value::Instance(inst) => {
-                // Callable instance
-                match inst.borrow().get_method("call") {
+                // Callable instance. The method is taken out first: matching
+                // on `inst.borrow()` would keep the instance borrowed while
+                // `call` runs, and a `call` that sets a field would panic.
+                let call = inst.borrow().get_method("call");
+                match call {
                     Some(method) => match method {
                         Value::Function(func) => {
                             let required_arity = func.arity();
@@ -2672,13 +2676,14 @@ impl Interpreter {
                         return Err(RuntimeError::wrong_arity(arity, arguments.len(), span));
                     }
                 }
-                crate::interpreter::executor::variables::set_current_env(self.environment.clone());
+                let _current_env = crate::interpreter::executor::variables::set_current_env(
+                    self.environment.clone(),
+                );
                 // See call_value_with_named above — same whitelist gating.
                 let _native_span = crate::serve::span_log::maybe_instrument_native(&native.name);
                 let result = (native.func)(&arguments)
                     .map_err(|msg| RuntimeError::General { message: msg, span })?;
                 drop(_native_span);
-                crate::interpreter::executor::variables::clear_current_env();
 
                 Ok(result)
             }

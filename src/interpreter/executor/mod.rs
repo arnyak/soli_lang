@@ -10,8 +10,8 @@ mod statements;
 mod variables;
 
 pub use variables::{
-    clear_current_env, current_env_lookup, enter_template_lenient_vars, is_defined,
-    set_current_env, template_lenient_vars_enabled, TemplateLenientVarsGuard,
+    current_env_lookup, enter_template_lenient_vars, is_defined, set_current_env,
+    template_lenient_vars_enabled, CurrentEnvGuard, TemplateLenientVarsGuard,
 };
 
 /// The paren-free auto-invoke rule, shared with the template renderer so the

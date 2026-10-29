@@ -24,14 +24,26 @@ thread_local! {
     static CURRENT_ENV: RefCell<Option<Rc<RefCell<Environment>>>> = const { RefCell::new(None) };
 }
 
-/// Set the current environment (used by `defined()`).
-pub fn set_current_env(env: Rc<RefCell<Environment>>) {
-    CURRENT_ENV.with(|c: &RefCell<Option<Rc<RefCell<Environment>>>>| *c.borrow_mut() = Some(env));
+/// Make `env` the current environment (used by `defined()`) until the guard
+/// drops, which puts back the one before it. A native that runs Soli code
+/// which calls another native nests these: clearing on the way out, as this
+/// used to, left the outer native with no environment, and an error return
+/// skipped the clear and kept the environment alive past the call.
+pub fn set_current_env(env: Rc<RefCell<Environment>>) -> CurrentEnvGuard {
+    let previous = CURRENT_ENV.with(|c| c.borrow_mut().replace(env));
+    CurrentEnvGuard { previous }
 }
 
-/// Clear the current environment.
-pub fn clear_current_env() {
-    CURRENT_ENV.with(|c: &RefCell<Option<Rc<RefCell<Environment>>>>| *c.borrow_mut() = None);
+/// Restores the environment that was current before [`set_current_env`].
+pub struct CurrentEnvGuard {
+    previous: Option<Rc<RefCell<Environment>>>,
+}
+
+impl Drop for CurrentEnvGuard {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        let _ = CURRENT_ENV.try_with(|c| *c.borrow_mut() = previous);
+    }
 }
 
 /// Check if a variable is defined in the current environment chain.
@@ -143,5 +155,37 @@ impl Interpreter {
             return Ok(Value::Null);
         }
         Err(RuntimeError::undefined_variable(name, expr.span))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interpreter::Value;
+
+    fn env_with(name: &str) -> Rc<RefCell<Environment>> {
+        let mut env = Environment::new();
+        env.define(name.to_string(), Value::Int(1));
+        Rc::new(RefCell::new(env))
+    }
+
+    #[test]
+    fn a_nested_current_env_gives_the_outer_one_back() {
+        let outer = set_current_env(env_with("outer"));
+        assert!(is_defined("outer"));
+        {
+            let _inner = set_current_env(env_with("inner"));
+            assert!(is_defined("inner"));
+            assert!(!is_defined("outer"));
+        }
+        assert!(
+            is_defined("outer"),
+            "the outer native still sees its environment"
+        );
+        drop(outer);
+        assert!(
+            !is_defined("outer"),
+            "nothing kept once the last guard drops"
+        );
     }
 }

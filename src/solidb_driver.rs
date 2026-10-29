@@ -280,9 +280,24 @@ fn with_client<T>(
     if !enabled() {
         return None;
     }
-    CLIENT.with(|cell| {
+    // The client is taken out of its slot for the call and put back after:
+    // holding the slot's `borrow_mut` across `f`, which blocks on the DB,
+    // would panic on any other use of the slot from this thread meanwhile.
+    let taken = CLIENT.with(|cell| {
         let mut slot = cell.borrow_mut();
-        if slot.is_none() {
+        match slot.take() {
+            Some(Ok(client)) => Some(Some(client)),
+            // Connection failed earlier: stay on HTTP for this worker's lifetime.
+            Some(Err(e)) => {
+                *slot = Some(Err(e));
+                None
+            }
+            None => Some(None),
+        }
+    })?;
+    let mut client = match taken {
+        Some(client) => client,
+        None => {
             let connected = block_on_db(async {
                 let addr = driver_addr()?;
                 let mut client = SoliDBClient::connect_with_pool(&addr, POOL_SIZE)
@@ -296,25 +311,33 @@ fn with_client<T>(
                     .map_err(DriverUnavailable::Failed)?;
                 Ok::<_, DriverUnavailable>(client)
             });
-            let connected = connected.map_err(|e| {
-                report_fallback(&e);
-                match e {
-                    DriverUnavailable::TlsHost => "TLS host: HTTP only".to_string(),
-                    DriverUnavailable::Failed(message) => message,
+            match connected {
+                Ok(client) => client,
+                Err(e) => {
+                    report_fallback(&e);
+                    let message = match e {
+                        DriverUnavailable::TlsHost => "TLS host: HTTP only".to_string(),
+                        DriverUnavailable::Failed(message) => message,
+                    };
+                    CLIENT.with(|cell| *cell.borrow_mut() = Some(Err(message)));
+                    return None;
                 }
-            });
-            *slot = Some(connected);
+            }
         }
-        let outcome = match slot.as_mut() {
-            Some(Ok(client)) => f(client),
-            // Connection failed earlier: stay on HTTP for this worker's lifetime.
-            _ => return None,
-        };
-        if matches!(outcome, Err(DriverFailure::Connection(_))) {
-            *slot = None;
-        }
-        Some(outcome)
-    })
+    };
+    let outcome = f(&mut client);
+    // A call whose connection failed drops the client: the next one connects
+    // afresh. Otherwise it goes back, unless another call filled the slot
+    // while this one ran.
+    if !matches!(outcome, Err(DriverFailure::Connection(_))) {
+        CLIENT.with(|cell| {
+            let mut slot = cell.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(Ok(client));
+            }
+        });
+    }
+    Some(outcome)
 }
 
 /// A read whose connection failed is asked again over HTTP. A write is not:

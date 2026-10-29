@@ -25,6 +25,15 @@
 
 ### Fixed
 
+- `defined()` inside a builtin that runs Soli code (a block, a callback)
+  could see no scope at all: each native call set the current environment
+  and cleared it on the way out, so an inner call wiped the outer one's. A
+  native that returned an error also skipped the clear and kept its whole
+  scope alive. The environment is now restored by a guard
+  (`variables::CurrentEnvGuard`). Two borrows are no longer held across user
+  code: the VM's state-machine `save` (`vm_calls.rs`) and the tree-walker's
+  callable-instance `call`; and the SoliDB driver takes its client out of its
+  slot for a call instead of holding the slot borrowed across the round trip.
 - Windows: a relative import climbing two folders (`../../x.sl`) is found
   again. `normalize_path` split on `/` only, so in `C:\…\tests\../../x.sl`
   the first `..` stuck to the Windows part and the second one popped the

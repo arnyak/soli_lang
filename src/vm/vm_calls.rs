@@ -1555,7 +1555,11 @@ impl Vm {
         inst.borrow_mut().set(machine.field.clone(), new_value);
 
         if persist {
-            if let Some(native) = inst.borrow().class.find_native_method("save") {
+            // Bound before the call: an `if let` on `inst.borrow()` keeps the
+            // borrow alive through its body, and `save` borrows `inst`
+            // mutably (callbacks, the DB write).
+            let save = inst.borrow().class.find_native_method("save");
+            if let Some(native) = save {
                 let receiver_idx = self.stack.len();
                 self.push(Value::Instance(inst.clone()));
                 self.call_model_instance_native(
