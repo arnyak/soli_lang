@@ -73,7 +73,7 @@
                 <tr>
                     <td class="py-3 px-4 text-white font-medium">Notifications</td>
                     <td class="py-3 px-4"><code>SOLI_NOTIFY_WEBHOOKS</code> / <code>SOLI_NOTIFY_EMAILS</code> / a <code>SoliNotificationJob</code> / &ldquo;Notify this device&rdquo;</td>
-                    <td class="py-3 px-4">Slack, Teams, Discord, Google Chat, any URL, email, your job, Web Push</td>
+                    <td class="py-3 px-4">Slack, Teams, Discord, Google Chat, Campfire, any URL, email, your job, Web Push</td>
                 </tr>
             </tbody>
         </table>
@@ -372,7 +372,7 @@ SOLI_ADMIN_PASSWORD=&lt;long random string&gt;</code></pre>
     <p class="text-gray-400 mb-4">
         <strong class="text-white">Where they go.</strong> Set any of these; every event goes to all of them:
     </p>
-    <pre class="rounded-xl border border-white/10 bg-black/40 p-4 text-sm text-gray-300 overflow-x-auto mb-4"><code># Slack, Microsoft Teams, Discord, Google Chat or any URL &mdash; comma-separated
+    <pre class="rounded-xl border border-white/10 bg-black/40 p-4 text-sm text-gray-300 overflow-x-auto mb-4"><code># Slack, Microsoft Teams, Discord, Google Chat, Campfire or any URL &mdash; comma-separated
 SOLI_NOTIFY_WEBHOOKS=https://hooks.slack.com/services/T000/B000/XXXX,https://acme.webhook.office.com/webhookb2/...
 
 # Addresses, sent through the app's own mailer (SOLI_SMTP_*)
@@ -382,7 +382,7 @@ SOLI_NOTIFY_FROM=alerts@example.com        # default: SOLI_SMTP_FROM
 # Links in messages point here (default: https:// + the first SOLI_APP_HOSTS)
 SOLI_NOTIFY_URL=https://shop.example.com</code></pre>
     <p class="text-gray-400 mb-4">
-        Webhooks are recognised by host and sent the message each product expects: Slack incoming webhooks (<code>hooks.slack.com</code>) get formatted text with a link, Microsoft Teams (<code>*.webhook.office.com</code>, and Workflows URLs on <code>*.logic.azure.com</code> / <code>*.powerplatform.com</code>) an Adaptive Card with an <strong class="text-white">Open in Soli</strong> button, Discord and Google Chat a text message. Any other URL receives the event as JSON:
+        Webhooks are recognised by host and sent the message each product expects: Slack incoming webhooks (<code>hooks.slack.com</code>) get formatted text with a link, Microsoft Teams (<code>*.webhook.office.com</code>, and Workflows URLs on <code>*.logic.azure.com</code> / <code>*.powerplatform.com</code>) an Adaptive Card with an <strong class="text-white">Open in Soli</strong> button, Discord and Google Chat a text message. Campfire (the self-hosted 37signals chat) is recognised by its bot URL&rsquo;s path, <code>https://&lt;your campfire&gt;/rooms/&lt;room id&gt;/&lt;bot key&gt;/messages</code> (Account &rarr; Bots &rarr; the room&rsquo;s URL), and gets a short HTML message with an <strong class="text-white">Open in Soli</strong> link. Campfire has no <code>@everyone</code> and no groups: who is alerted is who is in the room, so post to an all-access room to reach everyone, or to a closed room holding only the on-call members to reach a group. Members who want a push for every alert set that room&rsquo;s notifications to <em>Everything</em>. Any other URL receives the event as JSON:
     </p>
     <pre class="rounded-xl border border-white/10 bg-black/40 p-4 text-sm text-gray-300 overflow-x-auto mb-4"><code>{
   "event": "error.new",

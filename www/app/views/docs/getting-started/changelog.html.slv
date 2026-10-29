@@ -20,7 +20,29 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.8.</p>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.10.</p>
+    </section>
+
+    <section id="v2-28-10" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.10 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-29</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Error and slow-query notifications reach Campfire rooms.</p>
+        <h3 id="v2-28-10-dev-tools" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Dev tools</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Notifications to Campfire.</strong> Put a Campfire bot URL &mdash; <code class="text-cyan-400">https://&lt;campfire&gt;/rooms/&lt;room id&gt;/&lt;bot key&gt;/messages</code> &mdash; in <code class="text-cyan-400">SOLI_NOTIFY_WEBHOOKS</code> and new errors, regressions, spikes and new slow queries are posted to that room as a formatted message with an <strong class="text-white">Open in Soli</strong> link, instead of raw JSON. Campfire is self-hosted, so the URL is recognised by its path. Who is alerted is who is in the room: an all-access room reaches everyone, a closed room only its members. See <a href="/docs/development-tools/observability#notifications" class="text-amber-400 hover:underline">Notifications</a>.</li>
+        </ul>
+    </section>
+
+    <section id="v2-28-9" class="mb-16 scroll-mt-24">
+        <h2 class="text-3xl font-bold text-white mb-4">v2.28.9 <span class="text-gray-500 text-xl font-normal">&mdash; 2026-10-25</span></h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">A faster job queue on SoliDB, and a large round of LilyPond work in the score engraver.</p>
+        <h3 id="v2-28-9-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Job polling no longer reads the whole queue on SoliDB.</strong> The queue&rsquo;s claim gets a sorted index of its own shape, <code class="text-cyan-400">idx_jobs_claim</code>; before, every poll scanned all jobs and showed up as a slow query once done jobs piled up.</li>
+        </ul>
+        <h3 id="v2-28-9-eui" class="text-xl font-semibold text-white mb-4 scroll-mt-24">EUI</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">The score engraver follows much more LilyPond.</strong> Cross-staff beams, slurs and ties, <code class="text-cyan-400">\partCombine</code>, <code class="text-cyan-400">\RemoveEmptyStaves</code>, smaller and ossia staves, mid-bar <code class="text-cyan-400">\time</code> and later <code class="text-cyan-400">\partial</code>, polymetre, the common <code class="text-cyan-400">\override</code>/<code class="text-cyan-400">\set</code>/<code class="text-cyan-400">\tweak</code>, LilyPond&rsquo;s line breaking, vertical spacing and beam quanting, LilyPond 2.24&rsquo;s marks, sections and endings, and each word&rsquo;s range on a page (<code class="text-cyan-400">paths_words</code>).</li>
+        </ul>
     </section>
 
     <section id="v2-28-8" class="mb-16 scroll-mt-24">

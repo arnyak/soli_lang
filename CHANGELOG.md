@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [2.28.10] - 2026-10-29
+
+### Added
+
+- Notifications to Campfire. A Campfire bot URL in `SOLI_NOTIFY_WEBHOOKS`
+  (`https://<campfire>/rooms/<room id>/<user id>-<bot token>/messages`) is
+  recognised by its path, since Campfire is self-hosted and has no host to
+  match, and is sent an HTML message (title, summary, detail lines, an
+  **Open in Soli** link) as `text/html`: Campfire posts a bot's raw request
+  body as the message, and a JSON body would show up as JSON. Who is alerted
+  is who is in the room — an all-access room for everyone, a closed room for
+  a group. The operator pages list it as "Campfire" (`notify::HookKind::Campfire`).
+
 ## [2.28.9] - 2026-10-25
 
 ### Fixed
