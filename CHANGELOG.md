@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [2.28.11] - 2026-10-29
+
+### Added
+
+- `HTTP.stream(method, url, options?, body?)`: a response read line by line as
+  it arrives (`stream.next_line`, `nil` at the end; `status`, `headers`,
+  `close`). Its `timeout` is the wait for the next bytes, so an AI model that
+  thinks for minutes and then answers in server-sent events is not cut off as
+  `HTTP.request` cuts it; the SSRF, header and size guards are
+  `HTTP.request`'s.
+
 ## [2.28.10] - 2026-10-29
 
 ### Added
@@ -16,15 +27,6 @@
   a group. The operator pages list it as "Campfire" (`notify::HookKind::Campfire`).
 
 ## [2.28.9] - 2026-10-25
-
-### Added
-
-- `HTTP.stream(method, url, options?, body?)`: a response read line by line as
-  it arrives (`stream.next_line`, `nil` at the end; `status`, `headers`,
-  `close`). Its `timeout` is the wait for the next bytes, so an AI model that
-  thinks for minutes and then answers in server-sent events is not cut off as
-  `HTTP.request` cuts it; the SSRF, header and size guards are
-  `HTTP.request`'s.
 
 ### Fixed
 
