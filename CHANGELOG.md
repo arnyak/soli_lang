@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: a relative import climbing two folders (`../../x.sl`) is found
+  again. `normalize_path` split on `/` only, so in `C:\…\tests\../../x.sl`
+  the first `..` stuck to the Windows part and the second one popped the
+  whole prefix, leaving a relative `x.sl`. It now walks `Path::components`.
+
 ### Modules
 
 - Imports are bounded by the project — the directory of `soli.toml` — and no

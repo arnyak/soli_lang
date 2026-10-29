@@ -476,39 +476,29 @@ impl ModuleResolver {
     }
 }
 
-/// Normalize a path string by resolving . and .. components.
+/// Resolve `.` and `..` components lexically. Built on `Path::components`, so
+/// a Windows path keeps its `C:\` prefix and splits on both separators: one
+/// split on `/` alone let `tests\..` count as a single component, and the next
+/// `..` popped the whole prefix.
 fn normalize_path(path: &Path) -> PathBuf {
-    if let Some(s) = path.to_str() {
-        let mut result = Vec::new();
-        let starts_with_slash = s.starts_with('/');
-        for component in s.split('/') {
-            match component {
-                "" => {
-                    // Keep leading slash marker
-                    if starts_with_slash && result.is_empty() {
-                        // Don't add empty component for leading slash
-                    }
+    use std::path::Component;
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => match result.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    result.pop();
                 }
-                "." => {}
-                ".." => {
-                    if !result.is_empty() && result.last() != Some(&"..") {
-                        result.pop();
-                    } else {
-                        result.push("..");
-                    }
-                }
-                _ => result.push(component),
-            }
+                // Nothing to climb out of above a root; keep a leading `..`
+                // on a relative path.
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                _ => result.push(".."),
+            },
+            other => result.push(other.as_os_str()),
         }
-        let normalized_str = if starts_with_slash {
-            format!("/{}", result.join("/"))
-        } else {
-            result.join("/")
-        };
-        PathBuf::from(normalized_str)
-    } else {
-        path.to_path_buf()
     }
+    result
 }
 
 /// Collect exported names from a program.
@@ -858,6 +848,31 @@ mod tests {
             .resolve_path("helper.sl", &proj.join("main.sl"))
             .expect("bare-name import under base must resolve");
         assert!(resolved.ends_with("helper.sl"));
+    }
+
+    #[test]
+    fn normalize_path_resolves_dots_lexically() {
+        assert_eq!(
+            normalize_path(Path::new("/a/b/../c/./d.sl")),
+            PathBuf::from("/a/c/d.sl")
+        );
+        assert_eq!(
+            normalize_path(Path::new("a/../../x.sl")),
+            PathBuf::from("../x.sl")
+        );
+        assert_eq!(
+            normalize_path(Path::new("/../x.sl")),
+            PathBuf::from("/x.sl")
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn normalize_path_keeps_a_windows_prefix_through_two_parents() {
+        assert_eq!(
+            normalize_path(Path::new(r"C:\tmp\proj\tests\../../outside.sl")),
+            PathBuf::from(r"C:\tmp\outside.sl")
+        );
     }
 
     #[test]
