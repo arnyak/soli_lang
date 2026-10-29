@@ -4003,6 +4003,13 @@ not part of the module's interface, but it is defined, and a definition of the
 same name in the importing file replaces it. Give helpers names that will not
 collide.
 
+An import stays inside the project: the directory holding `soli.toml` (without
+one, the directory of the file being run). `../` may climb between folders of
+the project — a spec in `tests/billing/` imports `../support/db.sl` — but not
+out of it, symlinks included, and absolute paths are refused. Path
+dependencies in `soli.toml` (`utils = { path = "./lib/utils" }`) are read from
+that same directory.
+
 ### Module Structure Example
 
 ```

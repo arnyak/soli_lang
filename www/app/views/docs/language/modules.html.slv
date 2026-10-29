@@ -387,6 +387,7 @@ end
 import "./utils/mod.sl"
 print(greet("ada"))     # HELLO ADA!</code></pre>
                 <p class="text-gray-400 mt-3">Besides <code class="text-amber-400">def</code> and <code class="text-amber-400">class</code>, <code class="text-amber-400">export</code> takes <code class="text-amber-400">enum</code>, <code class="text-amber-400">const</code>, <code class="text-amber-400">let</code> and <code class="text-amber-400">interface</code>. A module reached along two paths (two files that both import <code class="text-amber-400">shared.sl</code>) is included once. Modules share one global namespace, though: a private name is not part of the module's interface, but it is defined, and a definition of the same name in the importing file replaces it. Give helpers names that will not collide.</p>
+                <p class="text-gray-400 mt-3">An import stays inside the project: the directory holding <code class="text-amber-400">soli.toml</code> (without one, the directory of the file being run). <code class="text-amber-400">../</code> may climb between folders of the project &mdash; a spec in <code class="text-amber-400">tests/billing/</code> imports <code class="text-amber-400">../support/db.sl</code> &mdash; but not out of it, symlinks included, and absolute paths are refused. Path dependencies in <code class="text-amber-400">soli.toml</code> (<code class="text-amber-400">utils = { path = "./lib/utils" }</code>) are read from that same directory.</p>
             </div>
         </section>
     </section>

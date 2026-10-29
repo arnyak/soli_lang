@@ -20,7 +20,11 @@
 
     <section id="unreleased" class="mb-16 scroll-mt-24">
         <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
-        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.10.</p>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8">Changes landing on <code class="text-cyan-400">main</code> since v2.28.11.</p>
+        <h3 id="unreleased-modules" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Modules</h3>
+        <ul class="space-y-3 text-gray-400 text-sm leading-relaxed mb-10">
+            <li><strong class="text-white">Specs can live in subfolders and still share helpers.</strong> Imports are bounded by the project &mdash; the directory of <code class="text-cyan-400">soli.toml</code> &mdash; instead of the directory of the file being run. <code class="text-cyan-400">soli test</code> runs each spec from its own folder, so a spec in <code class="text-cyan-400">tests/billing/</code> could not import <code class="text-cyan-400">../support/db.sl</code> (&ldquo;resolves outside its allowed root&rdquo;). Path dependencies are read from <code class="text-cyan-400">soli.toml</code>&rsquo;s directory too. An import that leaves the project is still refused, symlinks included.</li>
+        </ul>
     </section>
 
     <section id="v2-28-10" class="mb-16 scroll-mt-24">
