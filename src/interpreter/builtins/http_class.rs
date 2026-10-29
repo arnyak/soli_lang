@@ -3371,6 +3371,94 @@ fn take_line(pending: &mut Vec<u8>) -> Option<String> {
     Some(String::from_utf8_lossy(&line).into_owned())
 }
 
+/// The request of a stream, its whole-answer timeout lifted. The client's own
+/// (30 s) counts the body too, so a stream would be cut off after it however
+/// steadily it sends: the only limit left is the caller's wait for the next
+/// bytes.
+#[cfg(not(target_arch = "wasm32"))]
+fn stream_request(
+    client: &reqwest::Client,
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: Option<OutgoingBody>,
+) -> Result<reqwest::RequestBuilder, String> {
+    let mut request = match method {
+        "GET" => client.get(url),
+        "POST" => client.post(url),
+        "PUT" => client.put(url),
+        "DELETE" => client.delete(url),
+        "PATCH" => client.patch(url),
+        _ => return Err(format!("HTTP.stream: unsupported method {method}")),
+    };
+    for (key, value) in headers {
+        request = request.header(key.as_str(), value.as_str());
+    }
+    if let Some(body) = body {
+        request = body.attach(request)?;
+    }
+    Ok(request.timeout(HTTP_STREAM_LONGEST))
+}
+
+/// What `HTTP.stream` and `HTTP.stream_to` are asked for: their first four
+/// arguments, checked.
+#[cfg(not(target_arch = "wasm32"))]
+struct StreamCall {
+    method: String,
+    url: String,
+    idle: std::time::Duration,
+    headers: Vec<(String, String)>,
+    body: Option<OutgoingBody>,
+}
+
+/// Reads `(method, url, options?, body?)`: `options` as `HTTP.request`'s
+/// (headers, a nested "headers" hash, "multipart"), its "timeout" the wait
+/// for the next bytes (default 120 s).
+#[cfg(not(target_arch = "wasm32"))]
+fn stream_call(args: &[Value], what: &str) -> Result<StreamCall, String> {
+    let method = match args.first() {
+        Some(Value::String(s)) => s.to_uppercase().to_string(),
+        _ => return Err(format!("{what}() requires a method and a URL")),
+    };
+    let url = match args.get(1) {
+        Some(Value::String(s)) => s.to_string(),
+        _ => return Err(format!("{what}() URL must be a string")),
+    };
+    validate_url_for_ssrf(&url)?;
+    let idle =
+        extract_timeout(args.get(2))?.unwrap_or(std::time::Duration::from_secs(HTTP_STREAM_IDLE));
+    let mut headers = extract_headers(args.get(2))?;
+    if let Some(Value::Hash(options)) = args.get(2) {
+        for (key, value) in options.borrow().iter() {
+            let HashKey::String(key) = key else { continue };
+            if matches!(key.as_ref(), "timeout" | "headers" | "multipart") {
+                continue;
+            }
+            let value = match value {
+                Value::String(s) => s.to_string(),
+                Value::Null => continue,
+                other => format!("{}", other),
+            };
+            validate_header(key, &value)?;
+            headers.push((key.to_string(), value));
+        }
+    }
+    let body = match args.get(3) {
+        None | Some(Value::Null) => None,
+        Some(v @ (Value::String(_) | Value::Hash(_) | Value::Array(_))) => {
+            Some(outgoing_body(v, args.get(2), &format!("{what}()"))?.0)
+        }
+        Some(other) => Some(OutgoingBody::Text(format!("{}", other))),
+    };
+    Ok(StreamCall {
+        method,
+        url,
+        idle,
+        headers,
+        body,
+    })
+}
+
 /// A stream just opened: its id, status and headers.
 #[cfg(not(target_arch = "wasm32"))]
 type OpenedStream = (i64, u16, Vec<(String, String)>);
@@ -3388,24 +3476,7 @@ fn open_stream(
     let client = get_user_http_client().clone();
     let (method, url, headers) = (method.to_string(), url.to_string(), headers.to_vec());
     let response = block_on_user_http_local(async move {
-        let mut request = match method.as_str() {
-            "GET" => client.get(&url),
-            "POST" => client.post(&url),
-            "PUT" => client.put(&url),
-            "DELETE" => client.delete(&url),
-            "PATCH" => client.patch(&url),
-            _ => return Err(format!("HTTP.stream: unsupported method {method}")),
-        };
-        for (key, value) in &headers {
-            request = request.header(key.as_str(), value.as_str());
-        }
-        if let Some(body) = body {
-            request = body.attach(request)?;
-        }
-        // The client's own timeout (30 s) counts the whole answer, body
-        // included: a stream would be cut off after it however steadily it
-        // sends. Here the only limit is the wait for the next bytes.
-        let request = request.timeout(HTTP_STREAM_LONGEST);
+        let request = stream_request(&client, &method, &url, &headers, body)?;
         // Waiting for the headers counts as waiting for bytes.
         match tokio::time::timeout(idle, send_logged(&method, &url, request)).await {
             Ok(sent) => sent,
@@ -3535,46 +3606,12 @@ fn stream_id(args: &[Value], what: &str) -> Result<i64, String> {
     ))
 }
 
-/// `HTTP.stream(method, url, options?, body?)`: `options` as `HTTP.request`'s
-/// (headers, a nested "headers" hash, "multipart"), its "timeout" the wait
-/// for the next bytes (default 120 s).
+/// `HTTP.stream(method, url, options?, body?)`, read with [`stream_call`].
 #[cfg(not(target_arch = "wasm32"))]
 fn http_stream(args: &[Value]) -> Result<Value, String> {
-    let method = match args.first() {
-        Some(Value::String(s)) => s.to_uppercase(),
-        _ => return Err("HTTP.stream() requires a method and a URL".to_string()),
-    };
-    let url = match args.get(1) {
-        Some(Value::String(s)) => s.to_string(),
-        _ => return Err("HTTP.stream() URL must be a string".to_string()),
-    };
-    validate_url_for_ssrf(&url)?;
-    let idle =
-        extract_timeout(args.get(2))?.unwrap_or(std::time::Duration::from_secs(HTTP_STREAM_IDLE));
-    let mut headers = extract_headers(args.get(2))?;
-    if let Some(Value::Hash(options)) = args.get(2) {
-        for (key, value) in options.borrow().iter() {
-            let HashKey::String(key) = key else { continue };
-            if matches!(key.as_ref(), "timeout" | "headers" | "multipart") {
-                continue;
-            }
-            let value = match value {
-                Value::String(s) => s.to_string(),
-                Value::Null => continue,
-                other => format!("{}", other),
-            };
-            validate_header(key, &value)?;
-            headers.push((key.to_string(), value));
-        }
-    }
-    let body = match args.get(3) {
-        None | Some(Value::Null) => None,
-        Some(v @ (Value::String(_) | Value::Hash(_) | Value::Array(_))) => {
-            Some(outgoing_body(v, args.get(2), "HTTP.stream()")?.0)
-        }
-        Some(other) => Some(OutgoingBody::Text(format!("{}", other))),
-    };
-    let (id, status, response_headers) = open_stream(&method, &url, &headers, body, idle)?;
+    let call = stream_call(args, "HTTP.stream")?;
+    let (id, status, response_headers) =
+        open_stream(&call.method, &call.url, &call.headers, call.body, call.idle)?;
     let class = STREAM_CLASS
         .with(|c| c.borrow().clone())
         .unwrap_or_else(|| {
@@ -3626,7 +3663,13 @@ fn register_http_stream(static_methods: &mut HashMap<String, Rc<NativeFunction>>
         "stream".to_string(),
         Rc::new(NativeFunction::new("HTTP.stream", None, http_stream)),
     );
+    stream_to::register(static_methods);
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+mod stream_to;
+#[cfg(not(target_arch = "wasm32"))]
+pub use stream_to::wait_for_background_streams;
 
 #[cfg(test)]
 mod http_stream_tests {

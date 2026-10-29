@@ -1177,6 +1177,95 @@ while !line.nil?
 end
 ```
 
+### HTTP.stream_to(method, url, options?, body?, to)
+
+Streams an answer **without holding a thread**. `HTTP.stream` hands each line to
+Soli code, so the thread reading it waits as long as the answer takes: a job
+that streams a model's ten-minute answer keeps a job worker for ten minutes.
+`HTTP.stream_to` returns an id at once and leaves the reading to the HTTP
+runtime. It takes the text out of each event, sends it to the pages subscribed
+to a topic, and hands the whole answer to a job at the end. No Soli code runs
+and no thread waits in between.
+
+**Parameters:** the first four are `HTTP.stream`'s (`timeout` is the wait for
+the next bytes, default 120). `to` is a Hash:
+- `format` - how the text is taken out: `"anthropic"` (Messages API events:
+  the `text_delta`s, `stop_reason`, `usage`; an `error` event fails the
+  stream), `"openai"` (chat completion chunks: `choices[0].delta.content` up to
+  `[DONE]`, `finish_reason`, `usage`), `"sse"` (each event's data) or `"lines"`
+  (each line; the default)
+- `topic` (optional) - an `sse_subscribe` topic. Each chunk's new text is
+  broadcast as a `delta` event, `{"id", "text"}`. At the end comes one
+  `done`, `failed` or `cancelled` event, `{"id", "text", "error"?}`
+- `job` (optional) - a job class, enqueued once when the stream ends, failed
+  or cancelled ones included
+- `args` (optional Hash) - passed to the job, merged with `stream_id`,
+  `state` (`"done"`, `"failed"`, `"cancelled"`), `status` (the HTTP code),
+  `text`, `error`, `stop_reason` and `usage`
+
+**Returns:** String - the stream's id. A bad URL, option or `to` raises at
+once. Whatever goes wrong afterwards (no answer, a 4xx/5xx with its body as
+`error`, a broken connection, more than `SOLI_HTTP_MAX_RESPONSE_BYTES`) ends
+the stream as `failed`, and the job still runs.
+
+```soli
+# app/controllers/answers_controller.sl
+class AnswersController < Controller
+  # POST /chats/:id/answer — starts the answer and returns at once
+  def answer(req)
+    chat = Chat.find(params["id"])
+    HTTP.stream_to("POST", "https://api.anthropic.com/v1/messages",
+      {"x-api-key": getenv("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01", "timeout": 600},
+      {"model": "claude-sonnet-5-5", "max_tokens": 4096, "stream": true,
+       "messages": [{"role": "user", "content": chat.question}]},
+      {"format": "anthropic", "topic": "chat:#{chat._key}", "job": "AnswerDoneJob", "args": {"chat": chat._key}})
+    render_json({"started": true})
+  end
+
+  # GET /chats/:id/stream — the page's EventSource
+  def stream(req)
+    sse_subscribe(req, "chat:#{params["id"]}")
+  end
+end
+
+# app/jobs/answer_done_job.sl — runs once, with the whole text
+class AnswerDoneJob
+  static def perform(args)
+    Chat.find(args["chat"]).update({"answer": args["text"], "state": args["state"]})
+  end
+end
+```
+
+```javascript
+const es = new EventSource(`/chats/${id}/stream`)
+es.addEventListener("delta", e => { out.textContent += JSON.parse(e.data).text })
+es.addEventListener("done", () => es.close())
+```
+
+**Limits.** A stream lives in the process that started it. If that process
+stops, the stream is lost: it is not resumed and its job is not enqueued.
+`HTTP.stream_status` and `HTTP.stream_cancel` only see this process's
+streams, so with several servers, follow a stream through its `topic` and its
+`job`. At most `SOLI_HTTP_MAX_STREAMS` (256) run at once. A plain
+`soli script.sl` waits for its streams before it exits, up to
+`SOLI_HTTP_STREAM_EXIT_WAIT` seconds when that is set.
+
+### HTTP.stream_status(id)
+
+Where a `stream_to` stream stands, or `nil` for an id this process does not
+know. A finished stream is kept for ten minutes.
+
+**Returns:** Hash - `{"id", "state", "text", "status", "error", "stop_reason"}`.
+`state` is `"running"`, `"done"`, `"failed"` or `"cancelled"`, `text` the text
+so far, and `status` the HTTP code (`nil` before the headers come).
+
+### HTTP.stream_cancel(id)
+
+Stops a running `stream_to` stream. It ends as `cancelled`, and its job still
+runs with the text so far.
+
+**Returns:** Bool - `true` if the stream was running in this process.
+
 ### HTTP Status Helpers
 
 There are none: `http_ok`, `http_success`, `http_redirect`,

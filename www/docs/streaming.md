@@ -105,6 +105,21 @@ A subscription costs an async task rather than a thread, so one worker can hold 
 them. Disconnected clients are pruned on the next broadcast, and `sse_subscribers(topic)`
 returns the current count.
 
+### Streaming a model's answer to a page
+
+A model's answer arrives in pieces over minutes. Reading it in a `sse` block
+or a job holds a thread the whole time. Hand it to
+[`HTTP.stream_to`](builtins.md#httpstream_tomethod-url-options-body-to)
+instead: it reads the answer on the HTTP runtime, broadcasts each new piece to
+a topic as a `delta` event, and enqueues a job with the whole text at the end.
+The page subscribes to the topic with `sse_subscribe`, and nothing waits in
+between.
+
+```soli
+HTTP.stream_to("POST", url, headers, body,
+  {"format": "anthropic", "topic": "chat:#{chat._key}", "job": "AnswerDoneJob", "args": {"chat": chat._key}})
+```
+
 ## One call, both transports: `broadcast`
 
 `broadcast(channel, payload)` fans `payload` out to both the WebSocket channel and the SSE
@@ -129,7 +144,7 @@ re-renders itself on writes, prefer [reactive live queries](liveview.md).
 
 | | Use it for |
 |---|---|
-| **SSE** | One-way server → browser updates: notifications, token streams, progress. Simpler than WebSockets, and reconnects on its own. |
+| **SSE** | One-way server → browser updates: notifications, token streams, progress (a model's answer: `HTTP.stream_to` with a `topic`). Simpler than WebSockets, and reconnects on its own. |
 | **[WebSockets](websockets.md)** | Two-way and low-latency: chat, presence, games. |
 | **[Live View](liveview.md)** | Server-rendered reactive UI, with no client JavaScript to write. |
 

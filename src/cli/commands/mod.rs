@@ -1135,6 +1135,9 @@ pub fn run_file(path: &str, options: &Options) {
         }
     }
     let result = solilang::run_script_file(path, !options.no_type_check, options.engine);
+    // A script's HTTP.stream_to streams run on a runtime that dies with this
+    // process: let them finish (their jobs enqueued) before it ends.
+    solilang::interpreter::builtins::http_class::wait_for_background_streams();
 
     if let Err(e) = result {
         eprintln!("Error: {}", e);

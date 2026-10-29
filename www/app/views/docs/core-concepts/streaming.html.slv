@@ -117,12 +117,22 @@ end</code></pre>
         </div>
     </section>
 
+    <!-- A model's answer -->
+    <section id="section-model-answer" class="scroll-mt-20 mb-12">
+        <h2 class="text-2xl font-bold text-white mb-4">Streaming a model&rsquo;s answer to a page</h2>
+        <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+            <p class="text-gray-400 mb-3">A model&rsquo;s answer arrives in pieces over minutes. Reading it in a <code class="text-amber-400">sse</code> block or a job holds a thread the whole time. Hand it to <a href="/docs/builtins/http#def-http-stream-to" class="text-amber-400 hover:text-amber-300"><code class="text-amber-400">HTTP.stream_to</code></a> instead: it reads the answer on the HTTP runtime, broadcasts each new piece to a topic as a <code class="text-amber-400">delta</code> event, and enqueues a job with the whole text at the end. The page subscribes to the topic with <code class="text-amber-400">sse_subscribe</code>, and nothing waits in between.</p>
+            <pre data-filename="Example"><code class="language-soli text-sm">HTTP.stream_to("POST", url, headers, body,
+  {"format": "anthropic", "topic": "chat:#{chat._key}", "job": "AnswerDoneJob", "args": {"chat": chat._key}})</code></pre>
+        </div>
+    </section>
+
     <!-- When to use -->
     <section id="section-when" class="scroll-mt-20 mb-12">
         <h2 class="text-2xl font-bold text-white mb-4">When to use what</h2>
         <div class="rounded-xl bg-white/5 border border-white/10 p-5">
             <div class="text-sm text-gray-400 space-y-2">
-                <div><strong class="text-white">SSE</strong> &mdash; one-way server → browser updates (notifications, token streams, progress). Simpler than WebSockets; auto-reconnects.</div>
+                <div><strong class="text-white">SSE</strong> &mdash; one-way server → browser updates (notifications, token streams, progress; a model&rsquo;s answer: <code>HTTP.stream_to</code> with a <code>topic</code>). Simpler than WebSockets; auto-reconnects.</div>
                 <div><strong class="text-white"><a href="/docs/core-concepts/websockets" class="text-amber-400 hover:text-amber-300">WebSockets</a></strong> &mdash; two-way, low-latency (chat, presence, games).</div>
                 <div><strong class="text-white"><a href="/docs/core-concepts/liveview" class="text-amber-400 hover:text-amber-300">Live View</a></strong> &mdash; server-rendered reactive UI without writing client JS.</div>
             </div>

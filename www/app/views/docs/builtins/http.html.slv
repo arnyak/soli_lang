@@ -378,6 +378,70 @@ while !line.nil?
   line = stream.next_line
 end</code></pre>
         </section>
+
+        <section id="def-http-stream-to" class="scroll-mt-20 mb-6">
+            <a href="#def-http-stream-to" class="group flex items-center gap-2 mb-3">
+                <code class="text-lg font-mono text-amber-400">HTTP.stream_to(method, url, options?, body?, to)</code>
+                <svg class="w-4 h-4 opacity-0 group-hover:opacity-100 text-gray-500 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+            </a>
+            <p class="text-gray-400 mb-3">Streams an answer <strong class="text-white">without holding a thread</strong>. <code class="text-amber-400">HTTP.stream</code> hands each line to Soli code, so the thread reading it waits as long as the answer takes: a job that streams a model&rsquo;s ten-minute answer keeps a job worker for ten minutes. <code class="text-amber-400">HTTP.stream_to</code> returns an id at once and leaves the reading to the HTTP runtime. It takes the text out of each event, sends it to the pages subscribed to a topic, and hands the whole answer to a job at the end. No Soli code runs and no thread waits in between.</p>
+            <p class="text-gray-400 mb-3">The first four parameters are <code class="text-amber-400">HTTP.stream</code>&rsquo;s (<code class="text-amber-400">timeout</code> is the wait for the next bytes, default 120). <code class="text-amber-400">to</code> is a hash:</p>
+            <ul class="list-disc list-inside text-gray-400 mb-3 space-y-1">
+                <li><code class="text-amber-400">format</code>: how the text is taken out. <code class="text-amber-400">"anthropic"</code> (Messages API events: the <code class="text-amber-400">text_delta</code>s, <code class="text-amber-400">stop_reason</code>, <code class="text-amber-400">usage</code>; an <code class="text-amber-400">error</code> event fails the stream), <code class="text-amber-400">"openai"</code> (chat completion chunks: <code class="text-amber-400">choices[0].delta.content</code> up to <code class="text-amber-400">[DONE]</code>, <code class="text-amber-400">finish_reason</code>, <code class="text-amber-400">usage</code>), <code class="text-amber-400">"sse"</code> (each event&rsquo;s data) or <code class="text-amber-400">"lines"</code> (each line; the default);</li>
+                <li><code class="text-amber-400">topic</code> (optional): an <code class="text-amber-400">sse_subscribe</code> topic. Each chunk&rsquo;s new text is broadcast as a <code class="text-amber-400">delta</code> event, <code class="text-amber-400">{"id", "text"}</code>. At the end comes one <code class="text-amber-400">done</code>, <code class="text-amber-400">failed</code> or <code class="text-amber-400">cancelled</code> event, <code class="text-amber-400">{"id", "text", "error"?}</code>;</li>
+                <li><code class="text-amber-400">job</code> (optional): a job class, enqueued once when the stream ends, failed or cancelled ones included;</li>
+                <li><code class="text-amber-400">args</code> (optional hash): passed to the job, merged with <code class="text-amber-400">stream_id</code>, <code class="text-amber-400">state</code> (<code class="text-amber-400">"done"</code>, <code class="text-amber-400">"failed"</code>, <code class="text-amber-400">"cancelled"</code>), <code class="text-amber-400">status</code> (the HTTP code), <code class="text-amber-400">text</code>, <code class="text-amber-400">error</code>, <code class="text-amber-400">stop_reason</code> and <code class="text-amber-400">usage</code>.</li>
+            </ul>
+            <p class="text-gray-400 mb-3">Returns the stream&rsquo;s id, a string. A bad URL, option or <code class="text-amber-400">to</code> raises at once. Whatever goes wrong afterwards (no answer, a 4xx/5xx with its body as <code class="text-amber-400">error</code>, a broken connection, more than <code class="text-amber-400">SOLI_HTTP_MAX_RESPONSE_BYTES</code>) ends the stream as <code class="text-amber-400">failed</code>, and the job still runs.</p>
+            <pre data-filename="app/controllers/answers_controller.sl"><code class="language-soli text-sm">class AnswersController &lt; Controller
+  # POST /chats/:id/answer — starts the answer and returns at once
+  def answer(req)
+    chat = Chat.find(params["id"])
+    HTTP.stream_to("POST", "https://api.anthropic.com/v1/messages",
+      {"x-api-key": getenv("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01", "timeout": 600},
+      {"model": "claude-sonnet-5-5", "max_tokens": 4096, "stream": true,
+       "messages": [{"role": "user", "content": chat.question}]},
+      {"format": "anthropic", "topic": "chat:#{chat._key}", "job": "AnswerDoneJob", "args": {"chat": chat._key}})
+    render_json({"started": true})
+  end
+
+  # GET /chats/:id/stream — the page's EventSource
+  def stream(req)
+    sse_subscribe(req, "chat:#{params["id"]}")
+  end
+end</code></pre>
+            <pre data-filename="app/jobs/answer_done_job.sl"><code class="language-soli text-sm">class AnswerDoneJob
+  static def perform(args)
+    Chat.find(args["chat"]).update({"answer": args["text"], "state": args["state"]})
+  end
+end</code></pre>
+            <pre data-filename="In the page"><code class="language-javascript text-sm">const es = new EventSource(`/chats/${id}/stream`)
+es.addEventListener("delta", e =&gt; { out.textContent += JSON.parse(e.data).text })
+es.addEventListener("done", () =&gt; es.close())</code></pre>
+            <p class="text-gray-400 mt-3 mb-3"><strong class="text-white">Limits.</strong> A stream lives in the process that started it. If that process stops, the stream is lost: it is not resumed and its job is not enqueued. <code class="text-amber-400">HTTP.stream_status</code> and <code class="text-amber-400">HTTP.stream_cancel</code> only see this process&rsquo;s streams, so with several servers, follow a stream through its <code class="text-amber-400">topic</code> and its <code class="text-amber-400">job</code>. At most <code class="text-amber-400">SOLI_HTTP_MAX_STREAMS</code> (256) run at once. A plain <code class="text-amber-400">soli script.sl</code> waits for its streams before it exits, up to <code class="text-amber-400">SOLI_HTTP_STREAM_EXIT_WAIT</code> seconds when that is set.</p>
+        </section>
+
+        <section id="def-http-stream-status" class="scroll-mt-20 mb-6">
+            <a href="#def-http-stream-status" class="group flex items-center gap-2 mb-3">
+                <code class="text-lg font-mono text-amber-400">HTTP.stream_status(id)</code>
+                <svg class="w-4 h-4 opacity-0 group-hover:opacity-100 text-gray-500 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+            </a>
+            <p class="text-gray-400 mb-3">Where a <code class="text-amber-400">stream_to</code> stream stands, or <code class="text-amber-400">nil</code> for an id this process does not know. A finished stream is kept for ten minutes. Returns <code class="text-amber-400">{"id", "state", "text", "status", "error", "stop_reason"}</code>: <code class="text-amber-400">state</code> is <code class="text-amber-400">"running"</code>, <code class="text-amber-400">"done"</code>, <code class="text-amber-400">"failed"</code> or <code class="text-amber-400">"cancelled"</code>, <code class="text-amber-400">text</code> the text so far, and <code class="text-amber-400">status</code> the HTTP code (<code class="text-amber-400">nil</code> before the headers come).</p>
+        </section>
+
+        <section id="def-http-stream-cancel" class="scroll-mt-20 mb-6">
+            <a href="#def-http-stream-cancel" class="group flex items-center gap-2 mb-3">
+                <code class="text-lg font-mono text-amber-400">HTTP.stream_cancel(id)</code>
+                <svg class="w-4 h-4 opacity-0 group-hover:opacity-100 text-gray-500 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+            </a>
+            <p class="text-gray-400 mb-3">Stops a running <code class="text-amber-400">stream_to</code> stream. It ends as <code class="text-amber-400">cancelled</code>, and its job still runs with the text so far. Returns <code class="text-amber-400">true</code> if the stream was running in this process.</p>
+        </section>
     </section>
 
     <!-- Status Code Helpers -->

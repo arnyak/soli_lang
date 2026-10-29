@@ -993,6 +993,50 @@
       ]
     },
     {
+      "title": "HTTP.stream_to",
+      "type": "method",
+      "category": "HTTP",
+      "path": "/docs/builtins/http#def-http-stream-to",
+      "signature": "HTTP.stream_to(method, url, options?, body?, to)",
+      "description": "Stream an AI answer in the background: text to an SSE topic, then a job",
+      "keywords": [
+        "http",
+        "stream",
+        "background",
+        "ai",
+        "anthropic",
+        "openai",
+        "sse",
+        "job"
+      ]
+    },
+    {
+      "title": "HTTP.stream_status",
+      "type": "method",
+      "category": "HTTP",
+      "path": "/docs/builtins/http#def-http-stream-status",
+      "signature": "HTTP.stream_status(id)",
+      "description": "Where an HTTP.stream_to stream stands: state, text so far, status",
+      "keywords": [
+        "http",
+        "stream",
+        "status"
+      ]
+    },
+    {
+      "title": "HTTP.stream_cancel",
+      "type": "method",
+      "category": "HTTP",
+      "path": "/docs/builtins/http#def-http-stream-cancel",
+      "signature": "HTTP.stream_cancel(id)",
+      "description": "Stop a running HTTP.stream_to stream",
+      "keywords": [
+        "http",
+        "stream",
+        "cancel"
+      ]
+    },
+    {
       "title": "HTTP.get_all",
       "type": "method",
       "category": "HTTP",

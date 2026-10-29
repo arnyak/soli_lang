@@ -11,6 +11,18 @@ def url(path)
   "#{base}/http-spec/#{path}"
 end
 
+# The status of an HTTP.stream_to stream once it is no longer running.
+def stream_to_result(id)
+  status = HTTP.stream_status(id)
+  tries = 0
+  while status["state"] == "running" && tries < 200
+    sleep(0.02)
+    tries += 1
+    status = HTTP.stream_status(id)
+  end
+  status
+end
+
 describe("HTTP") do
   before_each() do
     mock_http_route("/http-spec/hello", 200, "hello")
@@ -141,6 +153,40 @@ describe("HTTP") do
       assert_raises() do
         HTTP.stream("GET", url("hello"), {"timeout": "soon"})
       end
+    end
+  end
+
+  describe("stream_to") do
+    test("reads an answer in the background and keeps its text") do
+      mock_http_route("/http-spec/answer", 200, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+      id = HTTP.stream_to("POST", url("answer"), {"timeout": 5}, "{\"q\":1}", {"format": "anthropic"})
+      status = stream_to_result(id)
+      assert_eq(status["state"], "done")
+      assert_eq(status["text"], "Hello")
+      assert_eq(status["status"], 200)
+      assert_null(status["error"])
+      assert_eq(mock_http_last_body("/http-spec/answer"), "{\"q\":1}")
+    end
+
+    test("a non-2xx answer fails with its body as the error") do
+      status = stream_to_result(HTTP.stream_to("GET", url("missing"), {}, nil, {"format": "openai"}))
+      assert_eq(status["state"], "failed")
+      assert_eq(status["status"], 404)
+      assert_eq(status["error"], "{\"error\":\"nope\"}")
+    end
+
+    test("refuses a wrong target at once") do
+      assert_raises("unknown format") do
+        HTTP.stream_to("GET", url("hello"), {}, nil, {"format": "xml"})
+      end
+      assert_raises("job class") do
+        HTTP.stream_to("GET", url("hello"), {}, nil, {"job": "answer_done"})
+      end
+      assert_raises("not allowed") do
+        HTTP.stream_to("GET", "file:///etc/passwd", {}, nil, {})
+      end
+      assert_null(HTTP.stream_status("no-such-stream"))
+      assert_eq(HTTP.stream_cancel("no-such-stream"), false)
     end
   end
 

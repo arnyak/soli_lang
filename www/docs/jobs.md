@@ -273,6 +273,13 @@ A LiveView that enqueues an upload job and refreshes when it finishes is walked 
 
 Nothing special is required: every job already runs on the worker pool, off the request path, with no timeout and with retries. Size the pool with `SOLI_JOB_WORKERS` — each worker holds its own loaded interpreter (models, services, mailers, jobs), so it costs memory as well as concurrency.
 
+A job that mostly **waits** is the exception. A job reading a model's streamed
+answer with `HTTP.stream` holds its worker for as long as the model takes,
+minutes at a time. Start the stream with
+[`HTTP.stream_to`](builtins.md#httpstream_tomethod-url-options-body-to)
+instead: the HTTP runtime reads it, and its `job` runs once at the end with the
+whole text. One worker then serves every other job while answers stream.
+
 `static background: Bool = true` is still accepted for compatibility but has no effect — it described the old opt-out from running jobs on a web worker, which is now the default for every job. It can be removed from your job classes.
 
 ## On Cloudflare Workers (Queues)

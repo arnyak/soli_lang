@@ -507,6 +507,7 @@ soli jobs cancel &lt;id&gt;</code></pre>
   end
 end</code></pre>
             <p class="text-gray-400 mt-3 text-sm">Size the pool with <code class="text-amber-400">SOLI_JOB_WORKERS</code>; each worker holds its own loaded interpreter (models, services, mailers, jobs), so it costs memory as well as concurrency.</p>
+            <p class="text-gray-400 mt-3 text-sm">A job that mostly <strong class="text-white">waits</strong> is the exception. A job reading a model&rsquo;s streamed answer with <code class="text-amber-400">HTTP.stream</code> holds its worker for as long as the model takes, minutes at a time. Start the stream with <a href="/docs/builtins/http#def-http-stream-to" class="text-amber-400 hover:text-amber-300"><code class="text-amber-400">HTTP.stream_to</code></a> instead: the HTTP runtime reads it, and its <code class="text-amber-400">job</code> runs once at the end with the whole text. One worker then serves every other job while answers stream.</p>
             <div class="rounded-lg bg-amber-500/10 border border-amber-500/30 p-4 mt-4">
                 <p class="text-amber-200 text-sm"><span class="font-semibold">At-least-once semantics.</span> A job that outlives its lease (longer than <code class="text-amber-300">SOLI_JOBS_LEASE_SECS</code> without a heartbeat — a hard-frozen process, say) can be reclaimed and run again elsewhere. Write handlers to be idempotent, and raise the lease for long jobs.</p>
             </div>

@@ -317,7 +317,11 @@ pub(crate) fn enqueue(args: &[Value]) -> Result<Value, String> {
 
 /// Write a job row and log the enqueue for the dev bar. On the edge build the
 /// row is a message to the Worker's Cloudflare Queue instead.
-fn enqueue_doc(mut doc: JobDoc, opts: &serde_json::Value, what: &str) -> Result<Value, String> {
+pub(crate) fn enqueue_doc(
+    mut doc: JobDoc,
+    opts: &serde_json::Value,
+    what: &str,
+) -> Result<Value, String> {
     doc.apply_opts(opts);
     super::job_log::record(&doc);
     let id = if crate::jobs::queues::routes() {

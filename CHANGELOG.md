@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- `HTTP.stream_to(method, url, options?, body?, to)`: a streamed answer read
+  by the HTTP runtime instead of a Soli thread, so a job streaming a model's
+  ten-minute answer no longer holds a job worker. It returns an id at once;
+  a task on the user HTTP runtime takes the text out of each event (`format`:
+  `anthropic` text deltas, stop reason and usage; `openai` chunk content up
+  to `[DONE]`; raw `sse` data; `lines`), broadcasts each chunk's new text to
+  `topic` as a `delta` SSE event, and at the end enqueues `job` with `args`
+  plus `stream_id`, `state`, `status`, `text`, `error`, `stop_reason` and
+  `usage` — failed and cancelled streams included — before a final
+  `done`/`failed`/`cancelled` event. `HTTP.stream_status(id)` and
+  `HTTP.stream_cancel(id)` read and stop a stream of this process. The task
+  keeps its application (`task_scope`) and the database tenant of the call;
+  the job is enqueued from a blocking thread bound to both. Same guards as
+  `HTTP.stream` (SSRF check, header checks, `SOLI_HTTP_MAX_RESPONSE_BYTES`,
+  the idle timeout); `SOLI_HTTP_MAX_STREAMS` (256) caps concurrent streams;
+  a plain `soli script.sl` waits for its streams before exiting
+  (`SOLI_HTTP_STREAM_EXIT_WAIT` caps the wait). A stream dies with its
+  process and is not resumed (`http_class::stream_to`).
+
 ### Fixed
 
 - Windows: a relative import climbing two folders (`../../x.sl`) is found
